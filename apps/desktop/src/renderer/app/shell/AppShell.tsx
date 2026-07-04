@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { cn } from '../../lib/cn';
 import { TitleBar } from './TitleBar';
 import { Rail } from './Rail';
 import { ContextPanel } from './ContextPanel';
@@ -29,13 +30,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [paletteOpen, setActive, setPaletteOpen]);
 
+  const immersive = useShell((s) => s.active === 'voice');
+
   return (
     <div className="flex h-screen flex-col bg-canvas">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
-        <Rail />
+        {/* Voice Mode dims the chrome so nothing competes with the Orb (§4.3) */}
+        <div
+          className={cn(
+            'flex shrink-0 transition-opacity duration-500',
+            immersive && 'opacity-35 hover:opacity-100',
+          )}
+        >
+          <Rail />
+        </div>
         <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
-        <ContextPanel />
+        {!immersive && <ContextPanel />}
       </div>
       <CommandPalette />
       <Toaster />

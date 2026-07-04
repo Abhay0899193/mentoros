@@ -36,6 +36,13 @@ export interface ModelStatus {
 
 export type ChatPhase = "thinking" | "drafting" | "done" | "error" | "stopped";
 
+/** STT/TTS sidecar readiness (mirror of coreClient VoiceStatus). */
+export interface VoiceStatus {
+  stt: "ready" | "missing" | "starting" | "error";
+  tts: "ready" | "missing" | "starting" | "error";
+  detail?: string;
+}
+
 /** Payload shapes broadcast over the /events websocket. */
 export interface CoreEvents {
   "core.status": { state: "starting" | "ready" | "degraded"; detail?: string };
@@ -58,4 +65,13 @@ export interface CoreEvents {
     done: boolean;
     error?: string;
   };
+  "voice.install": {
+    step: string;
+    completedBytes: number;
+    totalBytes: number;
+    done: boolean;
+    error?: string;
+  };
+  "voice.status": VoiceStatus;
+  "voice.ptt": { pressed: boolean };
 }

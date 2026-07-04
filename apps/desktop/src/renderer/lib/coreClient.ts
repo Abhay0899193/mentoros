@@ -56,6 +56,39 @@ export interface ModelStatus {
 
 export type ChatPhase = 'thinking' | 'drafting' | 'done' | 'error' | 'stopped';
 
+/* ---------------- Voice (Stage 1c) ---------------- */
+
+export interface VoiceStatus {
+  stt: 'ready' | 'missing' | 'starting' | 'error';
+  tts: 'ready' | 'missing' | 'starting' | 'error';
+  detail?: string;
+}
+
+/**
+ * /voice WebSocket protocol (core implements the mirror):
+ *  client→server  JSON  {type:'mic-start', sampleRate:16000}
+ *  client→server  binary PCM16 mono chunks (mic, 16 kHz)
+ *  client→server  JSON  {type:'mic-stop'} | {type:'tts-stop'}
+ *  server→client  JSON  {type:'transcript', text, final}
+ *  server→client  JSON  {type:'tts-start', sampleRate} → binary PCM16 chunks → {type:'tts-end'}
+ *  server→client  JSON  {type:'voice-error', message}
+ */
+export interface VoiceChannelHandlers {
+  onTranscript: (t: { text: string; final: boolean }) => void;
+  onTtsStart: (sampleRate: number) => void;
+  onTtsChunk: (pcm: ArrayBuffer) => void;
+  onTtsEnd: () => void;
+  onError: (message: string) => void;
+}
+
+export interface VoiceChannel {
+  micStart: (sampleRate: number) => void;
+  sendPcm: (chunk: ArrayBuffer) => void;
+  micStop: () => void;
+  stopTts: () => void;
+  close: () => void;
+}
+
 export interface CoreEvents {
   'core.status': { state: 'starting' | 'ready' | 'degraded'; detail?: string };
   /** One streamed token for an in-flight assistant message. */
@@ -70,6 +103,18 @@ export interface CoreEvents {
     done: boolean;
     error?: string;
   };
+  /** STT/TTS install progress (binaries + models). */
+  'voice.install': {
+    step: string;
+    completedBytes: number;
+    totalBytes: number;
+    done: boolean;
+    error?: string;
+  };
+  /** Sidecar readiness changes. */
+  'voice.status': VoiceStatus;
+  /** Global push-to-talk hotkey (from Electron main via core). */
+  'voice.ptt': { pressed: boolean };
 }
 
 export interface CoreClient {
@@ -95,6 +140,14 @@ export interface CoreClient {
   modelStatus(): Promise<ModelStatus>;
   /** Starts a pull of the default (or given) model; progress via `models.pull`. */
   pullModel(model?: string): Promise<void>;
+
+  /* voice */
+  voiceStatus(): Promise<VoiceStatus>;
+  /** Download/build STT+TTS binaries and models; progress via `voice.install`. */
+  installVoice(): Promise<void>;
+  /** Synthesize text; audio streams back over the open /voice channel. */
+  speak(text: string): Promise<void>;
+  openVoiceChannel(handlers: VoiceChannelHandlers): VoiceChannel;
 }
 
 function resolveCorePort(): number {
@@ -203,6 +256,58 @@ export function createCoreClient(): CoreClient {
     stopGeneration: (messageId) => post<void>(`/chat/${messageId}/stop`),
     modelStatus: () => get<ModelStatus>('/models/status'),
     pullModel: (model) => post<void>('/models/pull', { model }),
+
+    voiceStatus: () => get<VoiceStatus>('/voice/status'),
+    installVoice: () => post<void>('/voice/install'),
+    speak: (text) => post<void>('/voice/speak', { text }),
+
+    openVoiceChannel(handlers) {
+      const vws = new WebSocket(`ws://127.0.0.1:${port}/voice`);
+      vws.binaryType = 'arraybuffer';
+      let ttsActive = false;
+
+      vws.addEventListener('message', (ev) => {
+        if (ev.data instanceof ArrayBuffer) {
+          if (ttsActive) handlers.onTtsChunk(ev.data);
+          return;
+        }
+        try {
+          const msg = JSON.parse(String(ev.data)) as {
+            type: string;
+            text?: string;
+            final?: boolean;
+            sampleRate?: number;
+            message?: string;
+          };
+          if (msg.type === 'transcript') handlers.onTranscript({ text: msg.text ?? '', final: !!msg.final });
+          else if (msg.type === 'tts-start') {
+            ttsActive = true;
+            handlers.onTtsStart(msg.sampleRate ?? 24000);
+          } else if (msg.type === 'tts-end') {
+            ttsActive = false;
+            handlers.onTtsEnd();
+          } else if (msg.type === 'voice-error') handlers.onError(msg.message ?? 'Voice error');
+        } catch {
+          /* ignore malformed frames */
+        }
+      });
+      vws.addEventListener('error', () => handlers.onError('Voice channel disconnected'));
+
+      const sendJson = (obj: unknown) => {
+        if (vws.readyState === WebSocket.OPEN) vws.send(JSON.stringify(obj));
+        else vws.addEventListener('open', () => vws.send(JSON.stringify(obj)), { once: true });
+      };
+
+      return {
+        micStart: (sampleRate) => sendJson({ type: 'mic-start', sampleRate }),
+        sendPcm: (chunk) => {
+          if (vws.readyState === WebSocket.OPEN) vws.send(chunk);
+        },
+        micStop: () => sendJson({ type: 'mic-stop' }),
+        stopTts: () => sendJson({ type: 'tts-stop' }),
+        close: () => vws.close(),
+      };
+    },
   };
 }
 
