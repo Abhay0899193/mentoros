@@ -19,6 +19,17 @@
 
 5. **Architecture boundary (plan.md §2.2).** All core calls go through `lib/coreClient.ts`. No screen imports `electron` directly — this keeps the future web/mobile/SaaS path open.
 
+## Sub-agents — delegate to keep cost down (plan.md §0.6)
+Route work to the cheapest capable worker. **Keep on Fable 5 (yourself) only:** the design-system foundation, the GLSL Orb shader, and the hero Chat/Voice screens.
+
+- **builder** (Sonnet) — routine UI screens, forms, list views, simple wiring, test scaffolding.
+- **core-engineer** (Opus 4.8) — non-visual core: Electron main, sidecar supervision, SQLite/FTS5, LanceDB, memory upsert, router, `coreClient`.
+- **verifier** (Sonnet) — run app/tests/installs/logs in isolation; returns a summary only. Use before every check-in.
+- **design-reviewer** (Sonnet) — screenshot each screen (dark+light+states) and audit against §3.0 invariants. Use at the end of every screen/phase.
+- **researcher** (Haiku) — read-only lookups (library APIs, integration specifics, current model IDs/pricing).
+
+Delegate verbose work (runs, tests, installs, indexing, doc lookups) so only summaries return to your context.
+
 ## Session start / resume
 - On a fresh session, read `PROGRESS.md` first to see current state and the exact next step, then read `plan.md`.
 - Leave the tree clean and runnable at every stop. Update `PROGRESS.md` before ~60% context usage and at every phase gate.
