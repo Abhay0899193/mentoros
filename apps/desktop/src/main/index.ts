@@ -39,7 +39,7 @@ async function createWindow(corePort: number): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  core = await startCore();
+  core = await startCore({ dataDir: join(app.getPath("userData"), "data") });
 
   await createWindow(core.port);
 

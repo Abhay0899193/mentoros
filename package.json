@@ -12,6 +12,6 @@
     "typecheck": "pnpm --filter @mentoros/desktop typecheck"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["electron", "esbuild"]
+    "onlyBuiltDependencies": ["electron", "esbuild", "better-sqlite3"]
   }
 }

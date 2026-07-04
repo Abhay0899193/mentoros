@@ -17,6 +17,9 @@
 - Design-review nits deferred: context panel should auto-collapse under ~900px width; light-theme `--faint` contrast re-check when real screens land.
 - CDP screenshot recipe: `pnpm --filter @mentoros/desktop dev -- --remote-debugging-port=9222` (single `--`), drive via ws + Page.captureScreenshot. 1a screenshots in scratchpad `/1a/`.
 
+- 1c research (done): STT = whisper.cpp (`brew install whisper-cpp` or source w/ GGML_METAL), model `ggml-small.en.bin` (466 MiB, HF ggerganov/whisper.cpp); no native WS streaming — use whisper-stream/server or wrap. TTS = **Kokoro instead of Piper** (Piper repo archived Oct 2025, python-only fork, seconds-level latency; Kokoro ~100ms TTFA on M4 Pro via kokoro/kokoro-mlx, 24kHz PCM streaming). Piper fallback: OHF-Voice/piper1-gpl + en_US-lessac-medium.
+- Voice-loop state machine + CSS FallbackOrb already written (`renderer/orb/orbState.ts`, `FallbackOrb.tsx`) — shader Orb + audio plumbing still pending in 1c.
+
 ## Open questions for the user
 - (none)
 
