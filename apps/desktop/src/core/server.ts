@@ -9,6 +9,7 @@ import {
   modelStatus as probeModelStatus,
   pullModel,
 } from "./ollama.js";
+import { registerVoice } from "./voice/index.js";
 import type { CoreEvents, Persona } from "./types.js";
 
 /**
@@ -161,6 +162,9 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     });
     return reply.code(202).send({ model });
   });
+
+  /* -------------------------------- voice -------------------------------- */
+  registerVoice(app, { broadcast, dataDir });
 
   return app;
 }

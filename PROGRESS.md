@@ -4,10 +4,13 @@
 > Update this at every phase gate and before ~60% context usage. **Never** move volatile state back into `plan.md`.
 
 ## Current status
-- **Phase:** 1 — Stages 1a and 1b DONE (verified E2E + vision-audited, committed). Stage 1c (Voice + Orb) starting.
-- **Next step:** 1c — Fable: GLSL Orb (three/r3f) + Voice Mode screen wired to orbState machine; core-engineer: whisper.cpp + Kokoro sidecars, /voice WS audio protocol, global push-to-talk + tray.
-- **1b verified:** streaming ladder (prose→hint1→hint2→approach→solution) over WS; stop→partial persistence; Ollama-offline → fast probe + designed banner + error event (user msg still persisted); SQLite at userData/data; thread auto-titling. Screenshots in scratchpad `/1b/`.
-- **Approved Phase-1 execution plan:** `~/.claude/plans/read-plan-md-and-eager-blossom.md`. User chose **non-blocking 1a gate** (screenshots posted async, build continues).
+- **Phase:** 1 COMPLETE (1a+1b+1c built, verified, committed). **At the hard Phase-1 check-in gate — waiting for user approval + live demo before Phase 2.**
+- **Next step (after approval):** Phase 2 — Knowledge Memory (memory records + LanceDB embeddings + upsert-by-similarity + recall injection + graph).
+- **1b verified:** streaming ladder over WS; stop→partial persistence; Ollama-offline designed banner + error event; SQLite at userData/data. Screenshots `/1b/`.
+- **1c verified:** whisper small.en arm64+Metal (~514ms warm) + Kokoro af_heart (~560ms TTFC) sidecars, /voice WS matches contract exactly; UI: real TTS → orb speaking → idle on tts-end; interrupt ducks; 4 orb states visually distinct; reduced-motion FallbackOrb OK. Screenshots `/1c/`.
+- **Needs the user live (first run):** macOS mic permission prompt → real hold-Space voice loop; network-off repeat; ⌥Space may need Accessibility permission; first whisper call pays one-time ~7s Metal shader compile.
+- **Known 1c gaps (deliberate):** no interim transcripts (final on release only); barge-in is PTT/tap-triggered, hands-free VAD later; wake word deferred to onboarding phase.
+- **Approved Phase-1 execution plan:** `~/.claude/plans/read-plan-md-and-eager-blossom.md`.
 
 ## Decisions log
 - Node via nvm v22.16.0 (`.nvmrc`), pnpm via corepack. Machine default node is v12 — always `export PATH="$HOME/.nvm/versions/node/v22.16.0/bin:$PATH"`.

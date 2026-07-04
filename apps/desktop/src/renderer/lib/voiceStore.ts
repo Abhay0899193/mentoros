@@ -46,6 +46,12 @@ let transcriptTimeout: ReturnType<typeof setTimeout> | null = null;
 export const micLevelRef: React.MutableRefObject<number> = { current: 0 };
 export const ttsLevelRef = ttsPlayer.levelRef;
 
+declare global {
+  interface Window {
+    __voice?: unknown;
+  }
+}
+
 export const useVoice = create<VoiceStoreState>((set, get) => {
   const dispatch = (event: Parameters<typeof transition>[1]) =>
     set((s) => ({ orb: transition(s.orb, event) }));
@@ -247,3 +253,9 @@ export const useVoice = create<VoiceStoreState>((set, get) => {
     },
   };
 });
+
+// Dev-only: lets vision self-verification (CDP) drive Orb states without a
+// human at the mic. Stripped from production bundles by the DEV guard.
+if (import.meta.env.DEV) {
+  window.__voice = useVoice;
+}
