@@ -4,8 +4,9 @@
 > Update this at every phase gate and before ~60% context usage. **Never** move volatile state back into `plan.md`.
 
 ## Current status
-- **Phase:** 1 — Stage 1a DONE (verified + design-audited). Stage 1b (local chat) starting.
-- **Next step:** 1b — Fable builds Chat screen (§4.2); core-engineer builds Ollama adapter + SQLite threads + degraded states behind the coreClient contract.
+- **Phase:** 1 — Stages 1a and 1b DONE (verified E2E + vision-audited, committed). Stage 1c (Voice + Orb) starting.
+- **Next step:** 1c — Fable: GLSL Orb (three/r3f) + Voice Mode screen wired to orbState machine; core-engineer: whisper.cpp + Kokoro sidecars, /voice WS audio protocol, global push-to-talk + tray.
+- **1b verified:** streaming ladder (prose→hint1→hint2→approach→solution) over WS; stop→partial persistence; Ollama-offline → fast probe + designed banner + error event (user msg still persisted); SQLite at userData/data; thread auto-titling. Screenshots in scratchpad `/1b/`.
 - **Approved Phase-1 execution plan:** `~/.claude/plans/read-plan-md-and-eager-blossom.md`. User chose **non-blocking 1a gate** (screenshots posted async, build continues).
 
 ## Decisions log
@@ -19,6 +20,10 @@
 
 - 1c research (done): STT = whisper.cpp (`brew install whisper-cpp` or source w/ GGML_METAL), model `ggml-small.en.bin` (466 MiB, HF ggerganov/whisper.cpp); no native WS streaming — use whisper-stream/server or wrap. TTS = **Kokoro instead of Piper** (Piper repo archived Oct 2025, python-only fork, seconds-level latency; Kokoro ~100ms TTFA on M4 Pro via kokoro/kokoro-mlx, 24kHz PCM streaming). Piper fallback: OHF-Voice/piper1-gpl + en_US-lessac-medium.
 - Voice-loop state machine + CSS FallbackOrb already written (`renderer/orb/orbState.ts`, `FallbackOrb.tsx`) — shader Orb + audio plumbing still pending in 1c.
+
+- better-sqlite3 must be built for **arm64** (nvm node is x86_64/Rosetta but Electron is arm64): postinstall pinned to `electron-rebuild -f -w better-sqlite3 --arch arm64`.
+- 1b core-engineer run was killed by a session limit mid-task; Fable finished the last wiring (dataDir passthrough, arm64 rebuild) per the escalate-once rule.
+- `pkill -f ollama` is case-insensitive-trap: menubar app is `Ollama` (capital) and respawns `ollama serve`; use `pkill -9 -f -i ollama` in tests, restore with `open -a Ollama`.
 
 ## Open questions for the user
 - (none)
