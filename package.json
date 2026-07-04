@@ -1,0 +1,17 @@
+{
+  "name": "mentoros",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.1.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @mentoros/desktop dev",
+    "build": "pnpm --filter @mentoros/desktop build",
+    "typecheck": "pnpm --filter @mentoros/desktop typecheck"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron", "esbuild"]
+  }
+}
