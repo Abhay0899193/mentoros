@@ -106,19 +106,31 @@ export function migrateKb(db: Database.Database): void {
 }
 
 /**
- * Turn a free-text query into a safe FTS5 MATCH expression. FTS5 treats bare
+ * Turn a free-text query into safe FTS5 MATCH expressions. FTS5 treats bare
  * double-quotes, `*`, `(`, `:`, `-`, `^`, etc. as syntax; an unbalanced quote is
- * a hard error. We tokenize to alphanumerics and OR the terms as quoted phrases
- * so any user input is inert. Empty ⇒ null (caller skips the FTS leg).
+ * a hard error. We tokenize to alphanumerics and quote every term so any user
+ * input is inert. Empty ⇒ null (caller skips the FTS leg).
+ *
+ * `strict` requires every term (implicit AND) — the honest lexical signal.
+ * `loose` ORs the terms, but is only worth consulting for short keyword
+ * queries: on longer natural-language queries a single stray term match ("my
+ * favorite pizza…" hitting a doc that merely says "favorite") ranks as top
+ * relevance and reads as junk — those queries are the vector leg's job.
  */
-export function sanitizeFtsQuery(query: string): string | null {
+export function sanitizeFtsQuery(
+  query: string,
+): { strict: string; loose: string; termCount: number } | null {
   const terms = query
     .toLowerCase()
     .split(/[^a-z0-9]+/i)
     .filter((t) => t.length > 0);
   if (terms.length === 0) return null;
-  return terms.map((t) => `"${t}"`).join(" OR ");
+  const quoted = terms.map((t) => `"${t}"`);
+  return { strict: quoted.join(" "), loose: quoted.join(" OR "), termCount: terms.length };
 }
+
+/** Loose OR matching is consulted only for queries of at most this many terms. */
+export const FTS_LOOSE_MAX_TERMS = 2;
 
 interface SourceRow {
   id: string;
@@ -225,6 +237,12 @@ export class KbStore implements IKbStore {
   ftsSearch(query: string, limit: number, sourceIds?: string[]): string[] {
     const match = sanitizeFtsQuery(query);
     if (!match) return [];
+    const strict = this.runFtsMatch(match.strict, limit, sourceIds);
+    if (strict.length > 0 || match.termCount > FTS_LOOSE_MAX_TERMS) return strict;
+    return this.runFtsMatch(match.loose, limit, sourceIds);
+  }
+
+  private runFtsMatch(match: string, limit: number, sourceIds?: string[]): string[] {
     let sql = `SELECT f.chunk_id AS chunkId
                FROM kb_chunks_fts f
                JOIN kb_chunks c ON c.id = f.chunk_id

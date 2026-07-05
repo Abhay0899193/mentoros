@@ -225,7 +225,7 @@ export class ChatEngine {
   /**
    * Ground the answer on the personal KB (§4.7). Hybrid-search the user's
    * message; if the retrieval is strong enough (see KbEngine.isGrounded — a
-   * lexical top hit, or a vector top hit ≥ 0.45 cosine) inject numbered excerpts
+   * lexical top hit, or a vector top hit clearing GROUND_VECTOR_MIN) inject numbered excerpts
    * and instruct the model to cite `[n]`. Emits `chat.sources` up front and
    * persists the citations on the assistant row so pills survive reopen. Returns
    * a system-role block to prepend, or null when nothing relevant / no KB engine.

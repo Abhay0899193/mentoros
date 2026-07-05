@@ -131,12 +131,18 @@ export async function hybridSearch(
 
   let vecHits: KbVectorHit[] = [];
   const vec = await deps.embed(q, "query");
-  // Floor the semantic leg: without it a nonsense query still "finds" the
+  // Gate the semantic leg: without it a nonsense query still "finds" the
   // nearest chunks and rank-normalization dresses them up as 90%+ relevant.
-  if (vec)
+  // A vector hit counts only when the lexical leg corroborates it (short
+  // keyword queries score as low as junk on nomic — measured: "sliding
+  // window" 0.53 vs "asdf qwerty" 0.57) or its cosine clears the floor that
+  // junk never reaches (junk tops out ~0.57; real semantic matches 0.72+).
+  if (vec) {
+    const ftsSet = new Set(ftsIds);
     vecHits = deps.vectors
       .search(vec, VEC_TAKE, sourceIds)
-      .filter((h) => h.score >= GROUND_VECTOR_MIN);
+      .filter((h) => ftsSet.has(h.chunkId) || h.score >= GROUND_VECTOR_MIN);
+  }
 
   const fused = fuse(ftsIds, vecHits).slice(0, k);
   const hits: HybridHit[] = [];
@@ -177,12 +183,15 @@ export function toKbSearchHit(hit: HybridHit): KbSearchHit {
 /* ------------------------------ grounding gate ----------------------------- */
 
 /**
- * Pre-fusion cosine at/above which a vector-only top hit is strong enough to
- * ground an answer. Below this we treat the retrieval as chit-chat noise and do
- * NOT inject KB context. Lexical (FTS / both-leg) top hits always ground —
- * an exact keyword match in the docs is a strong signal on its own.
+ * Pre-fusion cosine at/above which an uncorroborated vector hit is trusted —
+ * used both to gate the semantic search leg and to decide chat grounding for a
+ * vector-only top hit. Calibrated against the real KB with nomic-embed-text
+ * (query→document, asymmetric): junk/off-topic queries top out ≈0.57 while
+ * genuine semantic matches land 0.72+, so 0.6 sits in the gap. Lexical
+ * (FTS / both-leg) hits bypass this — an exact keyword match in the docs is a
+ * strong signal on its own.
  */
-export const GROUND_VECTOR_MIN = 0.45;
+export const GROUND_VECTOR_MIN = 0.6;
 
 export function isGrounded(hits: HybridHit[]): boolean {
   const top = hits[0];
