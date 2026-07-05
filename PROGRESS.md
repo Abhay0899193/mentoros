@@ -4,8 +4,19 @@
 > Update this at every phase gate and before ~60% context usage. **Never** move volatile state back into `plan.md`.
 
 ## Current status
-- **Phase:** 1 COMPLETE (1a+1b+1c built, verified, committed). **At the hard Phase-1 check-in gate — waiting for user approval + live demo before Phase 2.**
-- **Next step (after approval):** Phase 2 — Knowledge Memory (memory records + LanceDB embeddings + upsert-by-similarity + recall injection + graph).
+- **Phase:** 1 APPROVED by user (2026-07-05, confirmed working offline live). Next: combined Phase 2+3 plan proposed, awaiting approval.
+- **Next step (after approval):** Phase 2+3 combined — Memory core → importers for user's real data → Daily Loop.
+
+## User's real-data sources (reviewed 2026-07-05 — import these, they replace synthetic seed)
+- **`~/Documents/abhay/3-month-challenge/`** — 147 `day-*.md` (21 weeks: DSA + infra skill per day) with a WORKING parser → `study-ui/data/parsed-plan.json` (stable task IDs `phase-n-week-w-day-d-lc-num`, typed tasks, difficulty). No persisted progress (only localStorage in their study-ui) → MentorOS Learning Engine becomes the real tracker. User says daily volume is too heavy — mission selection should right-size.
+- **`~/Documents/abhay/interview-prep/`** — 86 md, ~1 week of data, but PRESCRIPTIVE schemas: `recurring-mistakes.md` (mistake tally: Complexity miscalc ×8, Missed optimization ×4…), `review-queue.md` (spaced-rep grades 0-5 + ISO next-review dates), `patterns-learned.md` (confidence 1-5), per-problem interrogation scorecards, journal. Maps ~1:1 to memory types (mistake/skill/learning). `DSA/patterns/` (9 playbooks) + `System Design/concepts/` → Phase 4 KB import. Its CLAUDE.md interview protocol (Frame→Interrogate→Scorecard) is the spec to reuse for Phase 5.
+
+## Improvement backlog (user feedback at Phase-1 gate — schedule in Phase 7 unless pulled earlier)
+- STT accuracy "a bit sloppy" → offer whisper `medium.en` / `large-v3-turbo` as a quality option (small.en stays default for latency).
+- Only one TTS voice → voice picker (Kokoro ships ~54 voices; cheap win, Settings).
+- Avatar/"face" for the mentor (big; design exploration later — Orb stays the primary identity).
+- **Model switching incl. cloud** (Claude Opus / Fable via the §2.4 router, opt-in + budget) — Phase 7 cloud adapters; look up current model IDs/pricing then.
+- Interim (live) transcripts while speaking; hands-free VAD barge-in; wake word (onboarding phase).
 - **1b verified:** streaming ladder over WS; stop→partial persistence; Ollama-offline designed banner + error event; SQLite at userData/data. Screenshots `/1b/`.
 - **1c verified:** whisper small.en arm64+Metal (~514ms warm) + Kokoro af_heart (~560ms TTFC) sidecars, /voice WS matches contract exactly; UI: real TTS → orb speaking → idle on tts-end; interrupt ducks; 4 orb states visually distinct; reduced-motion FallbackOrb OK. Screenshots `/1c/`.
 - **Needs the user live (first run):** macOS mic permission prompt → real hold-Space voice loop; network-off repeat; ⌥Space may need Accessibility permission; first whisper call pays one-time ~7s Metal shader compile.
