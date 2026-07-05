@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 import type {
   ChatMessage,
+  MessageCitation,
   Persona,
   SegmentBlock,
   ThreadSummary,
@@ -50,11 +51,19 @@ export class Store {
         role TEXT NOT NULL,
         persona TEXT,
         segments_json TEXT NOT NULL,
+        citations_json TEXT,
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_messages_thread
         ON messages(thread_id, created_at);
     `);
+    // Additive migration for databases created before Phase 4.
+    const cols = this.db
+      .prepare(`PRAGMA table_info(messages)`)
+      .all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === "citations_json")) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN citations_json TEXT`);
+    }
   }
 
   close(): void {
@@ -130,17 +139,10 @@ export class Store {
   getMessages(threadId: string): ChatMessage[] {
     const rows = this.db
       .prepare(
-        `SELECT id, thread_id, role, persona, segments_json, created_at
+        `SELECT id, thread_id, role, persona, segments_json, citations_json, created_at
          FROM messages WHERE thread_id = ? ORDER BY created_at ASC, rowid ASC`,
       )
-      .all(threadId) as Array<{
-      id: string;
-      thread_id: string;
-      role: "user" | "assistant";
-      persona: string | null;
-      segments_json: string;
-      created_at: string;
-    }>;
+      .all(threadId) as MessageRow[];
     return rows.map(rowToMessage);
   }
 
@@ -199,6 +201,23 @@ export class Store {
       .get(id) as { thread_id: string } | undefined;
     if (row) this.touchThread(row.thread_id);
   }
+
+  /** Persist KB citations on an assistant message so pills survive reopen. */
+  setMessageCitations(id: string, citations: MessageCitation[]): void {
+    this.db
+      .prepare(`UPDATE messages SET citations_json = ? WHERE id = ?`)
+      .run(JSON.stringify(citations), id);
+  }
+}
+
+interface MessageRow {
+  id: string;
+  thread_id: string;
+  role: "user" | "assistant";
+  persona: string | null;
+  segments_json: string;
+  citations_json: string | null;
+  created_at: string;
 }
 
 function displayTitle(title: string | null): string {
@@ -210,14 +229,7 @@ function truncateTitle(content: string): string {
   return clean.length > TITLE_MAX ? `${clean.slice(0, TITLE_MAX)}…` : clean;
 }
 
-function rowToMessage(row: {
-  id: string;
-  thread_id: string;
-  role: "user" | "assistant";
-  persona: string | null;
-  segments_json: string;
-  created_at: string;
-}): ChatMessage {
+function rowToMessage(row: MessageRow): ChatMessage {
   const message: ChatMessage = {
     id: row.id,
     threadId: row.thread_id,
@@ -226,6 +238,10 @@ function rowToMessage(row: {
     segments: JSON.parse(row.segments_json) as SegmentBlock[],
   };
   if (row.persona) message.persona = row.persona as Persona;
+  if (row.citations_json) {
+    const citations = JSON.parse(row.citations_json) as MessageCitation[];
+    if (citations.length) message.citations = citations;
+  }
   return message;
 }
 

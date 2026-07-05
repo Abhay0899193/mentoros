@@ -27,12 +27,25 @@ function splitFences(text: string): Part[] {
   return parts;
 }
 
-/** Inline: `code` and **bold** only. */
-function Inline({ text }: { text: string }) {
-  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+/** Inline: `code`, **bold**, and — for grounded answers — [n] citation markers. */
+function Inline({ text, citedNs }: { text: string; citedNs?: ReadonlySet<number> }) {
+  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[\d{1,2}\])/g);
   return (
     <>
       {tokens.map((t, i) => {
+        if (citedNs && /^\[\d{1,2}\]$/.test(t)) {
+          const n = Number(t.slice(1, -1));
+          if (citedNs.has(n)) {
+            return (
+              <sup
+                key={i}
+                className="mx-0.5 inline-flex h-[15px] min-w-[15px] translate-y-[-1px] items-center justify-center rounded-full border border-line bg-surface-2 px-1 font-mono text-[10px] leading-none text-muted"
+              >
+                {n}
+              </sup>
+            );
+          }
+        }
         if (t.startsWith('`') && t.endsWith('`') && t.length > 1) {
           return (
             <code key={i} className="rounded-[6px] bg-surface-2 px-1 py-0.5 font-mono text-[13px] text-ink">
@@ -53,8 +66,16 @@ function Inline({ text }: { text: string }) {
   );
 }
 
-function StreamWords({ text, streaming }: { text: string; streaming: boolean }) {
-  if (!streaming) return <Inline text={text} />;
+function StreamWords({
+  text,
+  streaming,
+  citedNs,
+}: {
+  text: string;
+  streaming: boolean;
+  citedNs?: ReadonlySet<number>;
+}) {
+  if (!streaming) return <Inline text={text} citedNs={citedNs} />;
   // Per-word fade-in (§3.4). Index keys are stable: streamed text only appends.
   const words = text.split(/(\s+)/);
   return (
@@ -64,7 +85,7 @@ function StreamWords({ text, streaming }: { text: string; streaming: boolean }) 
           <Fragment key={i}>{w}</Fragment>
         ) : (
           <span key={i} className="word-in">
-            <Inline text={w} />
+            <Inline text={w} citedNs={citedNs} />
           </span>
         ),
       )}
@@ -78,6 +99,8 @@ export interface RichTextProps {
   streaming?: boolean;
   showCaret?: boolean;
   onExplainLine?: (line: string) => void;
+  /** Citation numbers with a real source behind them — bare [n] otherwise renders as text. */
+  citedNs?: ReadonlySet<number>;
 }
 
 export const RichText = memo(function RichText({
@@ -85,6 +108,7 @@ export const RichText = memo(function RichText({
   streaming = false,
   showCaret = false,
   onExplainLine,
+  citedNs,
 }: RichTextProps) {
   const parts = splitFences(text);
   const lastTextIdx = parts.reduce((acc, p, i) => (p.kind === 'text' ? i : acc), -1);
@@ -96,7 +120,7 @@ export const RichText = memo(function RichText({
           <CodeBlock key={i} code={p.content} lang={p.lang} onExplainLine={onExplainLine} />
         ) : (
           <div key={i} className="whitespace-pre-wrap">
-            <StreamWords text={p.content} streaming={streaming} />
+            <StreamWords text={p.content} streaming={streaming} citedNs={citedNs} />
             {showCaret && i === lastTextIdx && (
               <span className="caret-pulse ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] rounded-full bg-iris" />
             )}

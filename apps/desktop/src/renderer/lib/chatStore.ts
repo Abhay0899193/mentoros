@@ -86,6 +86,12 @@ export const useChat = create<ChatState>((set, get) => ({
       if (phase === 'error') void get().refreshModelStatus();
     });
 
+    coreClient.on('chat.sources', ({ messageId, citations }) => {
+      set((s) => ({
+        messages: s.messages.map((m) => (m.id === messageId ? { ...m, citations } : m)),
+      }));
+    });
+
     coreClient.on('models.pull', ({ completedBytes, totalBytes, done, error }) => {
       set({ pull: { active: !done, completedBytes, totalBytes, error } });
       if (done && !error) void get().refreshModelStatus();

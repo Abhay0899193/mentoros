@@ -8,6 +8,7 @@ import { VoiceScreen } from './screens/voice/VoiceScreen';
 import { MemoryScreen } from './screens/memory/MemoryScreen';
 import { HomeScreen } from './screens/home/HomeScreen';
 import { LearningScreen } from './screens/learning/LearningScreen';
+import { KnowledgeScreen } from './screens/knowledge/KnowledgeScreen';
 import { coreClient } from '../lib/coreClient';
 import { useShell, MODULES, DESIGN_MODULE } from '../lib/store';
 import { toast } from '../ui';
@@ -20,6 +21,7 @@ function ActiveScreen() {
   if (active === 'memory') return <MemoryScreen />;
   if (active === 'home') return <HomeScreen />;
   if (active === 'learning') return <LearningScreen />;
+  if (active === 'knowledge') return <KnowledgeScreen />;
   const meta = MODULES.find((m) => m.id === active) ?? DESIGN_MODULE;
   return <Placeholder meta={meta} />;
 }

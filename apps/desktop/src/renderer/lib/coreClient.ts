@@ -47,6 +47,8 @@ export interface ChatMessage {
   persona?: Persona;
   createdAt: string; // ISO
   segments: SegmentBlock[];
+  /** Set on assistant messages grounded on KB sources (Phase 4). */
+  citations?: MessageCitation[];
 }
 
 export interface ModelStatus {
@@ -219,6 +221,67 @@ export interface HeatCell {
   count: number;
 }
 
+/* ---------------- Knowledge Base (Phase 4) ---------------- */
+
+export type KbKind = 'pdf' | 'md' | 'txt' | 'folder';
+
+/** One ingested source (file or folder of files) in the personal KB (§4.7). */
+export interface KbSource {
+  id: string;
+  kind: KbKind;
+  title: string;
+  /** Absolute path on disk at ingest time. */
+  path: string;
+  chunkCount: number;
+  /** Files indexed (1 for single files, N for folders). */
+  fileCount: number;
+  indexedAt: string; // ISO
+  tags: string[];
+}
+
+/**
+ * One hybrid-search hit. `matched` tells the UI which legs found it —
+ * when Ollama is down search degrades to FTS5-only and every hit is 'fts'.
+ */
+export interface KbSearchHit {
+  chunkId: string;
+  sourceId: string;
+  sourceTitle: string;
+  kind: KbKind;
+  /** Nearest markdown heading / PDF page marker, when known. */
+  section?: string;
+  snippet: string;
+  /** Fused reciprocal-rank score, normalized 0..1 within the result set. */
+  score: number;
+  matched: 'vector' | 'fts' | 'both';
+}
+
+/** A source MentorOS proactively offers to index (e.g. interview-prep playbooks). */
+export interface KbSuggestedSource {
+  path: string;
+  title: string;
+  kind: KbKind;
+  tags: string[];
+  /** Teaching transparency: why this is offered. */
+  reason: string;
+  /** True when already ingested (offer becomes "re-index"). */
+  ingested: boolean;
+}
+
+/**
+ * A numbered citation on a grounded assistant answer. `n` matches the `[n]`
+ * markers in the answer text; persisted on the message so threads re-open
+ * with their pills intact.
+ */
+export interface MessageCitation {
+  n: number;
+  sourceId: string;
+  chunkId: string;
+  title: string;
+  snippet: string;
+  score: number;
+}
+
 /* ---------------- Voice (Stage 1c) ---------------- */
 
 export interface VoiceStatus {
@@ -298,6 +361,31 @@ export interface CoreEvents {
   /** After any task/mission completion — keeps Home/Learning live. */
   'learning.progress': { summary: LearningSummary };
   'mission.updated': { mission: TodayMission };
+  /** Ingest progress for one source (drives the drag-drop progress toast). */
+  'kb.ingest': {
+    /** Set once the source row exists. */
+    sourceId?: string;
+    path: string;
+    step: 'reading' | 'chunking' | 'embedding' | 'indexing' | 'done' | 'error';
+    /** For folders: which file of how many. */
+    fileIndex?: number;
+    fileCount?: number;
+    chunksDone: number;
+    chunksTotal: number;
+    done: boolean;
+    error?: string;
+  };
+  /** A source was added/updated/removed — KB library refetches its grid. */
+  'kb.updated': { sources: KbSource[] };
+  /**
+   * KB chunks injected into a generation — mirrors `chat.context` and feeds
+   * the "Sources cited" panel + the numbered pills under the answer.
+   */
+  'chat.sources': {
+    threadId: string;
+    messageId: string;
+    citations: MessageCitation[];
+  };
 }
 
 export interface CoreClient {
@@ -347,6 +435,25 @@ export interface CoreClient {
   completeMissionItem(itemId: string, done: boolean): Promise<TodayMission>;
   reviewQueue(): Promise<ReviewItem[]>;
   heatmap(days?: number): Promise<HeatCell[]>;
+
+  /* knowledge base */
+  listKbSources(): Promise<KbSource[]>;
+  /**
+   * Ingest a file or folder (md/txt/pdf). Resolves once the source row exists;
+   * chunk/embed progress streams via `kb.ingest`. Re-ingesting the same path
+   * is idempotent: it re-indexes in place, same source id.
+   */
+  ingestKbSource(path: string, opts?: { title?: string; tags?: string[] }): Promise<{ sourceId: string }>;
+  /** Removes the source and all its chunks from both indexes. */
+  deleteKbSource(id: string): Promise<void>;
+  /** Hybrid FTS5+vector search over all indexed chunks (RRF-fused). */
+  hybridSearch(query: string, opts?: { k?: number; sourceIds?: string[] }): Promise<KbSearchHit[]>;
+  /** Sources MentorOS proactively offers to index (interview-prep playbooks…). */
+  kbSuggestions(): Promise<KbSuggestedSource[]>;
+  /** Raw text of a md/txt source (or one file inside a folder source) for the reading view. */
+  kbSourceText(id: string, filePath?: string): Promise<{ title: string; kind: KbKind; text: string; files?: string[] }>;
+  /** Reveal the source file in the OS file manager (PDF reading-view fallback). */
+  openKbSource(id: string): Promise<void>;
 
   /* voice */
   voiceStatus(): Promise<VoiceStatus>;
@@ -496,6 +603,20 @@ export function createCoreClient(): CoreClient {
     completeMissionItem: (itemId, done) => post<TodayMission>(`/mission/items/${itemId}/complete`, { done }),
     reviewQueue: () => get<ReviewItem[]>('/learning/reviews'),
     heatmap: (days) => get<HeatCell[]>(`/learning/heatmap${days ? `?days=${days}` : ''}`),
+
+    listKbSources: () => get<KbSource[]>('/kb/sources'),
+    ingestKbSource: (path, opts) => post<{ sourceId: string }>('/kb/sources', { path, ...opts }),
+    deleteKbSource: (id) =>
+      fetch(`${baseUrl}/kb/sources/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`core request failed: ${r.status}`);
+      }),
+    hybridSearch: (query, opts) => post<KbSearchHit[]>('/kb/search', { query, ...opts }),
+    kbSuggestions: () => get<KbSuggestedSource[]>('/kb/suggestions'),
+    kbSourceText: (id, filePath) =>
+      get<{ title: string; kind: KbKind; text: string; files?: string[] }>(
+        `/kb/sources/${id}/text${filePath ? `?file=${encodeURIComponent(filePath)}` : ''}`,
+      ),
+    openKbSource: (id) => post<void>(`/kb/sources/${id}/open`),
 
     voiceStatus: () => get<VoiceStatus>('/voice/status'),
     installVoice: () => post<void>('/voice/install'),

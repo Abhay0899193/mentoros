@@ -4,10 +4,13 @@ import type { OllamaMessage } from "./ollama.js";
 import { systemPrompt } from "./personas.js";
 import { TeachingSegmenter } from "./segmenter.js";
 import type { MemoryEngine } from "./memory/engine.js";
+import type { KbEngine } from "./kb/engine.js";
+import type { HybridHit } from "./kb/search.js";
 import type {
   ChatMessage,
   CoreEvents,
   MemoryType,
+  MessageCitation,
   Persona,
   RecallHit,
   SaveMemoryInput,
@@ -22,6 +25,10 @@ type Broadcast = <E extends keyof CoreEvents>(
 const RECALL_K = 4;
 const RECALL_MIN_SCORE = 0.5;
 const CONTEXT_BLOCK_MAX = 600;
+
+/** KB grounding (§4.7): at most this many excerpts, each trimmed to EXCERPT_MAX. */
+const GROUND_MAX = 5;
+const EXCERPT_MAX = 700;
 
 /**
  * Auto-capture seed (§Requirement 7): a light heuristic that turns first-person
@@ -67,6 +74,7 @@ export class ChatEngine {
     private readonly store: Store,
     private readonly broadcast: Broadcast,
     private readonly memory?: MemoryEngine,
+    private readonly kb?: KbEngine,
     private readonly model: string = DEFAULT_MODEL,
   ) {}
 
@@ -106,10 +114,14 @@ export class ChatEngine {
       return;
     }
 
-    // Long-term memory recall: inject what we already know before generating.
+    // Long-term memory recall + KB grounding: inject what we know before generating.
     const contextMessage = await this.recallContext(threadId, messageId, userContent);
+    const groundMessage = await this.groundContext(threadId, messageId, userContent);
     const messages = this.buildHistory(threadId, persona, messageId);
-    if (contextMessage) messages.splice(1, 0, contextMessage);
+    const injected: OllamaMessage[] = [];
+    if (contextMessage) injected.push(contextMessage);
+    if (groundMessage) injected.push(groundMessage);
+    if (injected.length) messages.splice(1, 0, ...injected);
     const segmenter = new TeachingSegmenter();
     const controller = new AbortController();
     const gen: ActiveGeneration = { controller, stopped: false };
@@ -203,6 +215,49 @@ export class ChatEngine {
     return { role: "system", content: buildContextBlock(hits) };
   }
 
+  /**
+   * Ground the answer on the personal KB (§4.7). Hybrid-search the user's
+   * message; if the retrieval is strong enough (see KbEngine.isGrounded — a
+   * lexical top hit, or a vector top hit ≥ 0.45 cosine) inject numbered excerpts
+   * and instruct the model to cite `[n]`. Emits `chat.sources` up front and
+   * persists the citations on the assistant row so pills survive reopen. Returns
+   * a system-role block to prepend, or null when nothing relevant / no KB engine.
+   */
+  private async groundContext(
+    threadId: string,
+    messageId: string,
+    userContent: string,
+  ): Promise<OllamaMessage | null> {
+    if (!this.kb || !userContent.trim()) return null;
+    let hits: HybridHit[];
+    try {
+      hits = await this.kb.search(userContent, { k: GROUND_MAX });
+    } catch {
+      return null;
+    }
+    if (hits.length === 0 || !this.kb.isGrounded(hits)) return null;
+
+    const top = hits.slice(0, GROUND_MAX);
+    const citations: MessageCitation[] = top.map((h, i) => ({
+      n: i + 1,
+      sourceId: h.sourceId,
+      chunkId: h.chunkId,
+      title: h.sourceTitle,
+      snippet: h.snippet,
+      score: h.score,
+    }));
+
+    // Emit as soon as grounding is decided (before generation) + persist.
+    this.broadcast("chat.sources", { threadId, messageId, citations });
+    try {
+      this.store.setMessageCitations(messageId, citations);
+    } catch {
+      /* persistence is best-effort; the live pills already went out */
+    }
+
+    return { role: "system", content: buildGroundedBlock(top) };
+  }
+
   /** Seed durable facts from first-person declarations (fire-and-forget). */
   private autoCapture(userContent: string): void {
     if (!this.memory) return;
@@ -263,6 +318,23 @@ function buildContextBlock(hits: RecallHit[]): string {
     length += line.length + 1;
   }
   return `${header}\n${lines.join("\n")}`;
+}
+
+/**
+ * Compose the grounded-context block from KB hits: numbered `[n]` excerpts with
+ * their source titles/sections, capped at EXCERPT_MAX chars each, plus a citing
+ * instruction. The model is told to prefer these excerpts over parametric
+ * knowledge for document-specific questions.
+ */
+function buildGroundedBlock(hits: HybridHit[]): string {
+  const header =
+    "Grounded context from Abhay's knowledge base. When your answer draws on an excerpt, cite it inline as [n]. For questions about these documents, prefer the excerpts over your own general knowledge; if they don't cover it, say so.";
+  const lines = hits.map((h, i) => {
+    const label = h.section ? `${h.sourceTitle} — ${h.section}` : h.sourceTitle;
+    const body = h.text.length > EXCERPT_MAX ? `${h.text.slice(0, EXCERPT_MAX)}…` : h.text;
+    return `[${i + 1}] (${label})\n${body.trim()}`;
+  });
+  return `${header}\n\n${lines.join("\n\n")}`;
 }
 
 function humanError(err: unknown): string {
