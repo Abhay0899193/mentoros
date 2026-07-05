@@ -22,7 +22,9 @@ function SkeletonCard() {
 /** Library grid + suggestions row + empty state (§4.7). */
 export function LibraryGrid() {
   const sources = useKb((s) => s.sources);
-  const suggestions = useKb((s) => s.suggestions.filter((sug) => !sug.ingested));
+  // Select the raw array and filter after — an inline .filter() returns a new
+  // reference every snapshot and sends useSyncExternalStore into a render loop.
+  const suggestions = useKb((s) => s.suggestions).filter((sug) => !sug.ingested);
   const loading = useKb((s) => s.loading);
   const ingest = useKb((s) => s.ingest);
   const setAddOpen = useKb((s) => s.setAddOpen);
