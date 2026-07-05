@@ -105,6 +105,49 @@ export async function chatStream(opts: ChatStreamOptions): Promise<void> {
   }
 }
 
+export interface ChatOnceOptions {
+  model?: string;
+  messages: OllamaMessage[];
+  /** Ollama sampling options, e.g. { temperature: 0, num_predict: 5 }. */
+  options?: Record<string, unknown>;
+  /** Abort after this many ms (default 2500). */
+  timeoutMs?: number;
+}
+
+/**
+ * Single non-streaming completion. Used for short, deterministic classifier
+ * calls (e.g. the memory merge judge). Throws on unreachable daemon / timeout /
+ * HTTP error so callers can treat any failure uniformly (fail-open).
+ */
+export async function chatOnce(opts: ChatOnceOptions): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 2500);
+  try {
+    const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: opts.model ?? DEFAULT_MODEL,
+        messages: opts.messages,
+        stream: false,
+        options: opts.options ?? {},
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`Ollama chat failed: ${res.status} ${res.statusText}`);
+    }
+    const data = (await res.json()) as {
+      message?: { content?: string };
+      error?: string;
+    };
+    if (data.error) throw new Error(data.error);
+    return data.message?.content ?? "";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface PullProgress {
   completedBytes: number;
   totalBytes: number;

@@ -135,6 +135,88 @@ export interface DerivedProfile {
 
 export type ImportSource = 'interview-prep' | '3mc';
 
+/* ---------------- Learning & Daily Loop (Phase 3) ---------------- */
+
+export type TaskKind =
+  | 'leetcode'
+  | 'video'
+  | 'article'
+  | 'docs'
+  | 'book'
+  | 'hands-on'
+  | 'course'
+  | 'review'
+  | 'other';
+
+export interface LearningTask {
+  id: string; // stable id from the 3mc parser (phase-n-week-w-day-d-…)
+  dayId: string;
+  kind: TaskKind;
+  title: string;
+  url?: string;
+  difficulty?: 'Easy' | 'Medium' | 'Hard';
+  done: boolean;
+  completedAt?: string;
+}
+
+export interface LearningDay {
+  id: string;
+  phase: number;
+  week: number;
+  day: number;
+  title: string;
+  state: 'locked' | 'available' | 'current' | 'done';
+  taskCount: number;
+  doneCount: number;
+}
+
+export interface LearningWeek {
+  phase: number;
+  week: number;
+  days: LearningDay[];
+}
+
+export interface LearningSummary {
+  imported: boolean;
+  totalDays: number;
+  doneDays: number;
+  totalTasks: number;
+  doneTasks: number;
+  currentDayId: string | null;
+  xp: number;
+  level: number;
+}
+
+export interface MissionItem {
+  id: string;
+  label: string;
+  kind: TaskKind | 'drill';
+  /** Teaching transparency: why this item — "from your plan, week 12" / "weakness: DP ×8". */
+  reason: string;
+  taskId?: string;
+  url?: string;
+  done: boolean;
+}
+
+/** Right-sized daily selection (4–5 items) — never the raw firehose of the plan. */
+export interface TodayMission {
+  date: string; // YYYY-MM-DD
+  items: MissionItem[];
+  streak: { current: number; best: number };
+}
+
+export interface ReviewItem {
+  memoryId: string;
+  title: string;
+  due: string;
+  lastGrade: number | null;
+}
+
+export interface HeatCell {
+  date: string;
+  count: number;
+}
+
 /* ---------------- Voice (Stage 1c) ---------------- */
 
 export interface VoiceStatus {

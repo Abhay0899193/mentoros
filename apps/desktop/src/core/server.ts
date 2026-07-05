@@ -4,6 +4,8 @@ import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
 import { ChatEngine } from "./chat.js";
 import { defaultDataDir, Store } from "./db.js";
+import { createMemorySystem } from "./memory/index.js";
+import { registerMemoryRoutes } from "./memory/routes.js";
 import {
   DEFAULT_MODEL,
   modelStatus as probeModelStatus,
@@ -61,7 +63,8 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     }
   };
 
-  const engine = new ChatEngine(store, broadcast);
+  const memory = createMemorySystem(dataDir, broadcast);
+  const engine = new ChatEngine(store, broadcast, memory.engine);
 
   void app.register(websocket);
   void app.register(cors, {
@@ -69,6 +72,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   });
 
   app.addHook("onClose", async () => {
+    memory.close();
     store.close();
   });
 
@@ -133,7 +137,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
       const user = store.addUserMessage(threadId, content, resolvedPersona);
       const assistant = store.addAssistantPlaceholder(threadId, resolvedPersona);
       // Respond immediately; tokens/status arrive over the /events websocket.
-      engine.start(assistant, resolvedPersona);
+      engine.start(assistant, resolvedPersona, content);
       return { userMessageId: user.id, assistantMessageId: assistant.id };
     },
   );
@@ -162,6 +166,9 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     });
     return reply.code(202).send({ model });
   });
+
+  /* -------------------------------- memory ------------------------------- */
+  registerMemoryRoutes(app, { engine: memory.engine, broadcast });
 
   /* -------------------------------- voice -------------------------------- */
   registerVoice(app, { broadcast, dataDir });

@@ -75,9 +75,27 @@ export interface ListOpts {
   limit?: number;
 }
 
+/**
+ * The persistence surface MemoryEngine depends on. Extracting it as an interface
+ * keeps the engine testable with an in-memory double under plain Node (the
+ * native better-sqlite3 build targets the arm64 Electron runtime, not the x64
+ * test runner).
+ */
+export interface IMemoryStore {
+  insert(record: MemoryRecord, needsEmbedding: boolean): void;
+  update(record: MemoryRecord, needsEmbedding?: boolean): void;
+  get(id: string): MemoryRecord | undefined;
+  all(): MemoryRecord[];
+  list(opts?: ListOpts): MemoryRecord[];
+  likeSearch(query: string, types: MemoryType[] | undefined, limit: number): MemoryRecord[];
+  delete(id: string): void;
+  pendingEmbedding(): MemoryRecord[];
+  setNeedsEmbedding(id: string, needs: boolean): void;
+}
+
 const DEFAULT_LIMIT = 200;
 
-export class MemoryStore {
+export class MemoryStore implements IMemoryStore {
   constructor(private readonly db: Database.Database) {
     migrateMemory(db);
   }

@@ -3,12 +3,51 @@ import { chatStream, DEFAULT_MODEL, modelStatus } from "./ollama.js";
 import type { OllamaMessage } from "./ollama.js";
 import { systemPrompt } from "./personas.js";
 import { TeachingSegmenter } from "./segmenter.js";
-import type { ChatMessage, CoreEvents, Persona } from "./types.js";
+import type { MemoryEngine } from "./memory/engine.js";
+import type {
+  ChatMessage,
+  CoreEvents,
+  MemoryType,
+  Persona,
+  RecallHit,
+  SaveMemoryInput,
+} from "./types.js";
 
 type Broadcast = <E extends keyof CoreEvents>(
   event: E,
   payload: CoreEvents[E],
 ) => void;
+
+/** Recall tuning for chat context injection (§2.3 / §4.2). */
+const RECALL_K = 4;
+const RECALL_MIN_SCORE = 0.5;
+const CONTEXT_BLOCK_MAX = 600;
+
+/**
+ * Auto-capture seed (§Requirement 7): a light heuristic that turns first-person
+ * declarations into memory records. The full "Save this?" confirmation UI is the
+ * lead agent's job; this just plants durable facts so recall has something to
+ * work with. Keyword → type mapping (documented):
+ *   "my goal" / "i want to become"                        → goal
+ *   "i'm weak" / "i am weak" / "my weakness" / "i struggle with" → skill +weakness
+ *   "i'm good at" / "i am good at" / "my strength"        → skill +strength
+ *   "i prefer" / "remember that"                          → preference
+ * Weakness/strength tags make chat-captured skills surface in
+ * profile.weaknesses / profile.strengths (which filter on those tags).
+ */
+const CAPTURE_RE =
+  /\b(my goal|i want to become|i'm weak|i am weak|my weakness|i struggle with|i'm good at|i am good at|my strength|i prefer|remember that)\b/i;
+
+function captureType(text: string): { type: MemoryType; extraTags: string[] } {
+  if (/\b(my goal|i want to become)\b/i.test(text)) return { type: "goal", extraTags: [] };
+  if (/\b(i'm weak|i am weak|my weakness|i struggle with)\b/i.test(text)) {
+    return { type: "skill", extraTags: ["weakness"] };
+  }
+  if (/\b(i'm good at|i am good at|my strength)\b/i.test(text)) {
+    return { type: "skill", extraTags: ["strength"] };
+  }
+  return { type: "preference", extraTags: [] }; // "i prefer" / "remember that"
+}
 
 interface ActiveGeneration {
   controller: AbortController;
@@ -27,12 +66,13 @@ export class ChatEngine {
   constructor(
     private readonly store: Store,
     private readonly broadcast: Broadcast,
+    private readonly memory?: MemoryEngine,
     private readonly model: string = DEFAULT_MODEL,
   ) {}
 
   /** Fire-and-forget: kicks off async generation for an assistant message. */
-  start(assistant: ChatMessage, persona: Persona): void {
-    void this.run(assistant, persona);
+  start(assistant: ChatMessage, persona: Persona, userContent = ""): void {
+    void this.run(assistant, persona, userContent);
   }
 
   stop(messageId: string): boolean {
@@ -43,7 +83,11 @@ export class ChatEngine {
     return true;
   }
 
-  private async run(assistant: ChatMessage, persona: Persona): Promise<void> {
+  private async run(
+    assistant: ChatMessage,
+    persona: Persona,
+    userContent: string,
+  ): Promise<void> {
     const { id: messageId, threadId } = assistant;
     this.broadcast("chat.status", { messageId, threadId, phase: "thinking" });
 
@@ -62,7 +106,10 @@ export class ChatEngine {
       return;
     }
 
+    // Long-term memory recall: inject what we already know before generating.
+    const contextMessage = await this.recallContext(threadId, messageId, userContent);
     const messages = this.buildHistory(threadId, persona, messageId);
+    if (contextMessage) messages.splice(1, 0, contextMessage);
     const segmenter = new TeachingSegmenter();
     const controller = new AbortController();
     const gen: ActiveGeneration = { controller, stopped: false };
@@ -98,6 +145,7 @@ export class ChatEngine {
       }
       this.store.updateMessageSegments(messageId, segmenter.segments());
       this.broadcast("chat.status", { messageId, threadId, phase: "done" });
+      this.autoCapture(userContent);
     } catch (err) {
       // Persist whatever streamed before the failure/stop either way.
       for (const { segment, token } of segmenter.flush()) {
@@ -117,6 +165,58 @@ export class ChatEngine {
     } finally {
       this.active.delete(messageId);
     }
+  }
+
+  /**
+   * Recall long-term memory for the user's message, broadcast what was used
+   * (feeds the Context panel), and return a system-role context block to prepend
+   * to generation — or null when there is nothing relevant / no memory engine.
+   */
+  private async recallContext(
+    threadId: string,
+    messageId: string,
+    userContent: string,
+  ): Promise<OllamaMessage | null> {
+    if (!this.memory || !userContent.trim()) return null;
+    let hits: RecallHit[];
+    try {
+      hits = await this.memory.recall(userContent, {
+        k: RECALL_K,
+        minScore: RECALL_MIN_SCORE,
+      });
+    } catch {
+      return null;
+    }
+    if (hits.length === 0) return null;
+
+    this.broadcast("chat.context", {
+      threadId,
+      messageId,
+      memories: hits.map((h) => ({
+        id: h.record.id,
+        type: h.record.type,
+        title: h.record.title,
+        score: h.score,
+      })),
+    });
+
+    return { role: "system", content: buildContextBlock(hits) };
+  }
+
+  /** Seed durable facts from first-person declarations (fire-and-forget). */
+  private autoCapture(userContent: string): void {
+    if (!this.memory) return;
+    const text = userContent.trim();
+    if (!text || !CAPTURE_RE.test(text)) return;
+    const { type, extraTags } = captureType(text);
+    const input: SaveMemoryInput = {
+      type,
+      body: text,
+      source: "chat",
+      tags: ["auto", ...extraTags],
+      confidence: 0.6,
+    };
+    void this.memory.saveMemory(input).catch(() => undefined);
   }
 
   /**
@@ -143,6 +243,26 @@ export class ChatEngine {
     }
     return out;
   }
+}
+
+/**
+ * Compose the ≤600-char system-context block from recalled memories. Mistake
+ * counts (tag `count:N`) render as `(×N)` so the model sees frequency.
+ */
+function buildContextBlock(hits: RecallHit[]): string {
+  const header =
+    "What you know about Abhay (long-term memory — use it, don't re-ask):";
+  const lines: string[] = [];
+  let length = header.length;
+  for (const { record } of hits) {
+    const countTag = record.tags.find((t) => /^count:\d+$/i.test(t));
+    const freq = countTag ? ` (×${countTag.split(":")[1]})` : "";
+    const line = `- [${record.type}] ${record.title}${freq}`;
+    if (length + line.length + 1 > CONTEXT_BLOCK_MAX) break;
+    lines.push(line);
+    length += line.length + 1;
+  }
+  return `${header}\n${lines.join("\n")}`;
 }
 
 function humanError(err: unknown): string {

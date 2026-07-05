@@ -10,7 +10,8 @@ import type {
   SaveMemoryResult,
 } from "../types.js";
 import { embed as defaultEmbed, type Embedder } from "./embeddings.js";
-import type { MemoryStore } from "./store.js";
+import { chatOnce } from "../ollama.js";
+import type { IMemoryStore } from "./store.js";
 import type { VectorIndex } from "./vectorIndex.js";
 
 /**
@@ -23,8 +24,28 @@ import type { VectorIndex } from "./vectorIndex.js";
 
 /** Cosine at/above which a save merges into the nearest same-type record. */
 export const SIMILARITY_MERGE_THRESHOLD = 0.86;
+/**
+ * Lexical confirmation guard (deviation, documented). nomic-embed-text compresses
+ * short/templated same-type records so hard that genuinely distinct entities
+ * (e.g. "Review: Word Search II" vs "Review: Pacific Atlantic") score ~0.9998 —
+ * indistinguishable from an exact re-import. Pure-cosine merge would therefore
+ * COLLAPSE distinct facts, the opposite of dedupe. So a merge additionally
+ * requires the titles to name the same entity (token-set Jaccard ≥ this). Exact
+ * restatements / re-imports score 1.0 on both axes, so idempotency is preserved.
+ */
+export const MERGE_LEXICAL_MIN = 0.5;
 /** Recall drops hits weaker than this (contract default for /memories/recall). */
 export const RECALL_MIN_SCORE = 0.45;
+/**
+ * Lower bound of the LLM-judge band. nomic separates paraphrase-of-same-fact
+ * from distinct-fact poorly on short text (paraphrases can score 0.70 while
+ * DISTINCT templated rows score 0.99+), so cosine alone can never decide —
+ * there is no safe "identity" threshold. Any candidate at/above this cosine
+ * that the lexical guard did not confirm goes to a deterministic llama3.1
+ * yes/no judge. Fail-open: any judge error/timeout ⇒ create (a wrong duplicate
+ * is recoverable; a wrong merge destroys a fact).
+ */
+export const JUDGE_BAND_MIN = 0.65;
 const DEFAULT_CONFIDENCE = 0.7;
 const CONFIDENCE_BUMP = 0.05;
 const CONFIDENCE_CAP = 0.99;
@@ -38,6 +59,26 @@ type Broadcast = <E extends keyof CoreEvents>(
   event: E,
   payload: CoreEvents[E],
 ) => void;
+
+/** Answers: do A and B state the same underlying fact? Injectable for tests. */
+export type MergeJudge = (a: string, b: string) => Promise<boolean>;
+
+/** Default judge: one deterministic llama3.1 token. Throws are caught by caller. */
+export const ollamaMergeJudge: MergeJudge = async (a, b) => {
+  const answer = await chatOnce({
+    messages: [
+      {
+        role: "system",
+        content:
+          "You deduplicate a user-profile memory store. Answer with exactly MERGE if A and B state the same underlying fact about the user (paraphrases count), or KEEP if they are different facts.",
+      },
+      { role: "user", content: `A: ${a}\nB: ${b}` },
+    ],
+    options: { temperature: 0, num_predict: 5 },
+    timeoutMs: 2500,
+  });
+  return answer.trim().toUpperCase().startsWith("MERGE");
+};
 
 export interface RecallOpts {
   k?: number;
@@ -54,15 +95,35 @@ function unionTags(a: string[], b: string[]): string[] {
   return Array.from(new Set([...a, ...b]));
 }
 
+function tokens(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length > 0),
+  );
+}
+
+/** Token-set Jaccard overlap of two short strings (entity-identity signal). */
+function titleJaccard(a: string, b: string): number {
+  const ta = tokens(a);
+  const tb = tokens(b);
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter += 1;
+  return inter / (ta.size + tb.size - inter);
+}
+
 export class MemoryEngine {
   private reembedTimer: ReturnType<typeof setInterval> | null = null;
   private reembedding = false;
 
   constructor(
-    private readonly store: MemoryStore,
+    private readonly store: IMemoryStore,
     private readonly vectors: VectorIndex,
     private readonly embed: Embedder = defaultEmbed,
     private readonly broadcast?: Broadcast,
+    private readonly judge: MergeJudge = ollamaMergeJudge,
   ) {}
 
   /* ----------------------- upsert-by-similarity ----------------------- */
@@ -77,10 +138,33 @@ export class MemoryEngine {
     // Dedupe only when we can compare: nearest same-type record.
     if (vec) {
       const [top] = this.vectors.search(vec, 1, { types: [input.type] });
-      if (top && top.score >= SIMILARITY_MERGE_THRESHOLD) {
-        const existing = this.store.get(top.id);
-        if (existing) {
+      const existing = top ? this.store.get(top.id) : undefined;
+      if (top && existing) {
+        const candidateTitle = title && title.length > 0 ? title : deriveTitle(body);
+
+        // Tier 1 — high cosine + lexical confirmation of the same entity.
+        // (Also covers re-imports/restatements: identical text ⇒ both pass.)
+        if (
+          top.score >= SIMILARITY_MERGE_THRESHOLD &&
+          titleJaccard(candidateTitle, existing.title) >= MERGE_LEXICAL_MIN
+        ) {
           return this.merge(existing, input, body, title, vec, now, top.score);
+        }
+        // Tier 2 — ambiguous band (incl. nomic's 0.99+ template look-alikes):
+        // let the local LLM decide (fail-open: create).
+        if (top.score >= JUDGE_BAND_MIN) {
+          let sameFact = false;
+          try {
+            sameFact = await this.judge(
+              `${existing.title}\n${existing.body}`,
+              `${candidateTitle}\n${body}`,
+            );
+          } catch {
+            sameFact = false;
+          }
+          if (sameFact) {
+            return this.merge(existing, input, body, title, vec, now, top.score);
+          }
         }
       }
     }
@@ -207,7 +291,7 @@ export class MemoryEngine {
   async recall(query: string, opts: RecallOpts = {}): Promise<RecallHit[]> {
     const k = opts.k ?? 5;
     const minScore = opts.minScore ?? RECALL_MIN_SCORE;
-    const vec = await this.embed(query);
+    const vec = await this.embed(query, "query");
 
     if (vec) {
       const hits = this.vectors.search(vec, k, { types: opts.types });
