@@ -293,6 +293,9 @@ export interface CoreEvents {
     done: boolean;
     error?: string;
   };
+  /** After any task/mission completion — keeps Home/Learning live. */
+  'learning.progress': { summary: LearningSummary };
+  'mission.updated': { mission: TodayMission };
 }
 
 export interface CoreClient {
@@ -332,6 +335,16 @@ export interface CoreClient {
   profile(): Promise<DerivedProfile>;
   /** Kick off an import; progress arrives via `import.progress`. Idempotent. */
   importSource(source: ImportSource, path: string): Promise<{ started: true }>;
+
+  /* learning & daily loop */
+  learningSummary(): Promise<LearningSummary>;
+  learningWeeks(): Promise<LearningWeek[]>;
+  learningDayTasks(dayId: string): Promise<LearningTask[]>;
+  completeTask(taskId: string, done: boolean): Promise<LearningSummary>;
+  todayMission(): Promise<TodayMission>;
+  completeMissionItem(itemId: string, done: boolean): Promise<TodayMission>;
+  reviewQueue(): Promise<ReviewItem[]>;
+  heatmap(days?: number): Promise<HeatCell[]>;
 
   /* voice */
   voiceStatus(): Promise<VoiceStatus>;
@@ -472,6 +485,15 @@ export function createCoreClient(): CoreClient {
     memoryGraph: () => get<MemoryGraphData>('/memories/graph'),
     profile: () => get<DerivedProfile>('/memories/profile'),
     importSource: (source, path) => post<{ started: true }>('/import', { source, path }),
+
+    learningSummary: () => get<LearningSummary>('/learning/summary'),
+    learningWeeks: () => get<LearningWeek[]>('/learning/weeks'),
+    learningDayTasks: (dayId) => get<LearningTask[]>(`/learning/days/${dayId}/tasks`),
+    completeTask: (taskId, done) => post<LearningSummary>(`/learning/tasks/${taskId}/complete`, { done }),
+    todayMission: () => get<TodayMission>('/mission/today'),
+    completeMissionItem: (itemId, done) => post<TodayMission>(`/mission/items/${itemId}/complete`, { done }),
+    reviewQueue: () => get<ReviewItem[]>('/learning/reviews'),
+    heatmap: (days) => get<HeatCell[]>(`/learning/heatmap${days ? `?days=${days}` : ''}`),
 
     voiceStatus: () => get<VoiceStatus>('/voice/status'),
     installVoice: () => post<void>('/voice/install'),
