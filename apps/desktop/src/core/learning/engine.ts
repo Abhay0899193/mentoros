@@ -65,6 +65,7 @@ export class LearningEngine {
       let wk = byWeek.get(key);
       if (!wk) {
         wk = { phase: r.phase, week: r.week, days: [] };
+        if (r.focus) wk.focus = r.focus;
         byWeek.set(key, wk);
       }
       const day: LearningDay = {
@@ -127,8 +128,23 @@ export class LearningEngine {
     if (!this.store.hasMission(today)) {
       const items = this.buildMission(today);
       if (items.length > 0) this.store.insertMissionItems(today, items);
+    } else {
+      this.topUpMission(today);
     }
     return this.readMission(today);
+  }
+
+  /**
+   * A mission persisted before the plan was imported has no task-backed items.
+   * When the plan appears mid-day, top the mission up with plan tasks (existing
+   * items and their done flags untouched) instead of stranding the user until
+   * tomorrow.
+   */
+  private topUpMission(today: string): void {
+    const existing = this.store.missionItems(today);
+    if (existing.some((i) => i.taskId)) return;
+    const planItems = this.buildMission(today).filter((i) => i.taskId);
+    if (planItems.length > 0) this.store.insertMissionItems(today, planItems);
   }
 
   completeMissionItem(

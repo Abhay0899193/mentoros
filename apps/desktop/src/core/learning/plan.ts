@@ -38,6 +38,8 @@ export interface ParsedDay {
   week: number;
   day: number;
   title: string;
+  /** Week-level topic from the plan's `focus` field. */
+  focus?: string | null;
 }
 export interface ParsedTask {
   id: string;
@@ -95,11 +97,14 @@ export function parsePlan(root: unknown): ParsedPlan {
     const phase = Number(ph.phase) || 0;
     for (const wk of ph.weeks ?? []) {
       const week = Number(wk.week) || 0;
+      const focus = (wk as { focus?: string }).focus?.trim() || undefined;
       for (const d of wk.days ?? []) {
         const day = Number(d.day) || 0;
         const dayId = `phase-${phase}-week-${week}-day-${day}`;
         const title = d.title?.trim() || `Phase ${phase} · Week ${week} · Day ${day}`;
-        days.push({ id: dayId, phase, week, day, title });
+        const parsed: ParsedDay = { id: dayId, phase, week, day, title };
+        if (focus) parsed.focus = focus;
+        days.push(parsed);
         for (const t of d.tasks ?? []) {
           const id = t.id?.trim();
           if (!id) continue;

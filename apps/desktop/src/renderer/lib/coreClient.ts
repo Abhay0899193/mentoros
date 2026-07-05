@@ -173,6 +173,8 @@ export interface LearningDay {
 export interface LearningWeek {
   phase: number;
   week: number;
+  /** Week topic from the plan, e.g. "Arrays, Strings, Two Pointers + Docker Basics". */
+  focus?: string;
   days: LearningDay[];
 }
 

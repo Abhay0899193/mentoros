@@ -104,7 +104,12 @@ export function LearningScreen() {
                   <h2 className="text-h2 text-ink">Phase {phase}</h2>
                   {phaseWeeks.map((week) => (
                     <div key={`${week.phase}-${week.week}`} className="flex flex-col gap-1.5">
-                      <Chip className="w-fit">Week {week.week}</Chip>
+                      <div className="flex items-center gap-2">
+                        <Chip className="w-fit shrink-0">Week {week.week}</Chip>
+                        {week.focus && (
+                          <span className="truncate text-small text-muted">{week.focus}</span>
+                        )}
+                      </div>
                       <div className="flex flex-col gap-0.5">
                         {week.days.map((day) => (
                           <DayRow

@@ -19,6 +19,7 @@ export interface DayProgressRow {
   week: number;
   day: number;
   title: string;
+  focus: string | null;
   taskCount: number;
   doneCount: number;
 }
@@ -69,6 +70,12 @@ export class LearningStore {
       );
       CREATE INDEX IF NOT EXISTS idx_mission_items_date ON mission_items(date);
     `);
+    // Additive migration: week-level topic (focus) carried on each day row.
+    try {
+      this.db.exec(`ALTER TABLE learning_days ADD COLUMN focus TEXT`);
+    } catch {
+      /* column already exists */
+    }
   }
 
   close(): void {
@@ -84,13 +91,13 @@ export class LearningStore {
       undefined;
     this.db
       .prepare(
-        `INSERT INTO learning_days (id, phase, week, day, title)
-         VALUES (@id, @phase, @week, @day, @title)
+        `INSERT INTO learning_days (id, phase, week, day, title, focus)
+         VALUES (@id, @phase, @week, @day, @title, @focus)
          ON CONFLICT(id) DO UPDATE SET
            phase = excluded.phase, week = excluded.week,
-           day = excluded.day, title = excluded.title`,
+           day = excluded.day, title = excluded.title, focus = excluded.focus`,
       )
-      .run(d);
+      .run({ focus: null, ...d });
     return existed ? "merged" : "created";
   }
 
@@ -149,7 +156,7 @@ export class LearningStore {
   dayProgress(): DayProgressRow[] {
     return this.db
       .prepare(
-        `SELECT d.id, d.phase, d.week, d.day, d.title,
+        `SELECT d.id, d.phase, d.week, d.day, d.title, d.focus,
                 COUNT(t.id) AS taskCount,
                 COALESCE(SUM(t.done), 0) AS doneCount
          FROM learning_days d

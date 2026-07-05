@@ -4,8 +4,10 @@
 > Update this at every phase gate and before ~60% context usage. **Never** move volatile state back into `plan.md`.
 
 ## Current status
-- **Phase:** 1 APPROVED by user (2026-07-05, confirmed working offline live). Next: combined Phase 2+3 plan proposed, awaiting approval.
-- **Next step (after approval):** Phase 2+3 combined — Memory core → importers for user's real data → Daily Loop.
+- **Phase:** 2+3 COMPLETE (combined, user-approved plan). **At the hard check-in gate — waiting for user approval before Phase 4 (KB + RAG).**
+- **Phase 2+3 verified:** upsert-by-similarity = cosine gate + lexical guard + **llama3.1 merge-judge** (paraphrases merge, distinct facts keep, judge fails open to create; ~2s judged saves); interview-prep import 30 records idempotent (0/30 on re-run); recall injected into chat/voice with chat.context trust events; 3mc import 147 days/785 tasks idempotent with week focus topics; mission = 2-3 plan tasks + due review + weakness drill (top-up if plan imported mid-day); streak/XP/heat persist across restart (verified); linkPass gives graph edges; 42 unit tests green.
+- **Known gaps (deliberate):** graph edges sparse (2 on current data — linking is title-in-body only); voice auto-capture keywords are heuristic; review-queue records that collapsed pre-judge in the old DB stay merged; day rows show generic titles (topic lives on the week label).
+- **Screenshots:** scratchpad `/2a/` (memory profile/graph/drawer) and `/p23/` (home mission + fill, learning path, graph with edges).
 
 ## User's real-data sources (reviewed 2026-07-05 — import these, they replace synthetic seed)
 - **`~/Documents/abhay/3-month-challenge/`** — 147 `day-*.md` (21 weeks: DSA + infra skill per day) with a WORKING parser → `study-ui/data/parsed-plan.json` (stable task IDs `phase-n-week-w-day-d-lc-num`, typed tasks, difficulty). No persisted progress (only localStorage in their study-ui) → MentorOS Learning Engine becomes the real tracker. User says daily volume is too heavy — mission selection should right-size.

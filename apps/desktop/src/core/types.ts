@@ -148,6 +148,7 @@ export interface LearningDay {
 export interface LearningWeek {
   phase: number;
   week: number;
+  focus?: string;
   days: LearningDay[];
 }
 
