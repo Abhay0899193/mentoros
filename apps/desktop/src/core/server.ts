@@ -6,6 +6,8 @@ import { ChatEngine } from "./chat.js";
 import { defaultDataDir, Store } from "./db.js";
 import { createMemorySystem } from "./memory/index.js";
 import { registerMemoryRoutes } from "./memory/routes.js";
+import { createLearningSystem, import3mc } from "./learning/index.js";
+import { registerLearningRoutes } from "./learning/routes.js";
 import {
   DEFAULT_MODEL,
   modelStatus as probeModelStatus,
@@ -64,6 +66,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   };
 
   const memory = createMemorySystem(dataDir, broadcast);
+  const learning = createLearningSystem(dataDir, memory.engine);
   const engine = new ChatEngine(store, broadcast, memory.engine);
 
   void app.register(websocket);
@@ -72,6 +75,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   });
 
   app.addHook("onClose", async () => {
+    learning.close();
     memory.close();
     store.close();
   });
@@ -168,7 +172,15 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   });
 
   /* -------------------------------- memory ------------------------------- */
-  registerMemoryRoutes(app, { engine: memory.engine, broadcast });
+  registerMemoryRoutes(app, {
+    engine: memory.engine,
+    broadcast,
+    import3mc: (path, onProgress) =>
+      import3mc({ path, store: learning.store, onProgress }),
+  });
+
+  /* ------------------------------- learning ------------------------------ */
+  registerLearningRoutes(app, { engine: learning.engine, broadcast });
 
   /* -------------------------------- voice -------------------------------- */
   registerVoice(app, { broadcast, dataDir });

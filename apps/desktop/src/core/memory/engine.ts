@@ -10,6 +10,7 @@ import type {
   SaveMemoryResult,
 } from "../types.js";
 import { embed as defaultEmbed, type Embedder } from "./embeddings.js";
+import { computeLinks } from "./linkPass.js";
 import { chatOnce } from "../ollama.js";
 import type { IMemoryStore } from "./store.js";
 import type { VectorIndex } from "./vectorIndex.js";
@@ -339,6 +340,32 @@ export class MemoryEngine {
 
   profile(): DerivedProfile {
     return deriveProfile(this.store.all());
+  }
+
+  /* --------------------------- auto-linking --------------------------- */
+
+  /**
+   * Link records whose title-concept is referenced in another record's body.
+   * Additive + idempotent (existing links preserved). Returns the resulting
+   * undirected edge count in the graph.
+   */
+  linkPass(): number {
+    const records = this.store.all();
+    const changed = computeLinks(
+      records.map((r) => ({
+        id: r.id,
+        title: r.title,
+        body: r.body,
+        links: r.links,
+      })),
+    );
+    for (const [id, links] of changed) {
+      const rec = this.store.get(id);
+      if (!rec) continue;
+      // Persist links only; no re-embed, no updatedAt churn.
+      this.store.update({ ...rec, links });
+    }
+    return this.graph().edges.length;
   }
 
   /* ------------------- background re-embedding retry ------------------ */

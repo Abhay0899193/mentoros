@@ -110,6 +110,86 @@ export interface DerivedProfile {
 
 export type ImportSource = "interview-prep" | "3mc";
 
+/* ---------------- Learning & Daily Loop (Phase 3) ---------------- */
+
+export type TaskKind =
+  | "leetcode"
+  | "video"
+  | "article"
+  | "docs"
+  | "book"
+  | "hands-on"
+  | "course"
+  | "review"
+  | "other";
+
+export interface LearningTask {
+  id: string;
+  dayId: string;
+  kind: TaskKind;
+  title: string;
+  url?: string;
+  difficulty?: "Easy" | "Medium" | "Hard";
+  done: boolean;
+  completedAt?: string;
+}
+
+export interface LearningDay {
+  id: string;
+  phase: number;
+  week: number;
+  day: number;
+  title: string;
+  state: "locked" | "available" | "current" | "done";
+  taskCount: number;
+  doneCount: number;
+}
+
+export interface LearningWeek {
+  phase: number;
+  week: number;
+  days: LearningDay[];
+}
+
+export interface LearningSummary {
+  imported: boolean;
+  totalDays: number;
+  doneDays: number;
+  totalTasks: number;
+  doneTasks: number;
+  currentDayId: string | null;
+  xp: number;
+  level: number;
+}
+
+export interface MissionItem {
+  id: string;
+  label: string;
+  kind: TaskKind | "drill";
+  reason: string;
+  taskId?: string;
+  url?: string;
+  done: boolean;
+}
+
+export interface TodayMission {
+  date: string; // YYYY-MM-DD
+  items: MissionItem[];
+  streak: { current: number; best: number };
+}
+
+export interface ReviewItem {
+  memoryId: string;
+  title: string;
+  due: string;
+  lastGrade: number | null;
+}
+
+export interface HeatCell {
+  date: string;
+  count: number;
+}
+
 /** STT/TTS sidecar readiness (mirror of coreClient VoiceStatus). */
 export interface VoiceStatus {
   stt: "ready" | "missing" | "starting" | "error";
@@ -169,4 +249,7 @@ export interface CoreEvents {
     done: boolean;
     error?: string;
   };
+  /** After any task/mission completion — keeps Home/Learning live. */
+  "learning.progress": { summary: LearningSummary };
+  "mission.updated": { mission: TodayMission };
 }

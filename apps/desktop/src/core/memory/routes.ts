@@ -20,12 +20,44 @@ type MemoryPatch = Partial<
   Pick<MemoryRecord, "title" | "body" | "type" | "tags" | "confidence" | "links">
 >;
 
+interface ImportProgress {
+  step: string;
+  created: number;
+  merged: number;
+  done: boolean;
+  error?: string;
+}
+
 /** Register the memory + import HTTP routes (mirror of coreClient §Memory). */
 export function registerMemoryRoutes(
   app: FastifyInstance,
-  deps: { engine: MemoryEngine; broadcast: Broadcast },
+  deps: {
+    engine: MemoryEngine;
+    broadcast: Broadcast;
+    /** Injected by the server so the 3mc plan importer stays in the learning module. */
+    import3mc?: (
+      path: string,
+      onProgress: (p: ImportProgress) => void,
+    ) => Promise<{ created: number; merged: number }>;
+  },
 ): void {
-  const { engine, broadcast } = deps;
+  const { engine, broadcast, import3mc } = deps;
+
+  /** Auto-link the graph after any import (fail-safe; never throws to caller). */
+  const runLinkPass = (source: ImportSource): void => {
+    try {
+      const edges = engine.linkPass();
+      broadcast("import.progress", {
+        source,
+        step: `linked memory graph (${edges} edges)`,
+        created: 0,
+        merged: 0,
+        done: true,
+      });
+    } catch {
+      /* linking is best-effort */
+    }
+  };
 
   app.get<{ Querystring: { type?: MemoryType; q?: string; limit?: string } }>(
     "/memories",
@@ -67,6 +99,9 @@ export function registerMemoryRoutes(
   app.get("/memories/graph", async () => engine.graph());
   app.get("/memories/profile", async () => engine.profile());
 
+  /** Manually re-run the auto-linking pass. */
+  app.post("/memories/relink", async () => ({ edges: engine.linkPass() }));
+
   app.patch<{ Params: { id: string }; Body: MemoryPatch }>(
     "/memories/:id",
     async (req, reply) => {
@@ -99,32 +134,16 @@ export function registerMemoryRoutes(
       if (abs !== home && !abs.startsWith(home + "/")) {
         return reply.code(400).send({ error: "path must be inside the home directory" });
       }
-      if (source === "3mc") {
-        // 3-month-challenge importer is a later phase; acknowledge + no-op step.
+      const emit = (p: ImportProgress) =>
         broadcast("import.progress", {
           source,
-          step: "3mc importer not implemented yet",
-          created: 0,
-          merged: 0,
-          done: true,
+          step: p.step,
+          created: p.created,
+          merged: p.merged,
+          done: p.done,
+          ...(p.error ? { error: p.error } : {}),
         });
-        return reply.code(202).send({ started: true as const });
-      }
-
-      // Fire-and-forget: progress + completion arrive over /events.
-      void importInterviewPrep({
-        path: abs,
-        saveMemory: (input) => engine.saveMemory(input),
-        onProgress: (p) =>
-          broadcast("import.progress", {
-            source,
-            step: p.step,
-            created: p.created,
-            merged: p.merged,
-            done: p.done,
-            ...(p.error ? { error: p.error } : {}),
-          }),
-      }).catch((err: unknown) => {
+      const onFailure = (err: unknown) =>
         broadcast("import.progress", {
           source,
           step: "import failed",
@@ -133,7 +152,25 @@ export function registerMemoryRoutes(
           done: true,
           error: err instanceof Error ? err.message : String(err),
         });
-      });
+
+      if (source === "3mc") {
+        if (!import3mc) {
+          return reply.code(503).send({ error: "3mc importer unavailable" });
+        }
+        void import3mc(abs, emit)
+          .then(() => runLinkPass(source))
+          .catch(onFailure);
+        return reply.code(202).send({ started: true as const });
+      }
+
+      // Fire-and-forget: progress + completion arrive over /events.
+      void importInterviewPrep({
+        path: abs,
+        saveMemory: (input) => engine.saveMemory(input),
+        onProgress: emit,
+      })
+        .then(() => runLinkPass(source))
+        .catch(onFailure);
 
       return reply.code(202).send({ started: true as const });
     },
