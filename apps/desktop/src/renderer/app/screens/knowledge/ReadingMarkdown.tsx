@@ -17,7 +17,7 @@ export interface ReadingMarkdownProps {
 
 /* ---------------------------------- inline --------------------------------- */
 
-const INLINE_RE = /(\!\[[^\]]*\]\([^\s)]*\)|\[[^\]]+\]\([^\s)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+const INLINE_RE = /(!\[[^\]]*\]\([^\s)]*\)|\[[^\]]+\]\([^\s)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
 
 function InlineLink({ label, href, onOpenRelative }: { label: string; href: string; onOpenRelative?: (path: string) => void }) {
   const isExternal = /^[a-z][a-z0-9+.-]*:/i.test(href);

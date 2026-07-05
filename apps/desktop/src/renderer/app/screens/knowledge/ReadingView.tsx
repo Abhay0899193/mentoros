@@ -151,7 +151,11 @@ export function ReadingView() {
             )}
             {content && content.text.trim() !== '' ? (
               <div className="mx-auto max-w-[720px] pb-10">
-                <RichText text={content.text} />
+                {isMarkdown ? (
+                  <ReadingMarkdown text={content.text} onOpenRelative={handleOpenRelative} />
+                ) : (
+                  <RichText text={content.text} />
+                )}
               </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 pt-16 text-center">
