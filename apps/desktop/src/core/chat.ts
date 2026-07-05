@@ -116,11 +116,11 @@ export class ChatEngine {
 
     // Long-term memory recall + KB grounding: inject what we know before generating.
     const contextMessage = await this.recallContext(threadId, messageId, userContent);
-    const groundMessage = await this.groundContext(threadId, messageId, userContent);
+    const grounded = await this.groundContext(threadId, messageId, userContent);
     const messages = this.buildHistory(threadId, persona, messageId);
     const injected: OllamaMessage[] = [];
     if (contextMessage) injected.push(contextMessage);
-    if (groundMessage) injected.push(groundMessage);
+    if (grounded) injected.push(grounded.message);
     if (injected.length) messages.splice(1, 0, ...injected);
     const segmenter = new TeachingSegmenter();
     const controller = new AbortController();
@@ -156,6 +156,13 @@ export class ChatEngine {
         this.broadcast("chat.token", { messageId, threadId, segment, token });
       }
       this.store.updateMessageSegments(messageId, segmenter.segments());
+      if (grounded) {
+        const finalText = segmenter
+          .segments()
+          .map((s) => s.content)
+          .join("\n");
+        this.reconcileCitations(threadId, messageId, grounded.citations, finalText);
+      }
       this.broadcast("chat.status", { messageId, threadId, phase: "done" });
       this.autoCapture(userContent);
     } catch (err) {
@@ -227,7 +234,7 @@ export class ChatEngine {
     threadId: string,
     messageId: string,
     userContent: string,
-  ): Promise<OllamaMessage | null> {
+  ): Promise<{ message: OllamaMessage; citations: MessageCitation[] } | null> {
     if (!this.kb || !userContent.trim()) return null;
     let hits: HybridHit[];
     try {
@@ -255,7 +262,33 @@ export class ChatEngine {
       /* persistence is best-effort; the live pills already went out */
     }
 
-    return { role: "system", content: buildGroundedBlock(top) };
+    return { message: { role: "system", content: buildGroundedBlock(top) }, citations };
+  }
+
+  /**
+   * After generation: keep only the citations the answer actually marked with
+   * `[n]`, so pills never claim sources the model ignored. If the model cited
+   * nothing explicitly we keep the full list — retrieved context still shaped
+   * the answer, and hiding it would be less honest, not more.
+   */
+  private reconcileCitations(
+    threadId: string,
+    messageId: string,
+    citations: MessageCitation[],
+    finalText: string,
+  ): void {
+    // Ignore code spans — `arr[1]` in a snippet is not a citation marker.
+    const prose = finalText.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+    const used = new Set<number>();
+    for (const m of prose.matchAll(/\[(\d{1,2})\]/g)) used.add(Number(m[1]));
+    const kept = citations.filter((c) => used.has(c.n));
+    if (kept.length === 0 || kept.length === citations.length) return;
+    this.broadcast("chat.sources", { threadId, messageId, citations: kept });
+    try {
+      this.store.setMessageCitations(messageId, kept);
+    } catch {
+      /* best-effort, same as the initial persist */
+    }
   }
 
   /** Seed durable facts from first-person declarations (fire-and-forget). */
@@ -328,7 +361,7 @@ function buildContextBlock(hits: RecallHit[]): string {
  */
 function buildGroundedBlock(hits: HybridHit[]): string {
   const header =
-    "Grounded context from Abhay's knowledge base. When your answer draws on an excerpt, cite it inline as [n]. For questions about these documents, prefer the excerpts over your own general knowledge; if they don't cover it, say so.";
+    "Grounded context from Abhay's knowledge base. Cite [n] inline for EVERY excerpt your answer draws on, at the sentence where you use it — and never cite an excerpt you didn't use. For questions about these documents, prefer the excerpts over your own general knowledge; if they don't cover it, say so.";
   const lines = hits.map((h, i) => {
     const label = h.section ? `${h.sourceTitle} — ${h.section}` : h.sourceTitle;
     const body = h.text.length > EXCERPT_MAX ? `${h.text.slice(0, EXCERPT_MAX)}…` : h.text;

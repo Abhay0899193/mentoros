@@ -90,9 +90,9 @@ export function KnowledgeScreen() {
       onDrop={onDrop}
     >
       <header className="flex h-14 shrink-0 items-center justify-between gap-4 px-6">
-        <h1 className="text-h2 text-ink">Knowledge base</h1>
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-72 items-center gap-2 rounded-full bg-surface-2 hairline px-3 focus-within:border-line-strong">
+        <h1 className="shrink-0 whitespace-nowrap text-h2 text-ink">Knowledge base</h1>
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+          <div className="flex h-8 w-40 max-w-72 min-w-0 flex-1 items-center gap-2 rounded-full bg-surface-2 hairline px-3 focus-within:border-line-strong">
             <Search size={13} strokeWidth={1.5} className="shrink-0 text-faint" />
             <input
               ref={searchRef}
@@ -103,22 +103,31 @@ export function KnowledgeScreen() {
               className="w-full bg-transparent text-small text-ink outline-none placeholder:text-faint"
             />
           </div>
-          <Button size="sm" icon={<Plus size={14} strokeWidth={1.5} />} onClick={() => setAddOpen(true)}>
-            Add source
-          </Button>
+          <div className="relative shrink-0">
+            <Button
+              size="sm"
+              className="whitespace-nowrap"
+              icon={<Plus size={14} strokeWidth={1.5} />}
+              onClick={() => setAddOpen(true)}
+            >
+              Add source
+            </Button>
+            <AddSourcePopover />
+          </div>
         </div>
       </header>
 
       <div
         className={
-          readingId ? 'min-h-0 flex-1 overflow-hidden px-6 pb-6' : 'min-h-0 flex-1 overflow-y-auto px-6 pb-10'
+          readingId
+            ? 'min-h-0 flex-1 overflow-hidden px-6 pb-6 @container'
+            : 'min-h-0 flex-1 overflow-y-auto px-6 pb-10 @container'
         }
       >
         {readingId ? <ReadingView /> : query.trim() !== '' ? <SearchView /> : <LibraryGrid />}
       </div>
 
       <DropZone active={dragging} />
-      <AddSourcePopover />
     </div>
   );
 }

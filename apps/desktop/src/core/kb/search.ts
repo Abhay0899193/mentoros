@@ -131,7 +131,12 @@ export async function hybridSearch(
 
   let vecHits: KbVectorHit[] = [];
   const vec = await deps.embed(q, "query");
-  if (vec) vecHits = deps.vectors.search(vec, VEC_TAKE, sourceIds);
+  // Floor the semantic leg: without it a nonsense query still "finds" the
+  // nearest chunks and rank-normalization dresses them up as 90%+ relevant.
+  if (vec)
+    vecHits = deps.vectors
+      .search(vec, VEC_TAKE, sourceIds)
+      .filter((h) => h.score >= GROUND_VECTOR_MIN);
 
   const fused = fuse(ftsIds, vecHits).slice(0, k);
   const hits: HybridHit[] = [];

@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { app, BrowserWindow, globalShortcut, Menu, nativeImage, Tray } from "electron";
+import { app, BrowserWindow, globalShortcut, Menu, nativeImage, shell, Tray } from "electron";
 import { startCore, type CoreHandle } from "../core/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -99,6 +99,19 @@ async function createWindow(corePort: number): Promise<void> {
   });
 
   mainWindow.on("ready-to-show", () => mainWindow?.show());
+
+  // Renderer links (KB reading view etc.) open in the system browser — never
+  // a second Electron window — and in-window navigation stays in the app.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https:") || url.startsWith("http:")) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!url.startsWith(process.env["ELECTRON_RENDERER_URL"] ?? "file:")) {
+      event.preventDefault();
+      if (url.startsWith("https:") || url.startsWith("http:")) void shell.openExternal(url);
+    }
+  });
 
   const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
   const query = `?corePort=${corePort}`;

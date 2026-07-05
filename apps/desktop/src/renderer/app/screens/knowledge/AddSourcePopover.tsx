@@ -58,7 +58,7 @@ export function AddSourcePopover() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, transition: { duration: dur.micro } }}
             transition={spring.smooth}
-            className="glass overlay-shadow fixed top-16 right-6 z-40 w-80 rounded-[14px] bg-surface-1/90 p-4"
+            className="glass overlay-shadow absolute top-full right-0 z-40 mt-2 w-80 rounded-[14px] bg-surface-1/90 p-4"
           >
             <h3 className="text-h3 text-ink">Add a source</h3>
             <p className="mt-0.5 text-small text-muted">
@@ -73,7 +73,7 @@ export function AddSourcePopover() {
                   onChange={(e) => setPath(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && submit()}
                   placeholder={PLACEHOLDER_PATH}
-                  className="h-9 rounded-[10px] bg-surface-2 hairline px-3 font-mono text-[12px] text-ink outline-none focus:border-line-strong"
+                  className="h-9 rounded-[10px] bg-surface-2 hairline px-3 font-mono text-[12px] text-ink outline-none focus:[box-shadow:var(--focus)]"
                 />
               </label>
               <label className="flex flex-col gap-1">
@@ -84,7 +84,7 @@ export function AddSourcePopover() {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="3-Month Challenge plan"
-                  className="h-9 rounded-[10px] bg-surface-2 hairline px-3 text-small text-ink outline-none focus:border-line-strong"
+                  className="h-9 rounded-[10px] bg-surface-2 hairline px-3 text-small text-ink outline-none focus:[box-shadow:var(--focus)]"
                 />
               </label>
               <label className="flex flex-col gap-1">
@@ -95,7 +95,7 @@ export function AddSourcePopover() {
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
                   placeholder="interview-prep, dsa"
-                  className="h-9 rounded-[10px] bg-surface-2 hairline px-3 text-small text-ink outline-none focus:border-line-strong"
+                  className="h-9 rounded-[10px] bg-surface-2 hairline px-3 text-small text-ink outline-none focus:[box-shadow:var(--focus)]"
                 />
               </label>
             </div>

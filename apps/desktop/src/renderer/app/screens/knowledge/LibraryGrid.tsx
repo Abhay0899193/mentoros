@@ -32,7 +32,7 @@ export function LibraryGrid() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 gap-4 pt-6 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 pt-6 @xl:grid-cols-2 @4xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <SkeletonCard key={i} />
         ))}
@@ -57,7 +57,7 @@ export function LibraryGrid() {
             </span>
             <h2 className="text-h3 text-ink">MentorOS found sources worth indexing</h2>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
             {suggestions.map((s) => (
               <SuggestionCard
                 key={s.path}
@@ -91,7 +91,7 @@ export function LibraryGrid() {
           variants={reduced(reduce, staggerChildren)}
           initial="hidden"
           animate="visible"
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
+          className="grid grid-cols-1 gap-4 @xl:grid-cols-2 @4xl:grid-cols-3"
         >
           {sources.map((s) => (
             <motion.div key={s.id} variants={reduced(reduce, riseIn)}>

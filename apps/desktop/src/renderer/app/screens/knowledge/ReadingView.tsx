@@ -6,6 +6,19 @@ import { Button, Chip } from '../../../ui';
 import { RichText } from '../chat/RichText';
 import { KindGlyph } from './KindGlyph';
 import { KIND_LABEL } from './kbMeta';
+import { ReadingMarkdown } from './ReadingMarkdown';
+
+/** Resolves a relative markdown link (./foo.md, ../x/bar.md) against the directory of the currently open file. */
+function resolveRelativePath(baseFile: string, rel: string): string {
+  const baseDir = baseFile.includes('/') ? baseFile.slice(0, baseFile.lastIndexOf('/')) : '';
+  const parts = baseDir ? baseDir.split('/') : [];
+  for (const part of rel.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') parts.pop();
+    else parts.push(part);
+  }
+  return parts.join('/');
+}
 
 type ReadingContent = Awaited<ReturnType<typeof coreClient.kbSourceText>>;
 
@@ -56,6 +69,15 @@ export function ReadingView() {
   }, [readingId, readingFile, reloadKey]);
 
   if (!readingId) return null;
+
+  const currentFile = readingFile ?? content?.files?.[0] ?? '';
+  const isMarkdown = content?.kind === 'md' || (content?.kind === 'folder' && /\.md$/i.test(currentFile));
+
+  const handleOpenRelative = (relPath: string) => {
+    if (!readingId || !content?.files?.length) return;
+    const target = resolveRelativePath(currentFile, relPath);
+    if (content.files.includes(target)) openReading(readingId, target);
+  };
 
   return (
     <div className="flex h-full flex-col pt-4">
