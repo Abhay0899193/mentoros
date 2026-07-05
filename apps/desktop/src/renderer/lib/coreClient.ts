@@ -282,6 +282,127 @@ export interface MessageCitation {
   score: number;
 }
 
+/* ---------------- Interview Platform (Phase 5) ---------------- */
+
+export type InterviewType = 'coding' | 'system-design' | 'sql' | 'behavioral';
+export type InterviewLanguage = 'python' | 'javascript';
+/**
+ * Session lifecycle mirrors the interview-prep protocol:
+ * framing (§0 Frame) → coding → interrogation (§3.1, after "I'm done") →
+ * scorecard (§3.6, terminal) — or abandoned.
+ */
+export type InterviewPhase = 'framing' | 'coding' | 'interrogation' | 'scorecard' | 'abandoned';
+
+export interface InterviewProblemMeta {
+  id: string;
+  /** LeetCode number when the problem maps to one (drives "LC 33" chips). */
+  lcNumber?: number;
+  title: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  /** interview-prep pattern slug, e.g. 'sliding-window'. */
+  pattern: string;
+  tags: string[];
+  /** True when weakness-targeting (recurring-mistake memories) picked this one. */
+  recommended?: boolean;
+  /** Why it was recommended, e.g. "targets: Complexity miscalculation ×8". */
+  recommendedReason?: string;
+  /** Best score from past sessions on this problem, if any. */
+  lastScore?: number;
+}
+
+export interface InterviewProblem extends InterviewProblemMeta {
+  /** Full statement: constraints + worked examples, markdown. */
+  promptMd: string;
+  functionName: string;
+  starterCode: Record<InterviewLanguage, string>;
+}
+
+export interface InterviewSession {
+  id: string;
+  type: InterviewType;
+  problemId: string;
+  language: InterviewLanguage;
+  phase: InterviewPhase;
+  hintsUsed: number;
+  startedAt: string;
+  endedAt?: string;
+}
+
+export interface InterviewSessionSummary {
+  id: string;
+  type: InterviewType;
+  problemTitle: string;
+  pattern: string;
+  phase: InterviewPhase;
+  score?: number;
+  startedAt: string;
+}
+
+export interface InterviewTurn {
+  id: string;
+  sessionId: string;
+  role: 'interviewer' | 'candidate';
+  /** 'hint' turns carry hintLevel; 'phase' turns are system notes ("Moving to interrogation"). */
+  kind: 'chat' | 'hint' | 'phase';
+  hintLevel?: 1 | 2 | 3;
+  content: string;
+  createdAt: string;
+}
+
+export interface EvalTestResult {
+  name: string;
+  passed: boolean;
+  /** Pretty-printed call, e.g. "twoSum([2,7,11,15], 9)". */
+  input: string;
+  expected: string;
+  actual?: string;
+  stdout?: string;
+  /** Runtime error / traceback for this test. */
+  error?: string;
+  timeMs: number;
+}
+
+export interface EvalResult {
+  attemptId: string;
+  passed: number;
+  total: number;
+  results: EvalTestResult[];
+  /** Syntax/compile-stage failure — no tests ran. */
+  compileError?: string;
+  durationMs: number;
+  ranAt: string;
+}
+
+export interface ScorecardDimension {
+  name: string;
+  verdict: 'pass' | 'warn' | 'fail';
+  note: string;
+}
+
+/** §3.6 scorecard. Persists with the session; memoryWrites is the visible "Profile updated" proof. */
+export interface InterviewScorecard {
+  sessionId: string;
+  /** 0–10, calibrated to `bar`. */
+  score: number;
+  bar: 'L4' | 'L5' | 'L6';
+  summary: string;
+  biggestMistake: string;
+  biggestTakeaway: string;
+  pattern: string;
+  patternConfidence: 1 | 2 | 3 | 4 | 5;
+  dimensions: ScorecardDimension[];
+  nextProblems: { title: string; reason: string }[];
+  /** Spaced-repetition grade 0–5 → absolute ISO next-review date (§5 intervals). */
+  recallGrade: number;
+  nextReviewDate: string;
+  hintsUsed: number;
+  testsPassed: number;
+  testsTotal: number;
+  durationSec: number;
+  memoryWrites: { id: string; type: MemoryType; title: string; action: 'created' | 'merged' }[];
+  createdAt: string;
+}
+
 /* ---------------- Voice (Stage 1c) ---------------- */
 
 export interface VoiceStatus {
@@ -386,6 +507,17 @@ export interface CoreEvents {
     messageId: string;
     citations: MessageCitation[];
   };
+  /** One streamed token of an in-flight interviewer turn. */
+  'interview.token': { sessionId: string; turnId: string; token: string };
+  /** Interviewer-turn lifecycle — same phases as chat.status. */
+  'interview.status': { sessionId: string; turnId: string; phase: ChatPhase; error?: string };
+  /** Session moved to a new protocol phase (framing → coding → interrogation → scorecard). */
+  'interview.phase': { sessionId: string; phase: InterviewPhase };
+  /**
+   * Scorecard ready (endInterview is async — LLM grading takes seconds).
+   * memoryWrites inside drive the "Profile updated" moment.
+   */
+  'interview.scorecard': { sessionId: string; scorecard: InterviewScorecard };
 }
 
 export interface CoreClient {
@@ -454,6 +586,43 @@ export interface CoreClient {
   kbSourceText(id: string, filePath?: string): Promise<{ title: string; kind: KbKind; text: string; files?: string[] }>;
   /** Reveal the source file in the OS file manager (PDF reading-view fallback). */
   openKbSource(id: string): Promise<void>;
+
+  /* interview platform */
+  /** Bank for one type; server marks ≤1 as recommended (weakness-targeted). */
+  listInterviewProblems(type?: InterviewType): Promise<InterviewProblemMeta[]>;
+  /** Past sessions, newest first (launcher history strip). */
+  listInterviewSessions(): Promise<InterviewSessionSummary[]>;
+  /**
+   * Creates the session and streams the interviewer's framing opener via
+   * interview.token/status. Omit problemId to take the recommended pick.
+   */
+  startInterview(input: {
+    type: InterviewType;
+    problemId?: string;
+    language: InterviewLanguage;
+  }): Promise<{ session: InterviewSession; problem: InterviewProblem }>;
+  /** Full state for resume: transcript, attempts, scorecard if finished. */
+  getInterviewSession(sessionId: string): Promise<{
+    session: InterviewSession;
+    problem: InterviewProblem;
+    turns: InterviewTurn[];
+    attempts: EvalResult[];
+    scorecard?: InterviewScorecard;
+  }>;
+  /** Candidate chat turn; interviewer reply streams via interview.token/status. */
+  interviewSend(sessionId: string, content: string): Promise<{ turnId: string; replyTurnId: string }>;
+  /** Next rung of the hint ladder (1 nudge → 2 approach → 3 key insight); streams. */
+  requestHint(sessionId: string): Promise<{ level: 1 | 2 | 3; replyTurnId: string }>;
+  /** Run the candidate's code against the problem's tests. Persists the attempt. */
+  runInterviewTests(sessionId: string, code: string): Promise<EvalResult>;
+  /**
+   * Candidate declares done → phase moves to interrogation and the interviewer
+   * opens with the §3.1 questions (streamed reply).
+   */
+  finishCoding(sessionId: string, code: string): Promise<{ replyTurnId: string }>;
+  /** Grade + persist scorecard + write memories; result via interview.scorecard. */
+  endInterview(sessionId: string): Promise<{ started: true }>;
+  abandonInterview(sessionId: string): Promise<void>;
 
   /* voice */
   voiceStatus(): Promise<VoiceStatus>;
@@ -617,6 +786,33 @@ export function createCoreClient(): CoreClient {
         `/kb/sources/${id}/text${filePath ? `?file=${encodeURIComponent(filePath)}` : ''}`,
       ),
     openKbSource: (id) => post<void>(`/kb/sources/${id}/open`),
+
+    listInterviewProblems: (type) =>
+      get<InterviewProblemMeta[]>(`/interview/problems${type ? `?type=${type}` : ''}`),
+    listInterviewSessions: () => get<InterviewSessionSummary[]>('/interview/sessions'),
+    startInterview: (input) =>
+      post<{ session: InterviewSession; problem: InterviewProblem }>('/interview/sessions', input),
+    getInterviewSession: (sessionId) =>
+      get<{
+        session: InterviewSession;
+        problem: InterviewProblem;
+        turns: InterviewTurn[];
+        attempts: EvalResult[];
+        scorecard?: InterviewScorecard;
+      }>(`/interview/sessions/${sessionId}`),
+    interviewSend: (sessionId, content) =>
+      post<{ turnId: string; replyTurnId: string }>(`/interview/sessions/${sessionId}/say`, {
+        content,
+      }),
+    requestHint: (sessionId) =>
+      post<{ level: 1 | 2 | 3; replyTurnId: string }>(`/interview/sessions/${sessionId}/hint`),
+    runInterviewTests: (sessionId, code) =>
+      post<EvalResult>(`/interview/sessions/${sessionId}/run`, { code }),
+    finishCoding: (sessionId, code) =>
+      post<{ replyTurnId: string }>(`/interview/sessions/${sessionId}/finish`, { code }),
+    endInterview: (sessionId) => post<{ started: true }>(`/interview/sessions/${sessionId}/end`),
+    abandonInterview: (sessionId) =>
+      post<void>(`/interview/sessions/${sessionId}/abandon`),
 
     voiceStatus: () => get<VoiceStatus>('/voice/status'),
     installVoice: () => post<void>('/voice/install'),
