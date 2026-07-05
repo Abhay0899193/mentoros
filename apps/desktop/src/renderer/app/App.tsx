@@ -5,6 +5,7 @@ import { Showcase } from './screens/Showcase';
 import { Placeholder } from './screens/Placeholder';
 import { ChatScreen } from './screens/chat/ChatScreen';
 import { VoiceScreen } from './screens/voice/VoiceScreen';
+import { MemoryScreen } from './screens/memory/MemoryScreen';
 import { coreClient } from '../lib/coreClient';
 import { useShell, MODULES, DESIGN_MODULE } from '../lib/store';
 import { toast } from '../ui';
@@ -14,6 +15,7 @@ function ActiveScreen() {
   if (active === 'design') return <Showcase />;
   if (active === 'chat') return <ChatScreen />;
   if (active === 'voice') return <VoiceScreen />;
+  if (active === 'memory') return <MemoryScreen />;
   const meta = MODULES.find((m) => m.id === active) ?? DESIGN_MODULE;
   return <Placeholder meta={meta} />;
 }

@@ -36,6 +36,80 @@ export interface ModelStatus {
 
 export type ChatPhase = "thinking" | "drafting" | "done" | "error" | "stopped";
 
+/* ---------------- Memory (Phase 2) ---------------- */
+
+export type MemoryType =
+  | "identity"
+  | "goal"
+  | "skill"
+  | "learning"
+  | "project"
+  | "career"
+  | "preference"
+  | "mistake"
+  | "achievement"
+  | "repo"
+  | "meeting"
+  | "book"
+  | "research";
+
+export interface MemoryRecord {
+  id: string;
+  type: MemoryType;
+  title: string;
+  body: string;
+  confidence: number; // 0..1
+  source: string;
+  tags: string[];
+  links: string[];
+  createdAt: string;
+  updatedAt: string;
+  history: { at: string; body: string }[];
+}
+
+export interface SaveMemoryInput {
+  type: MemoryType;
+  body: string;
+  title?: string;
+  source: string;
+  tags?: string[];
+  confidence?: number;
+}
+
+export interface SaveMemoryResult {
+  record: MemoryRecord;
+  action: "created" | "merged";
+  similarity?: number;
+}
+
+export interface RecallHit {
+  record: MemoryRecord;
+  score: number; // cosine similarity 0..1
+}
+
+export interface MemoryGraphData {
+  nodes: { id: string; type: MemoryType; title: string; confidence: number }[];
+  edges: { source: string; target: string }[];
+}
+
+export interface DerivedProfile {
+  identity: { name: string; role: string } | null;
+  goals: MemoryRecord[];
+  strengths: MemoryRecord[];
+  weaknesses: MemoryRecord[];
+  stack: string[];
+  reading: { title: string; percent: number | null; recordId: string }[];
+  mistakes: {
+    recordId: string;
+    title: string;
+    count: number;
+    updatedAt: string;
+  }[];
+  counts: Partial<Record<MemoryType, number>>;
+}
+
+export type ImportSource = "interview-prep" | "3mc";
+
 /** STT/TTS sidecar readiness (mirror of coreClient VoiceStatus). */
 export interface VoiceStatus {
   stt: "ready" | "missing" | "starting" | "error";
@@ -74,4 +148,25 @@ export interface CoreEvents {
   };
   "voice.status": VoiceStatus;
   "voice.ptt": { pressed: boolean };
+  /** A memory was created or merged — drives "Profile updated" moments. */
+  "memory.saved": {
+    record: MemoryRecord;
+    action: "created" | "merged";
+    similarity?: number;
+  };
+  /** What recall injected into a generation — feeds the Context panel (§4.2). */
+  "chat.context": {
+    threadId: string;
+    messageId: string;
+    memories: { id: string; type: MemoryType; title: string; score: number }[];
+  };
+  /** Importer progress. */
+  "import.progress": {
+    source: ImportSource;
+    step: string;
+    created: number;
+    merged: number;
+    done: boolean;
+    error?: string;
+  };
 }

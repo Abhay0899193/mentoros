@@ -7,7 +7,9 @@ import {
   Trash2,
   Sparkles,
   AlertCircle,
+  Bookmark,
 } from 'lucide-react';
+import { useMemories } from '../../../lib/memoryStore';
 import { spring, dur, riseIn, staggerChildren, reduced } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
 import { useChat } from '../../../lib/chatStore';
@@ -189,6 +191,29 @@ function EmptyState({ onPick }: { onPick: (prompt: string) => void }) {
   );
 }
 
+function SaveMemoryAction({ message }: { message: ChatMessage }) {
+  const save = useMemories((s) => s.save);
+  const text = message.segments.map((s) => s.content).join('\n\n').trim();
+  if (text === '') return null;
+  return (
+    <button
+      aria-label="Save as memory"
+      title="Save this as a memory"
+      onClick={() =>
+        void save({
+          type: message.role === 'user' ? 'preference' : 'learning',
+          body: text.length > 500 ? `${text.slice(0, 497)}…` : text,
+          source: 'chat',
+          tags: ['saved'],
+        })
+      }
+      className="rounded-[6px] p-1 text-faint opacity-0 transition-opacity group-hover/msg:opacity-100 hover:bg-surface-2 hover:text-body"
+    >
+      <Bookmark size={14} strokeWidth={1.5} />
+    </button>
+  );
+}
+
 function MessageRow({
   message,
   streaming,
@@ -205,9 +230,12 @@ function MessageRow({
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
         animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
         transition={reduce ? { duration: dur.micro } : spring.gentle}
-        className="max-w-[85%] self-end rounded-[14px] rounded-br-[6px] bg-surface-2 hairline px-4 py-2.5 text-body text-ink select-text"
+        className="group/msg flex max-w-[85%] items-start gap-1 self-end"
       >
-        {message.segments[0]?.content}
+        <SaveMemoryAction message={message} />
+        <div className="rounded-[14px] rounded-br-[6px] bg-surface-2 hairline px-4 py-2.5 text-body text-ink select-text">
+          {message.segments[0]?.content}
+        </div>
       </motion.div>
     );
   }
@@ -216,8 +244,13 @@ function MessageRow({
       initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
       animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
       transition={reduce ? { duration: dur.micro } : spring.gentle}
-      className="w-full self-start"
+      className="group/msg relative w-full self-start"
     >
+      {!streaming && (
+        <div className="absolute top-0 right-0">
+          <SaveMemoryAction message={message} />
+        </div>
+      )}
       <AssistantMessage message={message} streaming={streaming} onExplainLine={onExplainLine} />
     </motion.div>
   );

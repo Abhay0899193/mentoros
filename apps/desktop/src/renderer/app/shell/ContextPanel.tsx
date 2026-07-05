@@ -1,38 +1,24 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Target, TrendingDown, BookOpen } from 'lucide-react';
 import { spring, dur } from '../../motion/springs';
 import { useShell } from '../../lib/store';
-import { recalledMemories, personas, type RecalledMemory } from '../../lib/seed';
+import { useChat } from '../../lib/chatStore';
+import { useMemories } from '../../lib/memoryStore';
 import { Chip } from '../../ui';
+import { TYPE_COLOR, TYPE_ICON, typeLabel } from '../screens/memory/memoryMeta';
+import { personaMeta } from '../screens/chat/personas';
 
-const typeIcon: Record<RecalledMemory['type'], typeof Target> = {
-  goal: Target,
-  skill: TrendingDown,
-  learning: BookOpen,
-  identity: Target,
-};
-
-function MemoryRow({ mem }: { mem: RecalledMemory }) {
-  const Icon = typeIcon[mem.type];
-  return (
-    <li className="rounded-[10px] p-2 hover:bg-surface-2">
-      <div className="flex items-center gap-2">
-        <Icon size={14} strokeWidth={1.5} className="shrink-0 text-muted" />
-        <span className="truncate text-small font-medium text-ink">{mem.title}</span>
-      </div>
-      <p className="mt-0.5 pl-6 text-[12px] leading-relaxed text-muted">{mem.detail}</p>
-      {/* Confidence bar — data viz, so accent is allowed here */}
-      <div className="mt-1.5 ml-6 h-0.5 overflow-hidden rounded-full bg-surface-3">
-        <div className="h-full rounded-full bg-iris/60" style={{ width: `${mem.confidence * 100}%` }} />
-      </div>
-    </li>
-  );
-}
-
-/** Right context panel (§4.0): what the mentor is using right now — a trust signal. */
+/**
+ * Right context panel (§4.0/§4.2): what the mentor is using RIGHT NOW —
+ * recalled memories from the live `chat.context` event. A trust signal,
+ * not decoration.
+ */
 export function ContextPanel() {
-  const { contextPanelOpen } = useShell();
+  const { contextPanelOpen, setActive } = useShell();
+  const persona = useChat((s) => s.persona);
+  const liveContext = useMemories((s) => s.liveContext);
+  const select = useMemories((s) => s.select);
   const reduce = useReducedMotion();
+  const meta = personaMeta(persona);
 
   return (
     <AnimatePresence initial={false}>
@@ -50,18 +36,64 @@ export function ContextPanel() {
               <h3 className="mb-2 text-label font-medium tracking-[0.02em] text-faint uppercase">
                 Active persona
               </h3>
-              <Chip>{personas[0]}</Chip>
+              <Chip tone={meta.tone}>{meta.label}</Chip>
             </section>
 
             <section>
               <h3 className="mb-1 text-label font-medium tracking-[0.02em] text-faint uppercase">
                 Memories in use
               </h3>
-              <ul className="-mx-2 flex flex-col">
-                {recalledMemories.map((m) => (
-                  <MemoryRow key={m.id} mem={m} />
-                ))}
-              </ul>
+              {liveContext.length === 0 ? (
+                <p className="text-small text-faint">
+                  Nothing recalled yet — when you ask something, the memories the mentor draws on
+                  appear here.
+                </p>
+              ) : (
+                <ul className="-mx-2 flex flex-col">
+                  <AnimatePresence initial={false}>
+                    {liveContext.map((m) => {
+                      const Icon = TYPE_ICON[m.type];
+                      return (
+                        <motion.li
+                          key={m.id}
+                          initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                          animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          transition={reduce ? { duration: dur.micro } : spring.gentle}
+                        >
+                          <button
+                            onClick={() => {
+                              setActive('memory');
+                              select(m.id);
+                            }}
+                            className="w-full rounded-[10px] p-2 text-left hover:bg-surface-2"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Icon
+                                size={14}
+                                strokeWidth={1.5}
+                                className="shrink-0"
+                                style={{ color: TYPE_COLOR[m.type] }}
+                              />
+                              <span className="truncate text-small font-medium text-ink">{m.title}</span>
+                            </span>
+                            <span className="mt-0.5 block pl-6 text-[11px] text-faint">
+                              {typeLabel(m.type)} · relevance{' '}
+                              <span className="font-mono tabular">{Math.round(m.score * 100)}%</span>
+                            </span>
+                            <span className="mt-1.5 ml-6 block h-0.5 overflow-hidden rounded-full bg-surface-3">
+                              <span
+                                className="block h-full rounded-full bg-iris/60"
+                                style={{ width: `${m.score * 100}%` }}
+                              />
+                            </span>
+                          </button>
+                        </motion.li>
+                      );
+                    })}
+                  </AnimatePresence>
+                </ul>
+              )}
             </section>
 
             <section>

@@ -56,6 +56,85 @@ export interface ModelStatus {
 
 export type ChatPhase = 'thinking' | 'drafting' | 'done' | 'error' | 'stopped';
 
+/* ---------------- Memory (Phase 2) ---------------- */
+
+export type MemoryType =
+  | 'identity'
+  | 'goal'
+  | 'skill'
+  | 'learning'
+  | 'project'
+  | 'career'
+  | 'preference'
+  | 'mistake'
+  | 'achievement'
+  | 'repo'
+  | 'meeting'
+  | 'book'
+  | 'research';
+
+/**
+ * One evolving fact — never a chat fragment (§2.3). Repeating a fact merges
+ * into the same record via upsert-by-similarity (embed → nearest same-type →
+ * cosine ≥ threshold ⇒ merge: newest body wins, old body appends to history,
+ * confidence nudges up, id is stable).
+ */
+export interface MemoryRecord {
+  id: string;
+  type: MemoryType;
+  title: string;
+  body: string;
+  confidence: number; // 0..1
+  /** 'chat' | 'voice' | 'manual' | 'import:interview-prep' | 'import:3mc' */
+  source: string;
+  tags: string[];
+  /** Related memory ids (graph edges). */
+  links: string[];
+  createdAt: string;
+  updatedAt: string;
+  history: { at: string; body: string }[];
+}
+
+export interface SaveMemoryInput {
+  type: MemoryType;
+  body: string;
+  title?: string;
+  source: string;
+  tags?: string[];
+  confidence?: number;
+}
+
+export interface SaveMemoryResult {
+  record: MemoryRecord;
+  action: 'created' | 'merged';
+  similarity?: number; // set when merged
+}
+
+export interface RecallHit {
+  record: MemoryRecord;
+  score: number; // cosine similarity 0..1
+}
+
+export interface MemoryGraphData {
+  nodes: { id: string; type: MemoryType; title: string; confidence: number }[];
+  edges: { source: string; target: string }[];
+}
+
+/** Derived views over records (§2.3) — computed by core, never stored. */
+export interface DerivedProfile {
+  identity: { name: string; role: string } | null;
+  goals: MemoryRecord[];
+  strengths: MemoryRecord[];
+  weaknesses: MemoryRecord[];
+  stack: string[];
+  reading: { title: string; percent: number | null; recordId: string }[];
+  /** Mistake tally, most frequent first (count parsed from tags/body). */
+  mistakes: { recordId: string; title: string; count: number; updatedAt: string }[];
+  counts: Partial<Record<MemoryType, number>>;
+}
+
+export type ImportSource = 'interview-prep' | '3mc';
+
 /* ---------------- Voice (Stage 1c) ---------------- */
 
 export interface VoiceStatus {
@@ -115,6 +194,23 @@ export interface CoreEvents {
   'voice.status': VoiceStatus;
   /** Global push-to-talk hotkey (from Electron main via core). */
   'voice.ptt': { pressed: boolean };
+  /** A memory was created or merged — drives "Profile updated" moments. */
+  'memory.saved': { record: MemoryRecord; action: 'created' | 'merged'; similarity?: number };
+  /** What recall injected into a generation — feeds the Context panel (§4.2). */
+  'chat.context': {
+    threadId: string;
+    messageId: string;
+    memories: { id: string; type: MemoryType; title: string; score: number }[];
+  };
+  /** Importer progress. */
+  'import.progress': {
+    source: ImportSource;
+    step: string;
+    created: number;
+    merged: number;
+    done: boolean;
+    error?: string;
+  };
 }
 
 export interface CoreClient {
@@ -140,6 +236,20 @@ export interface CoreClient {
   modelStatus(): Promise<ModelStatus>;
   /** Starts a pull of the default (or given) model; progress via `models.pull`. */
   pullModel(model?: string): Promise<void>;
+
+  /* memory */
+  listMemories(opts?: { type?: MemoryType; q?: string; limit?: number }): Promise<MemoryRecord[]>;
+  saveMemory(input: SaveMemoryInput): Promise<SaveMemoryResult>;
+  updateMemory(
+    id: string,
+    patch: Partial<Pick<MemoryRecord, 'title' | 'body' | 'type' | 'tags' | 'confidence' | 'links'>>,
+  ): Promise<MemoryRecord>;
+  deleteMemory(id: string): Promise<void>;
+  recall(query: string, opts?: { k?: number; types?: MemoryType[] }): Promise<RecallHit[]>;
+  memoryGraph(): Promise<MemoryGraphData>;
+  profile(): Promise<DerivedProfile>;
+  /** Kick off an import; progress arrives via `import.progress`. Idempotent. */
+  importSource(source: ImportSource, path: string): Promise<{ started: true }>;
 
   /* voice */
   voiceStatus(): Promise<VoiceStatus>;
@@ -256,6 +366,30 @@ export function createCoreClient(): CoreClient {
     stopGeneration: (messageId) => post<void>(`/chat/${messageId}/stop`),
     modelStatus: () => get<ModelStatus>('/models/status'),
     pullModel: (model) => post<void>('/models/pull', { model }),
+
+    listMemories: (opts) => {
+      const p = new URLSearchParams();
+      if (opts?.type) p.set('type', opts.type);
+      if (opts?.q) p.set('q', opts.q);
+      if (opts?.limit) p.set('limit', String(opts.limit));
+      const qs = p.toString();
+      return get<MemoryRecord[]>(`/memories${qs ? `?${qs}` : ''}`);
+    },
+    saveMemory: (input) => post<SaveMemoryResult>('/memories', input),
+    updateMemory: (id, patch) =>
+      fetch(`${baseUrl}/memories/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(patch),
+      }).then((r) => json<MemoryRecord>(r)),
+    deleteMemory: (id) =>
+      fetch(`${baseUrl}/memories/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`core request failed: ${r.status}`);
+      }),
+    recall: (query, opts) => post<RecallHit[]>('/memories/recall', { query, ...opts }),
+    memoryGraph: () => get<MemoryGraphData>('/memories/graph'),
+    profile: () => get<DerivedProfile>('/memories/profile'),
+    importSource: (source, path) => post<{ started: true }>('/import', { source, path }),
 
     voiceStatus: () => get<VoiceStatus>('/voice/status'),
     installVoice: () => post<void>('/voice/install'),
