@@ -36,3 +36,10 @@ Delegate verbose work (runs, tests, installs, indexing, doc lookups) so only sum
 
 ## Current status
 See `PROGRESS.md`. **Nothing is built yet — start with Phase 1, Stage 1a, and produce your execution plan in plan mode before writing code.**
+
+## Session-window protocol (token economics — follow strictly)
+1. **Checkpoint discipline:** every stage ends with `git commit` + `PROGRESS.md` update. Write the exact "Next step" (files + remaining work) into `PROGRESS.md` BEFORE starting a stage, so a mid-stage cutoff loses nothing.
+2. **`wrap up` / `/wrap`:** finish only the edit in progress, commit, write exact resume state to `PROGRESS.md`, stop. No new work.
+3. **Resume = fresh session, always.** After a window reset the user opens a NEW chat (`/clear` or new conversation) and types `continue`. Read `PROGRESS.md` → `plan.md` → go. Cost ≈ 25–40k tokens. NEVER resume the old transcript (≈300k+, 30–40% of a window).
+4. **The transcript is disposable; git + PROGRESS.md are the memory.** Keep in-thread output terse — every extra token is re-sent on every subsequent turn of that session.
+5. `/clear` at every phase gate (and after any big checkpoint) even mid-window — a long transcript makes every following turn cost ~context-size tokens.

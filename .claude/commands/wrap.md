@@ -1,0 +1,1 @@
+Wrap up the session NOW per the Session-window protocol in CLAUDE.md: finish only the edit currently in progress (no new work), run typecheck if code changed, git commit, update PROGRESS.md with the exact resume state ("Next step" must name files and remaining work precisely), then stop and tell the user to resume next window in a FRESH chat with the word "continue".
