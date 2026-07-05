@@ -4,6 +4,7 @@ import { spring, dur } from '../../../motion/springs';
 import type { ChatMessage, Segment } from '../../../lib/coreClient';
 import { useChat } from '../../../lib/chatStore';
 import { useShell } from '../../../lib/store';
+import { useKb } from '../../../lib/kbStore';
 import { Button, Chip } from '../../../ui';
 import { RichText } from './RichText';
 import { personaMeta } from './personas';
@@ -99,7 +100,10 @@ export function AssistantMessage({ message, streaming, onExplainLine }: Assistan
               key={c.n}
               type="button"
               title={c.snippet}
-              onClick={() => setActive('knowledge')}
+              onClick={() => {
+                useKb.getState().openReading(c.sourceId);
+                setActive('knowledge');
+              }}
               className="flex max-w-56 items-center gap-1.5 rounded-full border border-line bg-surface-1 py-0.5 pr-2.5 pl-1 text-left hover:border-line-strong hover:bg-surface-2"
             >
               <span className="flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-surface-3 px-1 font-mono text-[10px] leading-none text-muted">

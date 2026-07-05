@@ -3,6 +3,7 @@ import { spring, dur } from '../../motion/springs';
 import { useShell } from '../../lib/store';
 import { useChat } from '../../lib/chatStore';
 import { useMemories } from '../../lib/memoryStore';
+import { useKb } from '../../lib/kbStore';
 import { Chip } from '../../ui';
 import type { MessageCitation } from '../../lib/coreClient';
 import { TYPE_COLOR, TYPE_ICON, typeLabel } from '../screens/memory/memoryMeta';
@@ -130,7 +131,10 @@ export function ContextPanel() {
                         transition={reduce ? { duration: dur.micro } : spring.gentle}
                       >
                         <button
-                          onClick={() => setActive('knowledge')}
+                          onClick={() => {
+                            useKb.getState().openReading(c.sourceId);
+                            setActive('knowledge');
+                          }}
                           className="w-full rounded-[10px] p-2 text-left hover:bg-surface-2"
                         >
                           <span className="flex items-center gap-2">
