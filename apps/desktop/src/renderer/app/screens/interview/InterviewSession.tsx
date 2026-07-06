@@ -177,17 +177,42 @@ function Toolbar({ locked }: { locked: boolean }) {
   const session = useInterview((s) => s.session);
   const evalLoading = useInterview((s) => s.evalLoading);
   const scorecardLoading = useInterview((s) => s.scorecardLoading);
+  const scorecard = useInterview((s) => s.scorecard);
   const runTests = useInterview((s) => s.runTests);
   const finish = useInterview((s) => s.finish);
   const endInterview = useInterview((s) => s.endInterview);
+  const reopenScorecard = useInterview((s) => s.reopenScorecard);
+  const backToLauncher = useInterview((s) => s.backToLauncher);
   if (!session) return null;
 
   const isInterrogation = session.phase === "interrogation";
+  const isOver =
+    session.phase === "scorecard" || session.phase === "abandoned";
 
   return (
     <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line px-4">
       <ElapsedTimer startedAt={session.startedAt} />
       <div className="flex items-center gap-2">
+        {isOver && !!scorecard && (
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Flag size={14} strokeWidth={1.5} />}
+            onClick={reopenScorecard}
+          >
+            View scorecard
+          </Button>
+        )}
+        {isOver && (
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<ArrowLeft size={14} strokeWidth={1.5} />}
+            onClick={backToLauncher}
+          >
+            Back to interviews
+          </Button>
+        )}
         {!locked && <HintButton />}
         {!locked && (
           <Button

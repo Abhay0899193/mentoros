@@ -111,10 +111,10 @@ export function Transcript() {
       ? "speaking"
       : "thinking";
 
+  // Interrogation keeps the composer live — the candidate must be able to
+  // answer the follow-up questions; only terminal phases are read-only.
   const locked =
-    session?.phase === "interrogation" ||
-    session?.phase === "scorecard" ||
-    session?.phase === "abandoned";
+    session?.phase === "scorecard" || session?.phase === "abandoned";
   const canSend =
     !locked &&
     draft.trim() !== "" &&
