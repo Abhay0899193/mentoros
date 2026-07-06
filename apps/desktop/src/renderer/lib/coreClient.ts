@@ -649,7 +649,9 @@ type Listener = (payload: CoreEvents[keyof CoreEvents]) => void;
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`core request failed: ${res.status} ${res.statusText}`);
-  return (await res.json()) as T;
+  // 204s and empty bodies (abandon, open-in-finder) have nothing to parse.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export function createCoreClient(): CoreClient {
@@ -701,11 +703,14 @@ export function createCoreClient(): CoreClient {
   connect();
 
   const get = <T>(path: string) => fetch(`${baseUrl}${path}`).then((r) => json<T>(r));
+  // Bodyless POSTs must not declare a JSON content-type — fastify 400s on an
+  // empty body that claims to be JSON (bit us on /hint, /end, /abandon).
   const post = <T>(path: string, body?: unknown) =>
     fetch(`${baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      ...(body === undefined
+        ? {}
+        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
     }).then((r) => json<T>(r));
 
   return {

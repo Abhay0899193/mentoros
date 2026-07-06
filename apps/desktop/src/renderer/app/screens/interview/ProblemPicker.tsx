@@ -57,11 +57,14 @@ function ProblemRow({
       <button
         onClick={onStart}
         onMouseEnter={onSelect}
+        onFocus={onSelect}
         data-selected={selected}
         className={cn(
           "flex w-full flex-col gap-1.5 rounded-[10px] px-3 py-2.5 text-left",
           selected ? "bg-surface-2" : "hover:bg-surface-2/60",
-          problem.recommended && "ring-1 ring-inset ring-iris/30",
+          // outline (not ring): ring is box-shadow and would shadow the
+          // global :focus-visible ring on the row where it matters most.
+          problem.recommended && "outline outline-1 -outline-offset-1 outline-iris/30",
         )}
       >
         <div className="flex items-center gap-2">
@@ -118,6 +121,7 @@ export function ProblemPicker() {
 
   const [selected, setSelected] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Recommended problem pinned first.
   const ordered = [...problems].sort(
@@ -127,6 +131,16 @@ export function ProblemPicker() {
   useEffect(() => {
     if (pickerOpen) setSelected(0);
   }, [pickerOpen, problems.length]);
+
+  // Keyboard-first (§3.0): focus the list on open so ↑↓/⏎ work immediately.
+  useEffect(() => {
+    if (pickerOpen && !problemsLoading) scrollRef.current?.focus();
+  }, [pickerOpen, problemsLoading]);
+
+  // Keep the selected row visible while arrowing through a long list.
+  useEffect(() => {
+    listRef.current?.children[selected]?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
 
   const startSelected = (id?: string) => {
     const problemId = id ?? ordered[selected]?.id;
@@ -141,6 +155,9 @@ export function ProblemPicker() {
       e.preventDefault();
       setSelected((s) => Math.max(s - 1, 0));
     } else if (e.key === "Enter") {
+      // A focused row handles Enter natively via its own click — and its
+      // onFocus already synced `selected`, so don't double-start.
+      if ((e.target as HTMLElement).tagName === "BUTTON") return;
       e.preventDefault();
       startSelected();
     }
@@ -165,7 +182,8 @@ export function ProblemPicker() {
       </div>
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto p-2"
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto p-2 focus:outline-none"
         onKeyDown={onKeyDown}
         tabIndex={-1}
       >

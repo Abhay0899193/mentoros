@@ -75,6 +75,15 @@ interface InterviewState {
 let initialized = false;
 const SERVICE_ERROR = "The interview service did not respond.";
 
+/**
+ * Turn ids whose terminal interview.status (done/error/stopped) already
+ * arrived over the WS. The status event can beat the HTTP response of the
+ * action that created the turn — without this guard the action would then
+ * overwrite the terminal state with "thinking" and strand the UI (hint button
+ * stayed disabled forever when Ollama was down).
+ */
+const terminalTurns = new Set<string>();
+
 function upsertTurn(
   turns: InterviewTurn[],
   id: string,
@@ -157,6 +166,7 @@ export const useInterview = create<InterviewState>((set, get) => ({
       if (s.sessionId !== sessionId) return;
       const finished =
         phase === "done" || phase === "error" || phase === "stopped";
+      if (finished) terminalTurns.add(turnId);
       set({
         turnPhase: phase,
         streamingTurnId: finished ? null : turnId,
@@ -286,7 +296,7 @@ export const useInterview = create<InterviewState>((set, get) => ({
   },
 
   send: async (content) => {
-    const { sessionId, turns } = get();
+    const { sessionId } = get();
     if (!sessionId) return;
     set({ turnError: null });
     try {
@@ -295,28 +305,37 @@ export const useInterview = create<InterviewState>((set, get) => ({
         content,
       );
       const now = new Date().toISOString();
-      set({
-        turns: [
-          ...turns,
-          {
+      // Functional set + missing-id checks: token/status events for the reply
+      // may already have landed before this response resolved.
+      set((s) => {
+        const turns = [...s.turns];
+        if (!turns.some((t) => t.id === turnId)) {
+          const replyIdx = turns.findIndex((t) => t.id === replyTurnId);
+          turns.splice(replyIdx === -1 ? turns.length : replyIdx, 0, {
             id: turnId,
             sessionId,
             role: "candidate",
             kind: "chat",
             content,
             createdAt: now,
-          },
-          {
+          });
+        }
+        if (!turns.some((t) => t.id === replyTurnId)) {
+          turns.push({
             id: replyTurnId,
             sessionId,
             role: "interviewer",
             kind: "chat",
             content: "",
             createdAt: now,
-          },
-        ],
-        streamingTurnId: replyTurnId,
-        turnPhase: "thinking",
+          });
+        }
+        return {
+          turns,
+          ...(terminalTurns.has(replyTurnId)
+            ? {}
+            : { streamingTurnId: replyTurnId, turnPhase: "thinking" as const }),
+        };
       });
     } catch {
       set({ turnError: SERVICE_ERROR });
@@ -324,29 +343,34 @@ export const useInterview = create<InterviewState>((set, get) => ({
   },
 
   requestHint: async () => {
-    const { sessionId, turns, session } = get();
+    const { sessionId, session } = get();
     if (!sessionId || !session || session.hintsUsed >= 3) return;
     set({ turnError: null });
     try {
       const { level, replyTurnId } = await coreClient.requestHint(sessionId);
       const now = new Date().toISOString();
-      set({
-        turns: [
-          ...turns,
-          {
-            id: replyTurnId,
-            sessionId,
-            role: "interviewer",
-            kind: "hint",
-            hintLevel: level,
-            content: "",
-            createdAt: now,
-          },
-        ],
-        streamingTurnId: replyTurnId,
-        turnPhase: "thinking",
-        session: { ...session, hintsUsed: session.hintsUsed + 1 },
-      });
+      set((s) => ({
+        turns: s.turns.some((t) => t.id === replyTurnId)
+          ? s.turns
+          : [
+              ...s.turns,
+              {
+                id: replyTurnId,
+                sessionId,
+                role: "interviewer",
+                kind: "hint",
+                hintLevel: level,
+                content: "",
+                createdAt: now,
+              },
+            ],
+        session: s.session
+          ? { ...s.session, hintsUsed: s.session.hintsUsed + 1 }
+          : s.session,
+        ...(terminalTurns.has(replyTurnId)
+          ? {}
+          : { streamingTurnId: replyTurnId, turnPhase: "thinking" as const }),
+      }));
     } catch {
       set({ turnError: SERVICE_ERROR });
     }
@@ -378,27 +402,30 @@ export const useInterview = create<InterviewState>((set, get) => ({
   },
 
   finish: async () => {
-    const { sessionId, code, turns, session } = get();
+    const { sessionId, code, session } = get();
     if (!sessionId || !session) return;
     try {
       const { replyTurnId } = await coreClient.finishCoding(sessionId, code);
       const now = new Date().toISOString();
-      set({
-        session: { ...session, phase: "interrogation" },
-        turns: [
-          ...turns,
-          {
-            id: replyTurnId,
-            sessionId,
-            role: "interviewer",
-            kind: "chat",
-            content: "",
-            createdAt: now,
-          },
-        ],
-        streamingTurnId: replyTurnId,
-        turnPhase: "thinking",
-      });
+      set((s) => ({
+        session: s.session ? { ...s.session, phase: "interrogation" } : s.session,
+        turns: s.turns.some((t) => t.id === replyTurnId)
+          ? s.turns
+          : [
+              ...s.turns,
+              {
+                id: replyTurnId,
+                sessionId,
+                role: "interviewer",
+                kind: "chat",
+                content: "",
+                createdAt: now,
+              },
+            ],
+        ...(terminalTurns.has(replyTurnId)
+          ? {}
+          : { streamingTurnId: replyTurnId, turnPhase: "thinking" as const }),
+      }));
     } catch {
       set({ turnError: SERVICE_ERROR });
     }

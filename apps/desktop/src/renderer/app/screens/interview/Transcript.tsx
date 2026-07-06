@@ -97,7 +97,7 @@ export function Transcript() {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [turns, streamingTurnId]);
+  }, [turns, streamingTurnId, turnError]);
 
   // Before the very first token arrives there's no turnId yet to key off of —
   // treat "empty transcript + thinking/drafting" as the opening framing turn.
