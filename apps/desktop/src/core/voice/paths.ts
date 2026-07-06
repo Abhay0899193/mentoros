@@ -14,7 +14,9 @@ export interface VoicePaths {
   bin: string;
   /** <dataDir>/voice/tmp — scratch WAVs for STT / AIFF for say */
   tmp: string;
-  /** whisper.cpp model */
+  /** <dataDir>/voice/previews — cached one-shot voice sample WAVs */
+  previews: string;
+  /** whisper.cpp model (small.en default; other quality tiers live beside it) */
   whisperModel: string;
   /** <dataDir>/venv-tts */
   venv: string;
@@ -40,6 +42,7 @@ export function voicePaths(dataDir: string): VoicePaths {
     models,
     bin: join(root, "bin"),
     tmp: join(root, "tmp"),
+    previews: join(root, "previews"),
     whisperModel: join(models, WHISPER_MODEL_FILE),
     venv,
     venvPython: join(venv, "bin", "python3"),
@@ -47,4 +50,9 @@ export function voicePaths(dataDir: string): VoicePaths {
     kokoroModel: join(kokoroDir, KOKORO_MODEL_FILE),
     kokoroVoices: join(kokoroDir, KOKORO_VOICES_FILE),
   };
+}
+
+/** Absolute path of a whisper model file inside the models dir. */
+export function sttModelPath(paths: VoicePaths, file: string): string {
+  return join(paths.models, file);
 }

@@ -6,6 +6,7 @@ import {
   PanelLeft,
   Swords,
   Target,
+  Settings,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../../lib/cn";
@@ -71,6 +72,16 @@ export function CommandPalette() {
         run: () => {
           setActive("interview");
           openInterviewLauncher();
+          setPaletteOpen(false);
+        },
+      },
+      {
+        id: "nav-settings",
+        label: "Settings",
+        icon: Settings,
+        keywords: "settings voice tts stt transcription mentor identity orb face preferences",
+        run: () => {
+          setActive("settings");
           setPaletteOpen(false);
         },
       },

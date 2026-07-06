@@ -23,7 +23,8 @@ export type ModuleId =
   | 'knowledge'
   | 'codebase'
   | 'career'
-  | 'design';
+  | 'design'
+  | 'settings';
 
 export interface ModuleMeta {
   id: ModuleId;

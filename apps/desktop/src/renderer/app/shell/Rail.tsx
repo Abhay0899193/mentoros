@@ -51,7 +51,7 @@ function RailItem({ meta, expanded }: { meta: ModuleMeta; expanded: boolean }) {
 
 /** Left rail (§4.0): 64→240px, Aurora indicator glides between items. */
 export function Rail() {
-  const { railExpanded, toggleRail } = useShell();
+  const { railExpanded, toggleRail, active, setActive } = useShell();
   const { theme, toggle: toggleTheme } = useTheme();
   const reduce = useReducedMotion();
 
@@ -92,8 +92,13 @@ export function Rail() {
           {railExpanded && <span className="text-small">{theme === 'dark' ? 'Light' : 'Dark'} theme</span>}
         </button>
         <button
+          onClick={() => setActive('settings')}
           aria-label="Settings"
-          className="flex h-10 w-full items-center gap-3 rounded-[10px] px-[11px] text-faint hover:bg-surface-2 hover:text-body"
+          aria-current={active === 'settings' ? 'page' : undefined}
+          className={cn(
+            'flex h-10 w-full items-center gap-3 rounded-[10px] px-[11px] text-faint hover:bg-surface-2 hover:text-body',
+            active === 'settings' && 'bg-surface-2 text-ink',
+          )}
         >
           <Settings size={20} strokeWidth={1.5} className="shrink-0" />
           {railExpanded && <span className="flex-1 text-left text-small">Settings</span>}

@@ -46,16 +46,16 @@ def to_pcm(samples):
     a = np.clip(np.asarray(samples, dtype=np.float32), -1.0, 1.0)
     return (a * 32767.0).astype("<i2").tobytes()
 
-async def synth(text):
+async def synth(text, voice):
     got = False
     try:
-        async for samples, _sr in k.create_stream(text, voice=args.voice, speed=1.0, lang="en-us"):
+        async for samples, _sr in k.create_stream(text, voice=voice, speed=1.0, lang="en-us"):
             got = True
             frame(1, to_pcm(samples))
     except Exception:
         if got:
             raise
-        samples, _sr = k.create(text, voice=args.voice, speed=1.0, lang="en-us")
+        samples, _sr = k.create(text, voice=voice, speed=1.0, lang="en-us")
         frame(1, to_pcm(samples))
 
 for line in sys.stdin:
@@ -63,11 +63,13 @@ for line in sys.stdin:
     if not line:
         continue
     try:
-        text = json.loads(line).get("text", "")
+        req = json.loads(line)
+        text = req.get("text", "")
+        voice = req.get("voice") or args.voice
     except Exception as e:
         frame(3, str(e).encode()); continue
     try:
-        asyncio.run(synth(text))
+        asyncio.run(synth(text, voice))
         frame(2)
     except Exception as e:
         frame(3, ("kokoro synth failed: %r" % (e,)).encode())
@@ -157,7 +159,7 @@ export class KokoroWorker {
    * keep draining the worker's frames internally so the protocol stays aligned
    * and the model remains warm (no kill/reload).
    */
-  async *synthesize(text: string, signal?: AbortSignal): AsyncGenerator<Buffer> {
+  async *synthesize(text: string, signal?: AbortSignal, voice?: string): AsyncGenerator<Buffer> {
     await this.ensureStarted();
     const proc = this.proc;
     if (!proc || !proc.stdin) throw new Error("kokoro worker unavailable");
@@ -187,7 +189,7 @@ export class KokoroWorker {
     };
     this.queue.push(pending);
     signal?.addEventListener("abort", signalWake);
-    proc.stdin.write(`${JSON.stringify({ text })}\n`);
+    proc.stdin.write(`${JSON.stringify(voice ? { text, voice } : { text })}\n`);
 
     try {
       for (;;) {

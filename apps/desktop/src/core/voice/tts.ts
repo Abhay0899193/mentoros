@@ -18,7 +18,7 @@ import type { VoicePaths } from "./paths.js";
 export const TTS_SAMPLE_RATE = 24000;
 const CHUNK_FRAMES = 4096;
 const CHUNK_BYTES = CHUNK_FRAMES * 2;
-const KOKORO_VOICE = "af_heart";
+export const KOKORO_VOICE = "af_heart";
 export const KOKORO_SCRIPT_NAME = "kokoro_tts.py";
 
 export type TtsEngine = "kokoro" | "say";
@@ -97,9 +97,10 @@ export function synthesize(
   engine: TtsEngine,
   paths: VoicePaths,
   signal?: AbortSignal,
+  voice: string = KOKORO_VOICE,
 ): TtsStream {
   const stream =
-    engine === "kokoro" ? kokoroStream(text, paths, signal) : sayStream(text, paths, signal);
+    engine === "kokoro" ? kokoroStream(text, paths, signal, voice) : sayStream(text, paths, signal);
   return { engine, sampleRate: TTS_SAMPLE_RATE, stream };
 }
 
@@ -107,11 +108,12 @@ async function* kokoroStream(
   text: string,
   paths: VoicePaths,
   signal?: AbortSignal,
+  voice: string = KOKORO_VOICE,
 ): AsyncGenerator<Buffer> {
   const scriptPath = join(paths.root, KOKORO_SCRIPT_NAME);
   const child = spawn(
     paths.venvPython,
-    [scriptPath, "--model", paths.kokoroModel, "--voices", paths.kokoroVoices, "--voice", KOKORO_VOICE, "--rate", String(TTS_SAMPLE_RATE)],
+    [scriptPath, "--model", paths.kokoroModel, "--voices", paths.kokoroVoices, "--voice", voice, "--rate", String(TTS_SAMPLE_RATE)],
     { signal },
   );
   let stderr = "";

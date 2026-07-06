@@ -1,15 +1,24 @@
+import { existsSync, mkdirSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { WebSocket } from "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
 import { VoiceManager } from "./manager.js";
 import { transcribe } from "./stt.js";
-import { pcm16DurationMs } from "./wav.js";
-import type { CoreEvents } from "../types.js";
+import { encodeWavPcm16, pcm16DurationMs } from "./wav.js";
+import { isKnownTtsVoice, listTtsVoices } from "./voices.js";
+import { sttModelDef } from "./sttModels.js";
+import type { AppSettings, CoreEvents, SttModelId } from "../types.js";
 
 type Broadcast = <E extends keyof CoreEvents>(event: E, payload: CoreEvents[E]) => void;
+
+const PREVIEW_TEXT = "Hey Abhay — I'm your mentor. This is how I sound.";
 
 export interface VoiceDeps {
   broadcast: Broadcast;
   dataDir: string;
+  /** Current app settings (TTS voice + STT model). Defaults are used if absent. */
+  getSettings?: () => AppSettings;
 }
 
 /** Per-connection state for a /voice websocket. */
@@ -50,10 +59,55 @@ function sendJson(socket: WebSocket, obj: unknown): void {
  * `voice-error` frames even when sidecars are missing — never crashes.
  */
 export function registerVoice(app: FastifyInstance, deps: VoiceDeps): void {
-  const mgr = new VoiceManager(deps.dataDir, deps.broadcast);
+  const mgr = new VoiceManager(deps.dataDir, deps.broadcast, deps.getSettings);
   const conns = new Set<VoiceConn>();
 
   app.get("/voice/status", async () => mgr.status());
+
+  /* ------------------------- voice options (Settings) -------------------- */
+
+  app.get("/voice/voices", async () => listTtsVoices(mgr.paths));
+
+  app.get<{ Querystring: { voice?: string } }>("/voice/preview", async (req, reply) => {
+    const voice = req.query.voice?.trim();
+    if (!voice || !isKnownTtsVoice(voice)) {
+      return reply.code(400).send({ error: "unknown voice" });
+    }
+    const { engine } = mgr.ttsEngine();
+    if (!engine) return reply.code(503).send({ error: "no TTS engine available" });
+
+    // Cache one-shot samples on disk so replays are instant; previews are fully
+    // independent of the /voice channel (their own synthesis + abort scope).
+    const cachePath = join(mgr.paths.previews, `${voice}.wav`);
+    if (existsSync(cachePath)) {
+      return reply.type("audio/wav").send(await readFile(cachePath));
+    }
+    try {
+      const abort = new AbortController();
+      const out = await mgr.synthesizeToPcm(PREVIEW_TEXT, voice, abort.signal);
+      if (!out || out.pcm.length === 0) {
+        return reply.code(503).send({ error: "synthesis produced no audio" });
+      }
+      const wav = encodeWavPcm16(out.pcm, out.sampleRate);
+      mkdirSync(mgr.paths.previews, { recursive: true });
+      await writeFile(cachePath, wav).catch(() => undefined);
+      return reply.type("audio/wav").send(wav);
+    } catch (err) {
+      return reply.code(503).send({ error: `preview failed: ${(err as Error).message}` });
+    }
+  });
+
+  app.get("/voice/stt-models", async () => mgr.sttModels());
+
+  app.post<{ Params: { id: string } }>("/voice/stt-models/:id/download", async (req, reply) => {
+    const id = req.params.id;
+    if (!sttModelDef(id as SttModelId)) {
+      return reply.code(404).send({ error: `unknown model: ${id}` });
+    }
+    const result = mgr.startSttModelDownload(id as SttModelId);
+    if (result === "in-flight") return reply.code(409).send({ error: "already downloading" });
+    return reply.code(204).send();
+  });
 
   app.post("/voice/install", async (_req, reply) => {
     mgr.install();
@@ -163,7 +217,13 @@ async function handleMicStop(conn: VoiceConn, mgr: VoiceManager): Promise<void> 
     return;
   }
   try {
-    const text = await transcribe({ pcm, sampleRate: conn.sampleRate, paths: mgr.paths, bin });
+    const text = await transcribe({
+      pcm,
+      sampleRate: conn.sampleRate,
+      paths: mgr.paths,
+      bin,
+      modelPath: mgr.activeSttModelPath(),
+    });
     sendJson(conn.socket, { type: "transcript", text, final: true });
   } catch (err) {
     sendJson(conn.socket, { type: "voice-error", message: `Transcription failed: ${(err as Error).message}` });

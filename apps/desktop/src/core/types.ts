@@ -376,6 +376,40 @@ export interface VoiceStatus {
   detail?: string;
 }
 
+/* --------------- Settings + voice options (mirror of coreClient) ---------- */
+
+/** whisper.cpp model choices (quality vs latency ladder; small.en default). */
+export type SttModelId = "small.en" | "medium.en" | "large-v3-turbo";
+
+export interface AppSettings {
+  /** Kokoro voice id, e.g. 'af_heart'. Applies to the next utterance. */
+  ttsVoice: string;
+  /** STT model; must be downloaded (state 'ready') before it takes effect. */
+  sttModel: SttModelId;
+  /** Mentor identity on the Voice screen: shader Orb or the animated face. */
+  mentorIdentity: "orb" | "face";
+}
+
+export interface TtsVoiceInfo {
+  /** Kokoro id ('af_heart'); prefix encodes accent+gender (a/b × f/m). */
+  id: string;
+  /** Display name ('Heart'). */
+  label: string;
+  accent: "american" | "british";
+  gender: "female" | "male";
+}
+
+export interface SttModelInfo {
+  id: SttModelId;
+  label: string;
+  sizeBytes: number;
+  /** One-line quality/latency tradeoff copy for the picker. */
+  note: string;
+  state: "ready" | "missing" | "downloading";
+  /** True when this is the model STT currently uses (settings + downloaded). */
+  active: boolean;
+}
+
 /** Payload shapes broadcast over the /events websocket. */
 export interface CoreEvents {
   "core.status": { state: "starting" | "ready" | "degraded"; detail?: string };
@@ -406,6 +440,16 @@ export interface CoreEvents {
     error?: string;
   };
   "voice.status": VoiceStatus;
+  /** STT model download progress (voice quality option in Settings). */
+  "voice.model": {
+    model: SttModelId;
+    completedBytes: number;
+    totalBytes: number;
+    done: boolean;
+    error?: string;
+  };
+  /** Settings changed (any writer) — screens re-read what they care about. */
+  "settings.changed": { settings: AppSettings };
   "voice.ptt": { pressed: boolean };
   /** A memory was created or merged — drives "Profile updated" moments. */
   "memory.saved": {

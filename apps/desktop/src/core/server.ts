@@ -12,6 +12,8 @@ import { createKbSystem } from "./kb/index.js";
 import { registerKbRoutes } from "./kb/routes.js";
 import { createInterviewSystem } from "./interview/index.js";
 import { registerInterviewRoutes } from "./interview/routes.js";
+import { createSettingsSystem } from "./settings/index.js";
+import { registerSettingsRoutes } from "./settings/routes.js";
 import {
   DEFAULT_MODEL,
   modelStatus as probeModelStatus,
@@ -69,6 +71,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     }
   };
 
+  const settings = createSettingsSystem(dataDir);
   const memory = createMemorySystem(dataDir, broadcast);
   const learning = createLearningSystem(dataDir, memory.engine);
   const kb = createKbSystem(dataDir, broadcast);
@@ -85,6 +88,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     kb.close();
     learning.close();
     memory.close();
+    settings.close();
     store.close();
   });
 
@@ -196,8 +200,11 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   /* ------------------------------ interview ------------------------------ */
   registerInterviewRoutes(app, { engine: interview.engine });
 
+  /* ------------------------------ settings ------------------------------- */
+  registerSettingsRoutes(app, { store: settings.store, broadcast });
+
   /* -------------------------------- voice -------------------------------- */
-  registerVoice(app, { broadcast, dataDir });
+  registerVoice(app, { broadcast, dataDir, getSettings: () => settings.store.get() });
 
   return app;
 }

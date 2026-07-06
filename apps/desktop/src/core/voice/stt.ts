@@ -42,6 +42,8 @@ export interface TranscribeOptions {
   sampleRate: number;
   paths: VoicePaths;
   bin: string;
+  /** whisper model file to run with; defaults to the pinned small.en model. */
+  modelPath?: string;
   signal?: AbortSignal;
 }
 
@@ -57,7 +59,7 @@ export async function transcribe(opts: TranscribeOptions): Promise<string> {
   try {
     const res = await run(
       opts.bin,
-      ["-m", opts.paths.whisperModel, "-f", wavPath, "-l", "en", "-nt", "-np", "-t", "4"],
+      ["-m", opts.modelPath ?? opts.paths.whisperModel, "-f", wavPath, "-l", "en", "-nt", "-np", "-t", "4"],
       { signal: opts.signal },
     );
     if (res.code !== 0) {

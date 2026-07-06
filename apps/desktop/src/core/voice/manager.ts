@@ -1,19 +1,30 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { voicePaths, WHISPER_MODEL_FILE, type VoicePaths } from "./paths.js";
+import { sttModelPath, voicePaths, WHISPER_MODEL_FILE, type VoicePaths } from "./paths.js";
 import { resolveWhisperBin } from "./stt.js";
 import {
   detectTtsEngine,
   ensureKokoroScript,
   kokoroReady,
+  KOKORO_VOICE,
   synthesize as ttsSynthesize,
   type TtsStream,
 } from "./tts.js";
 import { KokoroWorker, KOKORO_WORKER_SAMPLE_RATE } from "./kokoroWorker.js";
+import {
+  DEFAULT_STT_MODEL,
+  STT_MODELS,
+  sttModelDef,
+  sttModelUrl,
+} from "./sttModels.js";
 import { downloadFile, firstExisting, run } from "./util.js";
-import type { CoreEvents, VoiceStatus } from "../types.js";
+import type { AppSettings, CoreEvents, SttModelId, SttModelInfo, VoiceStatus } from "../types.js";
 
 type Broadcast = <E extends keyof CoreEvents>(event: E, payload: CoreEvents[E]) => void;
+type GetSettings = () => AppSettings;
+
+const MODEL_PROGRESS_THROTTLE_MS = 250; // ~4 broadcasts/second
 
 const STATUS_CACHE_MS = 3000;
 const WHISPER_MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${WHISPER_MODEL_FILE}`;
@@ -37,8 +48,17 @@ export class VoiceManager {
   private installing = false;
   private sttError: string | null = null;
   private readonly kokoro: KokoroWorker;
+  private readonly downloadingModels = new Set<SttModelId>();
 
-  constructor(dataDir: string, private readonly broadcast: Broadcast) {
+  constructor(
+    dataDir: string,
+    private readonly broadcast: Broadcast,
+    private readonly getSettings: GetSettings = () => ({
+      ttsVoice: KOKORO_VOICE,
+      sttModel: DEFAULT_STT_MODEL,
+      mentorIdentity: "orb",
+    }),
+  ) {
     this.paths = voicePaths(dataDir);
     this.kokoro = new KokoroWorker(this.paths);
     // Warm the model in the background if it is already installed so the first
@@ -63,16 +83,41 @@ export class VoiceManager {
    * available. Kokoro streams from the warm worker (per-utterance spawn is used
    * only as a last-resort fallback); `say` uses the always-present bridge.
    */
-  synthesize(text: string, signal?: AbortSignal): TtsStream | null {
+  synthesize(text: string, signal?: AbortSignal, voiceOverride?: string): TtsStream | null {
     const { engine } = detectTtsEngine(this.paths);
     if (!engine) return null;
+    const voice = voiceOverride ?? this.getSettings().ttsVoice ?? KOKORO_VOICE;
     if (engine === "kokoro") {
-      return { engine, sampleRate: KOKORO_WORKER_SAMPLE_RATE, stream: this.kokoroStream(text, signal) };
+      return {
+        engine,
+        sampleRate: KOKORO_WORKER_SAMPLE_RATE,
+        stream: this.kokoroStream(text, signal, voice),
+      };
     }
-    return ttsSynthesize(text, "say", this.paths, signal);
+    // macOS `say` has no per-voice mapping here; the requested voice is a no-op.
+    return ttsSynthesize(text, "say", this.paths, signal, voice);
   }
 
-  private async *kokoroStream(text: string, signal?: AbortSignal): AsyncGenerator<Buffer> {
+  /**
+   * Drain a full synthesis into one PCM16 buffer (used for cached voice
+   * previews — independent of any open /voice channel).
+   */
+  async synthesizeToPcm(
+    text: string,
+    voice: string,
+    signal?: AbortSignal,
+  ): Promise<{ pcm: Buffer; sampleRate: number } | null> {
+    const synth = this.synthesize(text, signal, voice);
+    if (!synth) return null;
+    const parts: Buffer[] = [];
+    for await (const chunk of synth.stream) {
+      if (signal?.aborted) break;
+      parts.push(chunk);
+    }
+    return { pcm: Buffer.concat(parts), sampleRate: synth.sampleRate };
+  }
+
+  private async *kokoroStream(text: string, signal?: AbortSignal, voice?: string): AsyncGenerator<Buffer> {
     // Kokoro may emit a whole segment as one large buffer; re-slice into
     // ~4096-frame (8192-byte) chunks so the renderer/Orb gets smooth, paced
     // audio matching the documented frame size.
@@ -80,7 +125,7 @@ export class VoiceManager {
     let residual = Buffer.alloc(0);
     let any = false;
     try {
-      for await (const chunk of this.kokoro.synthesize(text, signal)) {
+      for await (const chunk of this.kokoro.synthesize(text, signal, voice)) {
         any = true;
         residual = Buffer.concat([residual, chunk]);
         while (residual.length >= CHUNK && !signal?.aborted) {
@@ -97,7 +142,7 @@ export class VoiceManager {
     }
     if (signal?.aborted) return;
     // Worker produced nothing — fall back to a one-shot python synthesis.
-    const fb = ttsSynthesize(text, "kokoro", this.paths, signal);
+    const fb = ttsSynthesize(text, "kokoro", this.paths, signal, voice);
     for await (const chunk of fb.stream) {
       if (signal?.aborted) return;
       yield chunk;
@@ -138,6 +183,111 @@ export class VoiceManager {
   private refresh(): void {
     this.cached = null;
     this.broadcast("voice.status", this.status());
+  }
+
+  /* --------------------------- STT model options -------------------------- */
+
+  private modelReady(id: SttModelId): boolean {
+    const def = sttModelDef(id);
+    return !!def && existsSync(sttModelPath(this.paths, def.file));
+  }
+
+  /** The model id STT actually uses: the selection if ready, else small.en. */
+  private activeSttModelId(): SttModelId {
+    const selected = this.getSettings().sttModel;
+    if (this.modelReady(selected)) return selected;
+    return DEFAULT_STT_MODEL;
+  }
+
+  /** Absolute path of the active whisper model file (falls back to small.en). */
+  activeSttModelPath(): string {
+    const def = sttModelDef(this.activeSttModelId()) ?? sttModelDef(DEFAULT_STT_MODEL);
+    return def ? sttModelPath(this.paths, def.file) : this.paths.whisperModel;
+  }
+
+  /** State + active flag for every model in the quality ladder. */
+  sttModels(): SttModelInfo[] {
+    const activeId = this.modelReady(this.activeSttModelId()) ? this.activeSttModelId() : null;
+    return STT_MODELS.map((def) => {
+      const state: SttModelInfo["state"] = this.downloadingModels.has(def.id)
+        ? "downloading"
+        : existsSync(sttModelPath(this.paths, def.file))
+          ? "ready"
+          : "missing";
+      return {
+        id: def.id,
+        label: def.label,
+        sizeBytes: def.sizeBytes,
+        note: def.note,
+        state,
+        active: def.id === activeId && state === "ready",
+      };
+    });
+  }
+
+  /** 'unknown' (→404) | 'in-flight' (→409) | 'ok' (→204, download started). */
+  startSttModelDownload(id: SttModelId): "unknown" | "in-flight" | "ok" {
+    const def = sttModelDef(id);
+    if (!def) return "unknown";
+    if (this.downloadingModels.has(id)) return "in-flight";
+    if (existsSync(sttModelPath(this.paths, def.file))) {
+      // Already present; report a single done frame so the UI settles.
+      this.broadcast("voice.model", {
+        model: id,
+        completedBytes: def.sizeBytes,
+        totalBytes: def.sizeBytes,
+        done: true,
+      });
+      return "ok";
+    }
+    this.downloadingModels.add(id);
+    void this.runSttModelDownload(def.id).finally(() => {
+      this.downloadingModels.delete(id);
+      this.refresh();
+    });
+    return "ok";
+  }
+
+  private async runSttModelDownload(id: SttModelId): Promise<void> {
+    const def = sttModelDef(id);
+    if (!def) return;
+    mkdirSync(this.paths.models, { recursive: true });
+    const dest = sttModelPath(this.paths, def.file);
+    // downloadFile streams to <dest>.part then renames; content-length is the
+    // authoritative total. Throttle progress to ~4/s.
+    let lastAt = 0;
+    let lastTotal = def.sizeBytes;
+    try {
+      await downloadFile(sttModelUrl(def), dest, (p) => {
+        lastTotal = p.totalBytes || lastTotal;
+        const now = Date.now();
+        if (now - lastAt >= MODEL_PROGRESS_THROTTLE_MS) {
+          lastAt = now;
+          this.broadcast("voice.model", {
+            model: id,
+            completedBytes: p.completedBytes,
+            totalBytes: lastTotal,
+            done: false,
+          });
+        }
+      });
+      this.broadcast("voice.model", {
+        model: id,
+        completedBytes: lastTotal,
+        totalBytes: lastTotal,
+        done: true,
+      });
+    } catch (err) {
+      // downloadFile already removes its .part on failure; belt-and-suspenders.
+      await rm(`${dest}.part`, { force: true }).catch(() => undefined);
+      this.broadcast("voice.model", {
+        model: id,
+        completedBytes: 0,
+        totalBytes: lastTotal,
+        done: true,
+        error: (err as Error).message,
+      });
+    }
   }
 
   install(): void {
