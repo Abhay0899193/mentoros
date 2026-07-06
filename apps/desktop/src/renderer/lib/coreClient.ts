@@ -438,6 +438,40 @@ export interface VoiceChannel {
   close: () => void;
 }
 
+/* ---------------- Settings + voice options (Phase-1 feedback slice) ---------------- */
+
+/** whisper.cpp model choices (quality vs latency ladder; small.en is the shipped default). */
+export type SttModelId = 'small.en' | 'medium.en' | 'large-v3-turbo';
+
+export interface AppSettings {
+  /** Kokoro voice id, e.g. 'af_heart'. Applies to the next utterance. */
+  ttsVoice: string;
+  /** STT model; must be downloaded (state 'ready') before it takes effect. */
+  sttModel: SttModelId;
+  /** Mentor identity on the Voice screen: shader Orb or the animated face. */
+  mentorIdentity: 'orb' | 'face';
+}
+
+export interface TtsVoiceInfo {
+  /** Kokoro id ('af_heart'); prefix encodes accent+gender (a/b × f/m). */
+  id: string;
+  /** Display name ('Heart'). */
+  label: string;
+  accent: 'american' | 'british';
+  gender: 'female' | 'male';
+}
+
+export interface SttModelInfo {
+  id: SttModelId;
+  label: string;
+  sizeBytes: number;
+  /** One-line quality/latency tradeoff copy for the picker. */
+  note: string;
+  state: 'ready' | 'missing' | 'downloading';
+  /** True when this is the model STT currently uses (settings + downloaded). */
+  active: boolean;
+}
+
 export interface CoreEvents {
   'core.status': { state: 'starting' | 'ready' | 'degraded'; detail?: string };
   /** One streamed token for an in-flight assistant message. */
@@ -462,6 +496,16 @@ export interface CoreEvents {
   };
   /** Sidecar readiness changes. */
   'voice.status': VoiceStatus;
+  /** STT model download progress (voice quality option in Settings). */
+  'voice.model': {
+    model: SttModelId;
+    completedBytes: number;
+    totalBytes: number;
+    done: boolean;
+    error?: string;
+  };
+  /** Settings changed (any writer) — screens re-read what they care about. */
+  'settings.changed': { settings: AppSettings };
   /** Global push-to-talk hotkey (from Electron main via core). */
   'voice.ptt': { pressed: boolean };
   /** A memory was created or merged — drives "Profile updated" moments. */
@@ -633,6 +677,18 @@ export interface CoreClient {
   /** Synthesize text; audio streams back over the open /voice channel. */
   speak(text: string): Promise<void>;
   openVoiceChannel(handlers: VoiceChannelHandlers): VoiceChannel;
+
+  /* settings + voice options */
+  getSettings(): Promise<AppSettings>;
+  /** Partial update; returns the full merged settings. Fires `settings.changed`. */
+  updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  /** English Kokoro voices enumerated from the installed voices pack. */
+  listTtsVoices(): Promise<TtsVoiceInfo[]>;
+  /** URL of a one-shot WAV sample for the picker (`<audio src>`), independent of the /voice channel. */
+  voicePreviewUrl(voiceId: string): string;
+  listSttModels(): Promise<SttModelInfo[]>;
+  /** Download a whisper model; progress via `voice.model`. 409 if already downloading. */
+  downloadSttModel(id: SttModelId): Promise<void>;
 }
 
 function resolveCorePort(): number {
@@ -824,6 +880,15 @@ export function createCoreClient(): CoreClient {
     voiceStatus: () => get<VoiceStatus>('/voice/status'),
     installVoice: () => post<void>('/voice/install'),
     speak: (text) => post<void>('/voice/speak', { text }),
+
+    getSettings: () => get<AppSettings>('/settings'),
+    updateSettings: (patch) => post<AppSettings>('/settings', patch),
+    listTtsVoices: () => get<TtsVoiceInfo[]>('/voice/voices'),
+    voicePreviewUrl: (voiceId) =>
+      `http://127.0.0.1:${port}/voice/preview?voice=${encodeURIComponent(voiceId)}`,
+    listSttModels: () => get<SttModelInfo[]>('/voice/stt-models'),
+    downloadSttModel: (id) =>
+      post<void>(`/voice/stt-models/${encodeURIComponent(id)}/download`),
 
     openVoiceChannel(handlers) {
       const vws = new WebSocket(`ws://127.0.0.1:${port}/voice`);

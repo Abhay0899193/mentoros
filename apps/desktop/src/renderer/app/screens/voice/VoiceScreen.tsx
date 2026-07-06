@@ -6,7 +6,7 @@ import { cn } from '../../../lib/cn';
 import { useVoice, micLevelRef, ttsLevelRef } from '../../../lib/voiceStore';
 import { useChat } from '../../../lib/chatStore';
 import { useShell } from '../../../lib/store';
-import { OrbCanvas } from '../../../orb/OrbCanvas';
+import { MentorAvatar } from '../../../orb/MentorAvatar';
 import type { OrbState } from '../../../orb/orbState';
 import { Button, Card, Chip, Keycap } from '../../../ui';
 
@@ -140,7 +140,7 @@ export function VoiceScreen() {
       />
 
       <div className="z-10 flex flex-col items-center gap-6">
-        <OrbCanvas state={orb} levelRef={levelRef} size={340} onTap={interrupt} />
+        <MentorAvatar state={orb} levelRef={levelRef} size={340} onTap={interrupt} />
 
         <motion.p
           key={orb}
