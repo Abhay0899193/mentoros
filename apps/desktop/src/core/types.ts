@@ -254,6 +254,121 @@ export interface MessageCitation {
   score: number;
 }
 
+/* ---------------- Interview Platform (Phase 5) ---------------- */
+
+export type InterviewType = "coding" | "system-design" | "sql" | "behavioral";
+export type InterviewLanguage = "python" | "javascript";
+export type InterviewPhase =
+  | "framing"
+  | "coding"
+  | "interrogation"
+  | "scorecard"
+  | "abandoned";
+
+export interface InterviewProblemMeta {
+  id: string;
+  lcNumber?: number;
+  title: string;
+  difficulty: "easy" | "medium" | "hard";
+  pattern: string;
+  tags: string[];
+  recommended?: boolean;
+  recommendedReason?: string;
+  lastScore?: number;
+}
+
+export interface InterviewProblem extends InterviewProblemMeta {
+  promptMd: string;
+  functionName: string;
+  starterCode: Record<InterviewLanguage, string>;
+}
+
+export interface InterviewSession {
+  id: string;
+  type: InterviewType;
+  problemId: string;
+  language: InterviewLanguage;
+  phase: InterviewPhase;
+  hintsUsed: number;
+  /** Latest code snapshot (persisted on every run/finish) — restores the editor on resume. */
+  code?: string;
+  startedAt: string;
+  endedAt?: string;
+}
+
+export interface InterviewSessionSummary {
+  id: string;
+  type: InterviewType;
+  problemTitle: string;
+  pattern: string;
+  phase: InterviewPhase;
+  score?: number;
+  startedAt: string;
+}
+
+export interface InterviewTurn {
+  id: string;
+  sessionId: string;
+  role: "interviewer" | "candidate";
+  kind: "chat" | "hint" | "phase";
+  hintLevel?: 1 | 2 | 3;
+  content: string;
+  createdAt: string;
+}
+
+export interface EvalTestResult {
+  name: string;
+  passed: boolean;
+  input: string;
+  expected: string;
+  actual?: string;
+  stdout?: string;
+  error?: string;
+  timeMs: number;
+}
+
+export interface EvalResult {
+  attemptId: string;
+  passed: number;
+  total: number;
+  results: EvalTestResult[];
+  compileError?: string;
+  durationMs: number;
+  ranAt: string;
+}
+
+export interface ScorecardDimension {
+  name: string;
+  verdict: "pass" | "warn" | "fail";
+  note: string;
+}
+
+export interface InterviewScorecard {
+  sessionId: string;
+  score: number;
+  bar: "L4" | "L5" | "L6";
+  summary: string;
+  biggestMistake: string;
+  biggestTakeaway: string;
+  pattern: string;
+  patternConfidence: 1 | 2 | 3 | 4 | 5;
+  dimensions: ScorecardDimension[];
+  nextProblems: { title: string; reason: string }[];
+  recallGrade: number;
+  nextReviewDate: string;
+  hintsUsed: number;
+  testsPassed: number;
+  testsTotal: number;
+  durationSec: number;
+  memoryWrites: {
+    id: string;
+    type: MemoryType;
+    title: string;
+    action: "created" | "merged";
+  }[];
+  createdAt: string;
+}
+
 /** STT/TTS sidecar readiness (mirror of coreClient VoiceStatus). */
 export interface VoiceStatus {
   stt: "ready" | "missing" | "starting" | "error";
@@ -340,5 +455,21 @@ export interface CoreEvents {
     threadId: string;
     messageId: string;
     citations: MessageCitation[];
+  };
+  /** One streamed token of an in-flight interviewer turn. */
+  "interview.token": { sessionId: string; turnId: string; token: string };
+  /** Interviewer-turn lifecycle — same phases as chat.status. */
+  "interview.status": {
+    sessionId: string;
+    turnId: string;
+    phase: ChatPhase;
+    error?: string;
+  };
+  /** Session moved to a new protocol phase. */
+  "interview.phase": { sessionId: string; phase: InterviewPhase };
+  /** Scorecard ready (endInterview is async — LLM grading takes seconds). */
+  "interview.scorecard": {
+    sessionId: string;
+    scorecard: InterviewScorecard;
   };
 }

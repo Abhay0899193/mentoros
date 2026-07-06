@@ -1,0 +1,454 @@
+import { create } from "zustand";
+import {
+  coreClient,
+  type ChatPhase,
+  type EvalResult,
+  type InterviewLanguage,
+  type InterviewProblem,
+  type InterviewProblemMeta,
+  type InterviewScorecard,
+  type InterviewSession,
+  type InterviewSessionSummary,
+  type InterviewTurn,
+  type InterviewType,
+} from "./coreClient";
+
+type View = "launcher" | "session";
+
+interface InterviewState {
+  view: View;
+
+  pickerOpen: boolean;
+  pickerLanguage: InterviewLanguage;
+
+  problems: InterviewProblemMeta[];
+  problemsLoading: boolean;
+  problemsError: string | null;
+
+  sessions: InterviewSessionSummary[];
+  sessionsLoading: boolean;
+  sessionsLoaded: boolean;
+  sessionsError: string | null;
+
+  sessionId: string | null;
+  session: InterviewSession | null;
+  problem: InterviewProblem | null;
+  turns: InterviewTurn[];
+  code: string;
+  evalResult: EvalResult | null;
+  evalLoading: boolean;
+  scorecard: InterviewScorecard | null;
+  scorecardLoading: boolean;
+  scorecardDismissed: boolean;
+  sessionLoading: boolean;
+  sessionError: string | null;
+
+  streamingTurnId: string | null;
+  turnPhase: ChatPhase | null;
+  turnError: string | null;
+
+  init: () => void;
+  openLauncher: () => void;
+  openPicker: (type?: InterviewType) => void;
+  closePicker: () => void;
+  setPickerLanguage: (l: InterviewLanguage) => void;
+  loadProblems: (type: InterviewType) => Promise<void>;
+  loadSessions: () => Promise<void>;
+  start: (
+    type: InterviewType,
+    problemId: string | undefined,
+    language: InterviewLanguage,
+  ) => Promise<void>;
+  resume: (sessionId: string) => Promise<void>;
+  send: (content: string) => Promise<void>;
+  requestHint: () => Promise<void>;
+  setCode: (code: string) => void;
+  runTests: () => Promise<void>;
+  finish: () => Promise<void>;
+  endInterview: () => Promise<void>;
+  dismissScorecard: () => void;
+  reopenScorecard: () => void;
+  abandon: () => Promise<void>;
+  backToLauncher: () => void;
+}
+
+let initialized = false;
+const SERVICE_ERROR = "The interview service did not respond.";
+
+function upsertTurn(
+  turns: InterviewTurn[],
+  id: string,
+  patch: Partial<InterviewTurn> & { content?: string },
+  append: boolean,
+): InterviewTurn[] {
+  const idx = turns.findIndex((t) => t.id === id);
+  if (idx === -1) {
+    return [
+      ...turns,
+      {
+        id,
+        sessionId: patch.sessionId ?? "",
+        role: "interviewer",
+        kind: "chat",
+        content: patch.content ?? "",
+        createdAt: new Date().toISOString(),
+        ...patch,
+      } as InterviewTurn,
+    ];
+  }
+  const next = [...turns];
+  const prev = next[idx];
+  next[idx] = {
+    ...prev,
+    ...patch,
+    content: append
+      ? prev.content + (patch.content ?? "")
+      : (patch.content ?? prev.content),
+  };
+  return next;
+}
+
+export const useInterview = create<InterviewState>((set, get) => ({
+  view: "launcher",
+
+  pickerOpen: false,
+  pickerLanguage: "python",
+
+  problems: [],
+  problemsLoading: false,
+  problemsError: null,
+
+  sessions: [],
+  sessionsLoading: false,
+  sessionsLoaded: false,
+  sessionsError: null,
+
+  sessionId: null,
+  session: null,
+  problem: null,
+  turns: [],
+  code: "",
+  evalResult: null,
+  evalLoading: false,
+  scorecard: null,
+  scorecardLoading: false,
+  scorecardDismissed: false,
+  sessionLoading: false,
+  sessionError: null,
+
+  streamingTurnId: null,
+  turnPhase: null,
+  turnError: null,
+
+  init: () => {
+    if (initialized) return;
+    initialized = true;
+
+    coreClient.on("interview.token", ({ sessionId, turnId, token }) => {
+      const s = get();
+      if (s.sessionId !== sessionId) return;
+      set({
+        turns: upsertTurn(s.turns, turnId, { sessionId, content: token }, true),
+      });
+    });
+
+    coreClient.on("interview.status", ({ sessionId, turnId, phase, error }) => {
+      const s = get();
+      if (s.sessionId !== sessionId) return;
+      const finished =
+        phase === "done" || phase === "error" || phase === "stopped";
+      set({
+        turnPhase: phase,
+        streamingTurnId: finished ? null : turnId,
+        turnError:
+          phase === "error"
+            ? (error ?? "The interviewer lost connection.")
+            : null,
+      });
+    });
+
+    coreClient.on("interview.phase", ({ sessionId, phase }) => {
+      const s = get();
+      if (s.sessionId !== sessionId || !s.session) return;
+      set({ session: { ...s.session, phase } });
+    });
+
+    coreClient.on("interview.scorecard", ({ sessionId, scorecard }) => {
+      const s = get();
+      if (s.sessionId !== sessionId) return;
+      set({
+        scorecard,
+        scorecardLoading: false,
+        scorecardDismissed: false,
+        session: s.session ? { ...s.session, phase: "scorecard" } : s.session,
+      });
+    });
+
+    void get().loadSessions();
+  },
+
+  openLauncher: () => set({ view: "launcher", pickerOpen: false }),
+
+  openPicker: () => {
+    set({ pickerOpen: true });
+    void get().loadProblems("coding");
+  },
+  closePicker: () => set({ pickerOpen: false }),
+  setPickerLanguage: (l) => set({ pickerLanguage: l }),
+
+  loadProblems: async (type) => {
+    set({ problemsLoading: true, problemsError: null });
+    try {
+      const problems = await coreClient.listInterviewProblems(type);
+      set({ problems, problemsLoading: false });
+    } catch {
+      set({
+        problems: [],
+        problemsLoading: false,
+        problemsError: SERVICE_ERROR,
+      });
+    }
+  },
+
+  loadSessions: async () => {
+    set({ sessionsLoading: !get().sessionsLoaded, sessionsError: null });
+    try {
+      const sessions = await coreClient.listInterviewSessions();
+      set({ sessions, sessionsLoading: false, sessionsLoaded: true });
+    } catch {
+      set({
+        sessionsLoading: false,
+        sessionsLoaded: true,
+        sessionsError: SERVICE_ERROR,
+      });
+    }
+  },
+
+  start: async (type, problemId, language) => {
+    set({
+      sessionLoading: true,
+      sessionError: null,
+      pickerOpen: false,
+      turns: [],
+      evalResult: null,
+      scorecard: null,
+      scorecardDismissed: false,
+      turnError: null,
+    });
+    try {
+      const { session, problem } = await coreClient.startInterview({
+        type,
+        problemId,
+        language,
+      });
+      set({
+        view: "session",
+        sessionId: session.id,
+        session,
+        problem,
+        code: problem.starterCode[language] ?? "",
+        sessionLoading: false,
+        turnPhase: "thinking",
+      });
+    } catch {
+      set({ sessionLoading: false, sessionError: SERVICE_ERROR });
+    }
+  },
+
+  resume: async (sessionId) => {
+    set({
+      view: "session",
+      sessionId,
+      sessionLoading: true,
+      sessionError: null,
+      turns: [],
+      evalResult: null,
+      scorecard: null,
+      scorecardDismissed: false,
+      turnError: null,
+    });
+    try {
+      const data = await coreClient.getInterviewSession(sessionId);
+      const lastAttempt = data.attempts[data.attempts.length - 1] ?? null;
+      set({
+        session: data.session,
+        problem: data.problem,
+        turns: data.turns,
+        code:
+          data.session.code ?? data.problem.starterCode[data.session.language] ?? "",
+        evalResult: lastAttempt,
+        scorecard: data.scorecard ?? null,
+        sessionLoading: false,
+      });
+    } catch {
+      set({ sessionLoading: false, sessionError: SERVICE_ERROR });
+    }
+  },
+
+  send: async (content) => {
+    const { sessionId, turns } = get();
+    if (!sessionId) return;
+    set({ turnError: null });
+    try {
+      const { turnId, replyTurnId } = await coreClient.interviewSend(
+        sessionId,
+        content,
+      );
+      const now = new Date().toISOString();
+      set({
+        turns: [
+          ...turns,
+          {
+            id: turnId,
+            sessionId,
+            role: "candidate",
+            kind: "chat",
+            content,
+            createdAt: now,
+          },
+          {
+            id: replyTurnId,
+            sessionId,
+            role: "interviewer",
+            kind: "chat",
+            content: "",
+            createdAt: now,
+          },
+        ],
+        streamingTurnId: replyTurnId,
+        turnPhase: "thinking",
+      });
+    } catch {
+      set({ turnError: SERVICE_ERROR });
+    }
+  },
+
+  requestHint: async () => {
+    const { sessionId, turns, session } = get();
+    if (!sessionId || !session || session.hintsUsed >= 3) return;
+    set({ turnError: null });
+    try {
+      const { level, replyTurnId } = await coreClient.requestHint(sessionId);
+      const now = new Date().toISOString();
+      set({
+        turns: [
+          ...turns,
+          {
+            id: replyTurnId,
+            sessionId,
+            role: "interviewer",
+            kind: "hint",
+            hintLevel: level,
+            content: "",
+            createdAt: now,
+          },
+        ],
+        streamingTurnId: replyTurnId,
+        turnPhase: "thinking",
+        session: { ...session, hintsUsed: session.hintsUsed + 1 },
+      });
+    } catch {
+      set({ turnError: SERVICE_ERROR });
+    }
+  },
+
+  setCode: (code) => set({ code }),
+
+  runTests: async () => {
+    const { sessionId, code } = get();
+    if (!sessionId) return;
+    set({ evalLoading: true });
+    try {
+      const evalResult = await coreClient.runInterviewTests(sessionId, code);
+      set({ evalResult, evalLoading: false });
+    } catch {
+      set({
+        evalLoading: false,
+        evalResult: {
+          attemptId: "error",
+          passed: 0,
+          total: 0,
+          results: [],
+          compileError: SERVICE_ERROR,
+          durationMs: 0,
+          ranAt: new Date().toISOString(),
+        },
+      });
+    }
+  },
+
+  finish: async () => {
+    const { sessionId, code, turns, session } = get();
+    if (!sessionId || !session) return;
+    try {
+      const { replyTurnId } = await coreClient.finishCoding(sessionId, code);
+      const now = new Date().toISOString();
+      set({
+        session: { ...session, phase: "interrogation" },
+        turns: [
+          ...turns,
+          {
+            id: replyTurnId,
+            sessionId,
+            role: "interviewer",
+            kind: "chat",
+            content: "",
+            createdAt: now,
+          },
+        ],
+        streamingTurnId: replyTurnId,
+        turnPhase: "thinking",
+      });
+    } catch {
+      set({ turnError: SERVICE_ERROR });
+    }
+  },
+
+  endInterview: async () => {
+    const { sessionId } = get();
+    if (!sessionId) return;
+    set({ scorecardLoading: true, turnError: null });
+    try {
+      await coreClient.endInterview(sessionId);
+    } catch {
+      set({
+        scorecardLoading: false,
+        turnError:
+          "Could not reach the interview service to grade this session.",
+      });
+    }
+  },
+
+  dismissScorecard: () => set({ scorecardDismissed: true }),
+  reopenScorecard: () => set({ scorecardDismissed: false }),
+
+  abandon: async () => {
+    const { sessionId, session } = get();
+    if (!sessionId || !session) return;
+    try {
+      await coreClient.abandonInterview(sessionId);
+    } catch {
+      /* best-effort — still leave locally */
+    }
+    set({ session: { ...session, phase: "abandoned" } });
+    get().backToLauncher();
+  },
+
+  backToLauncher: () => {
+    set({
+      view: "launcher",
+      sessionId: null,
+      session: null,
+      problem: null,
+      turns: [],
+      code: "",
+      evalResult: null,
+      scorecard: null,
+      scorecardDismissed: false,
+      streamingTurnId: null,
+      turnPhase: null,
+      turnError: null,
+    });
+    void get().loadSessions();
+  },
+}));

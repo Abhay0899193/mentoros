@@ -324,6 +324,8 @@ export interface InterviewSession {
   language: InterviewLanguage;
   phase: InterviewPhase;
   hintsUsed: number;
+  /** Latest code snapshot (persisted on every run/finish) — restores the editor on resume. */
+  code?: string;
   startedAt: string;
   endedAt?: string;
 }

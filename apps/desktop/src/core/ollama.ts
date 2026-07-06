@@ -112,6 +112,8 @@ export interface ChatOnceOptions {
   options?: Record<string, unknown>;
   /** Abort after this many ms (default 2500). */
   timeoutMs?: number;
+  /** Ollama structured-output mode, e.g. 'json' for the scorecard grader. */
+  format?: "json";
 }
 
 /**
@@ -131,6 +133,7 @@ export async function chatOnce(opts: ChatOnceOptions): Promise<string> {
         messages: opts.messages,
         stream: false,
         options: opts.options ?? {},
+        ...(opts.format ? { format: opts.format } : {}),
       }),
       signal: controller.signal,
     });

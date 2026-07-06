@@ -1,27 +1,29 @@
-import { useEffect } from 'react';
-import { ThemeProvider } from '../theme/ThemeProvider';
-import { AppShell } from './shell/AppShell';
-import { Showcase } from './screens/Showcase';
-import { Placeholder } from './screens/Placeholder';
-import { ChatScreen } from './screens/chat/ChatScreen';
-import { VoiceScreen } from './screens/voice/VoiceScreen';
-import { MemoryScreen } from './screens/memory/MemoryScreen';
-import { HomeScreen } from './screens/home/HomeScreen';
-import { LearningScreen } from './screens/learning/LearningScreen';
-import { KnowledgeScreen } from './screens/knowledge/KnowledgeScreen';
-import { coreClient } from '../lib/coreClient';
-import { useShell, MODULES, DESIGN_MODULE } from '../lib/store';
-import { toast } from '../ui';
+import { useEffect } from "react";
+import { ThemeProvider } from "../theme/ThemeProvider";
+import { AppShell } from "./shell/AppShell";
+import { Showcase } from "./screens/Showcase";
+import { Placeholder } from "./screens/Placeholder";
+import { ChatScreen } from "./screens/chat/ChatScreen";
+import { VoiceScreen } from "./screens/voice/VoiceScreen";
+import { MemoryScreen } from "./screens/memory/MemoryScreen";
+import { HomeScreen } from "./screens/home/HomeScreen";
+import { LearningScreen } from "./screens/learning/LearningScreen";
+import { KnowledgeScreen } from "./screens/knowledge/KnowledgeScreen";
+import { InterviewScreen } from "./screens/interview/InterviewScreen";
+import { coreClient } from "../lib/coreClient";
+import { useShell, MODULES, DESIGN_MODULE } from "../lib/store";
+import { toast } from "../ui";
 
 function ActiveScreen() {
   const active = useShell((s) => s.active);
-  if (active === 'design') return <Showcase />;
-  if (active === 'chat') return <ChatScreen />;
-  if (active === 'voice') return <VoiceScreen />;
-  if (active === 'memory') return <MemoryScreen />;
-  if (active === 'home') return <HomeScreen />;
-  if (active === 'learning') return <LearningScreen />;
-  if (active === 'knowledge') return <KnowledgeScreen />;
+  if (active === "design") return <Showcase />;
+  if (active === "chat") return <ChatScreen />;
+  if (active === "voice") return <VoiceScreen />;
+  if (active === "memory") return <MemoryScreen />;
+  if (active === "home") return <HomeScreen />;
+  if (active === "learning") return <LearningScreen />;
+  if (active === "knowledge") return <KnowledgeScreen />;
+  if (active === "interview") return <InterviewScreen />;
   const meta = MODULES.find((m) => m.id === active) ?? DESIGN_MODULE;
   return <Placeholder meta={meta} />;
 }
@@ -30,10 +32,11 @@ export default function App(): JSX.Element {
   useEffect(() => {
     coreClient.health().catch(() => {
       toast({
-        tone: 'danger',
-        title: 'Core engine unreachable',
-        description: 'The local core server did not respond. Voice and chat will be unavailable.',
-        action: { label: 'Retry', onClick: () => window.location.reload() },
+        tone: "danger",
+        title: "Core engine unreachable",
+        description:
+          "The local core server did not respond. Voice and chat will be unavailable.",
+        action: { label: "Retry", onClick: () => window.location.reload() },
       });
     });
   }, []);

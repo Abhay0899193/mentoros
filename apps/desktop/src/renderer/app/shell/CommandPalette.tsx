@@ -1,10 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, CornerDownLeft, Moon, PanelLeft } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { cn } from '../../lib/cn';
-import { useShell, MODULES, DESIGN_MODULE } from '../../lib/store';
-import { useTheme } from '../../theme/ThemeProvider';
-import { Overlay, Keycap } from '../../ui';
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Search,
+  CornerDownLeft,
+  Moon,
+  PanelLeft,
+  Swords,
+  Target,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { cn } from "../../lib/cn";
+import { useShell, MODULES, DESIGN_MODULE } from "../../lib/store";
+import { useTheme } from "../../theme/ThemeProvider";
+import { useInterview } from "../../lib/interviewStore";
+import { Overlay, Keycap } from "../../ui";
 
 interface Action {
   id: string;
@@ -27,7 +35,9 @@ function fuzzy(query: string, text: string): boolean {
 export function CommandPalette() {
   const { paletteOpen, setPaletteOpen, setActive, toggleRail } = useShell();
   const { toggle: toggleTheme } = useTheme();
-  const [query, setQuery] = useState('');
+  const openInterviewPicker = useInterview((s) => s.openPicker);
+  const openInterviewLauncher = useInterview((s) => s.openLauncher);
+  const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -43,34 +53,65 @@ export function CommandPalette() {
         run: () => setActive(m.id),
       })),
       {
-        id: 'toggle-theme',
-        label: 'Toggle theme',
+        id: "interview-start-coding",
+        label: "Start coding interview",
+        icon: Swords,
+        keywords: "interview coding leetcode practice mock",
+        run: () => {
+          setActive("interview");
+          openInterviewPicker("coding");
+          setPaletteOpen(false);
+        },
+      },
+      {
+        id: "interview-launcher",
+        label: "Interviews",
+        icon: Target,
+        keywords: "interview coding system design sql behavioral scorecard",
+        run: () => {
+          setActive("interview");
+          openInterviewLauncher();
+          setPaletteOpen(false);
+        },
+      },
+      {
+        id: "toggle-theme",
+        label: "Toggle theme",
         icon: Moon,
-        keywords: 'dark light appearance',
+        keywords: "dark light appearance",
         run: () => {
           toggleTheme();
           setPaletteOpen(false);
         },
       },
       {
-        id: 'toggle-rail',
-        label: 'Toggle sidebar',
+        id: "toggle-rail",
+        label: "Toggle sidebar",
         icon: PanelLeft,
-        keywords: 'collapse expand rail',
+        keywords: "collapse expand rail",
         run: () => {
           toggleRail();
           setPaletteOpen(false);
         },
       },
     ],
-    [setActive, setPaletteOpen, toggleRail, toggleTheme],
+    [
+      setActive,
+      setPaletteOpen,
+      toggleRail,
+      toggleTheme,
+      openInterviewPicker,
+      openInterviewLauncher,
+    ],
   );
 
   const results = useMemo(
     () =>
-      query.trim() === ''
+      query.trim() === ""
         ? actions
-        : actions.filter((a) => fuzzy(query.trim(), `${a.label} ${a.keywords ?? ''}`)),
+        : actions.filter((a) =>
+            fuzzy(query.trim(), `${a.label} ${a.keywords ?? ""}`),
+          ),
     [actions, query],
   );
 
@@ -78,7 +119,7 @@ export function CommandPalette() {
 
   useEffect(() => {
     if (paletteOpen) {
-      setQuery('');
+      setQuery("");
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [paletteOpen]);
@@ -86,24 +127,29 @@ export function CommandPalette() {
   useEffect(() => {
     listRef.current
       ?.querySelector('[data-selected="true"]')
-      ?.scrollIntoView({ block: 'nearest' });
+      ?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       setSelected((s) => Math.min(s + 1, results.length - 1));
-    } else if (e.key === 'ArrowUp') {
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelected((s) => Math.max(s - 1, 0));
-    } else if (e.key === 'Enter') {
+    } else if (e.key === "Enter") {
       e.preventDefault();
       results[selected]?.run();
     }
   };
 
   return (
-    <Overlay open={paletteOpen} onClose={() => setPaletteOpen(false)} width={640} align="top">
+    <Overlay
+      open={paletteOpen}
+      onClose={() => setPaletteOpen(false)}
+      width={640}
+      align="top"
+    >
       <div className="flex items-center gap-3 border-b border-line px-4">
         <Search size={16} strokeWidth={1.5} className="shrink-0 text-faint" />
         <input
@@ -127,18 +173,31 @@ export function CommandPalette() {
         {results.map((a, i) => {
           const Icon = a.icon;
           return (
-            <li key={a.id} role="option" aria-selected={i === selected} data-selected={i === selected}>
+            <li
+              key={a.id}
+              role="option"
+              aria-selected={i === selected}
+              data-selected={i === selected}
+            >
               <button
                 onClick={a.run}
                 onMouseMove={() => setSelected(i)}
                 className={cn(
-                  'flex h-10 w-full items-center gap-3 rounded-[10px] px-3 text-small',
-                  i === selected ? 'bg-surface-2 text-ink' : 'text-body',
+                  "flex h-10 w-full items-center gap-3 rounded-[10px] px-3 text-small",
+                  i === selected ? "bg-surface-2 text-ink" : "text-body",
                 )}
               >
-                <Icon size={16} strokeWidth={1.5} className="shrink-0 text-muted" />
+                <Icon
+                  size={16}
+                  strokeWidth={1.5}
+                  className="shrink-0 text-muted"
+                />
                 <span className="flex-1 text-left">{a.label}</span>
-                {a.hint && <span className="font-mono text-[11px] text-faint">{a.hint}</span>}
+                {a.hint && (
+                  <span className="font-mono text-[11px] text-faint">
+                    {a.hint}
+                  </span>
+                )}
               </button>
             </li>
           );

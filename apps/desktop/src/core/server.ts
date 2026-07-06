@@ -10,6 +10,8 @@ import { createLearningSystem, import3mc } from "./learning/index.js";
 import { registerLearningRoutes } from "./learning/routes.js";
 import { createKbSystem } from "./kb/index.js";
 import { registerKbRoutes } from "./kb/routes.js";
+import { createInterviewSystem } from "./interview/index.js";
+import { registerInterviewRoutes } from "./interview/routes.js";
 import {
   DEFAULT_MODEL,
   modelStatus as probeModelStatus,
@@ -70,6 +72,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   const memory = createMemorySystem(dataDir, broadcast);
   const learning = createLearningSystem(dataDir, memory.engine);
   const kb = createKbSystem(dataDir, broadcast);
+  const interview = createInterviewSystem(dataDir, broadcast, memory.engine);
   const engine = new ChatEngine(store, broadcast, memory.engine, kb.engine);
 
   void app.register(websocket);
@@ -78,6 +81,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   });
 
   app.addHook("onClose", async () => {
+    interview.close();
     kb.close();
     learning.close();
     memory.close();
@@ -188,6 +192,9 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
 
   /* ---------------------------- knowledge base --------------------------- */
   registerKbRoutes(app, { engine: kb.engine });
+
+  /* ------------------------------ interview ------------------------------ */
+  registerInterviewRoutes(app, { engine: interview.engine });
 
   /* -------------------------------- voice -------------------------------- */
   registerVoice(app, { broadcast, dataDir });
