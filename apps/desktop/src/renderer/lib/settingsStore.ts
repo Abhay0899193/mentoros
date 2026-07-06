@@ -1,7 +1,11 @@
 import { create } from 'zustand';
 import {
   coreClient,
+  type ApiKeyState,
   type AppSettings,
+  type ModelChoice,
+  type ModelSurface,
+  type ProvidersInfo,
   type SttModelId,
   type SttModelInfo,
   type TtsVoiceInfo,
@@ -34,10 +38,17 @@ interface SettingsState {
   previewLoadingId: string | null;
   previewErrorId: string | null;
 
+  providers: ProvidersInfo | null;
+  providersLoading: boolean;
+  providersLoaded: boolean;
+  providersError: string | null;
+  keySaving: boolean;
+
   init: () => void;
   loadSettings: () => Promise<void>;
   loadVoices: () => Promise<void>;
   loadSttModels: () => Promise<void>;
+  loadProviders: () => Promise<void>;
 
   setVoice: (id: string) => Promise<void>;
   setSttModel: (id: SttModelId) => Promise<void>;
@@ -47,6 +58,12 @@ interface SettingsState {
 
   previewVoice: (id: string) => void;
   stopPreview: () => void;
+
+  setCloudEnabled: (enabled: boolean) => Promise<void>;
+  /** Resolves to the resulting key state, or null if the request itself failed (no round trip). */
+  saveAnthropicKey: (key: string) => Promise<ApiKeyState | null>;
+  removeAnthropicKey: () => Promise<void>;
+  setSurfaceModel: (surface: ModelSurface, choice: ModelChoice) => Promise<void>;
 }
 
 let initialized = false;
@@ -81,6 +98,12 @@ export const useSettings = create<SettingsState>((set, get) => ({
   previewLoadingId: null,
   previewErrorId: null,
 
+  providers: null,
+  providersLoading: false,
+  providersLoaded: false,
+  providersError: null,
+  keySaving: false,
+
   init: () => {
     if (!initialized) {
       initialized = true;
@@ -110,6 +133,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
     void get().loadSettings();
     void get().loadVoices();
     void get().loadSttModels();
+    void get().loadProviders();
   },
 
   loadSettings: async () => {
@@ -139,6 +163,16 @@ export const useSettings = create<SettingsState>((set, get) => ({
       set({ sttModels, sttLoading: false, sttLoaded: true });
     } catch {
       set({ sttLoading: false, sttLoaded: true, sttError: 'Could not load transcription models.' });
+    }
+  },
+
+  loadProviders: async () => {
+    set({ providersLoading: !get().providersLoaded, providersError: null });
+    try {
+      const providers = await coreClient.listProviders();
+      set({ providers, providersLoading: false, providersLoaded: true });
+    } catch {
+      set({ providersLoading: false, providersLoaded: true, providersError: 'Could not load model providers.' });
     }
   },
 
@@ -251,5 +285,87 @@ export const useSettings = create<SettingsState>((set, get) => ({
   stopPreview: () => {
     stopPreviewAudio();
     set({ previewingVoiceId: null, previewLoadingId: null });
+  },
+
+  setCloudEnabled: async (enabled) => {
+    const prev = get().settings;
+    if (!prev || prev.cloudEnabled === enabled) return;
+    set({ settings: { ...prev, cloudEnabled: enabled } });
+    try {
+      const settings = await coreClient.updateSettings({ cloudEnabled: enabled });
+      set({ settings });
+    } catch {
+      set({ settings: prev });
+      toast({
+        tone: 'danger',
+        title: 'Could not update cloud setting',
+        description: 'The settings service did not respond.',
+        action: { label: 'Retry', onClick: () => void get().setCloudEnabled(enabled) },
+      });
+    }
+  },
+
+  saveAnthropicKey: async (key) => {
+    set({ keySaving: true });
+    try {
+      const res = await coreClient.setAnthropicKey(key);
+      set((s) => ({
+        keySaving: false,
+        providers: s.providers
+          ? {
+              ...s.providers,
+              anthropic: { ...s.providers.anthropic, keyState: res.keyState, keyMask: res.keyMask, keyError: res.keyError },
+            }
+          : s.providers,
+      }));
+      return res.keyState;
+    } catch {
+      set({ keySaving: false });
+      toast({
+        tone: 'danger',
+        title: 'Could not save the API key',
+        description: 'The settings service did not respond — try again.',
+        action: { label: 'Retry', onClick: () => void get().saveAnthropicKey(key) },
+      });
+      return null;
+    }
+  },
+
+  removeAnthropicKey: async () => {
+    const prev = get().providers;
+    if (!prev || prev.anthropic.keyState === 'none') return;
+    set({ providers: { ...prev, anthropic: { ...prev.anthropic, keyState: 'none', keyMask: undefined, keyError: undefined } } });
+    try {
+      await coreClient.clearAnthropicKey();
+    } catch {
+      set({ providers: prev });
+      toast({
+        tone: 'danger',
+        title: 'Could not remove the API key',
+        description: 'The settings service did not respond — try again.',
+        action: { label: 'Retry', onClick: () => void get().removeAnthropicKey() },
+      });
+    }
+  },
+
+  setSurfaceModel: async (surface, choice) => {
+    const prev = get().settings;
+    if (!prev) return;
+    const prevChoice = prev.models[surface];
+    if (prevChoice.provider === choice.provider && prevChoice.model === choice.model) return;
+    const models = { ...prev.models, [surface]: choice };
+    set({ settings: { ...prev, models } });
+    try {
+      const settings = await coreClient.updateSettings({ models });
+      set({ settings });
+    } catch {
+      set({ settings: prev });
+      toast({
+        tone: 'danger',
+        title: `Could not update the ${surface} model`,
+        description: 'The settings service did not respond.',
+        action: { label: 'Retry', onClick: () => void get().setSurfaceModel(surface, choice) },
+      });
+    }
   },
 }));

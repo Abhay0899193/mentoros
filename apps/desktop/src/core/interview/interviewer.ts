@@ -1,5 +1,5 @@
-import { chatStream, DEFAULT_MODEL, modelStatus } from "../ollama.js";
 import type { OllamaMessage } from "../ollama.js";
+import type { ModelRouter } from "../llm/router.js";
 import type {
   CoreEvents,
   EvalResult,
@@ -142,14 +142,15 @@ function buildMessages(args: StreamTurnArgs): OllamaMessage[] {
 export class Interviewer implements IInterviewer {
   constructor(
     private readonly broadcast: Broadcast,
-    private readonly model: string = DEFAULT_MODEL,
+    private readonly router: ModelRouter,
   ) {}
 
   async streamTurn(args: StreamTurnArgs): Promise<void> {
     const { sessionId, turnId } = args;
     this.broadcast("interview.status", { sessionId, turnId, phase: "thinking" });
 
-    const status = await modelStatus(this.model);
+    // Only the local path can be unavailable; a cloud surface reports 'ready'.
+    const status = await this.router.status("interviewer");
     if (status.state !== "ready") {
       this.broadcast("interview.status", {
         sessionId,
@@ -158,7 +159,7 @@ export class Interviewer implements IInterviewer {
         error:
           status.state === "ollama-offline"
             ? "Ollama is offline — the interviewer is unavailable, but Run and Hint still work."
-            : `Model ${this.model} is not pulled — Run and Hint still work.`,
+            : `Model ${status.model} is not pulled — Run and Hint still work.`,
       });
       return;
     }
@@ -181,8 +182,8 @@ export class Interviewer implements IInterviewer {
       emitted = end;
     };
     try {
-      await chatStream({
-        model: this.model,
+      await this.router.stream({
+        surface: "interviewer",
         messages,
         signal: controller.signal,
         onChunk: (content) => {

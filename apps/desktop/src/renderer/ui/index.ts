@@ -3,6 +3,7 @@ export { Card } from './Card';
 export { Chip } from './Chip';
 export { Keycap } from './Keycap';
 export { Panel } from './Panel';
+export { Switch } from './Switch';
 export { Overlay } from './Overlay';
 export { Toaster, toast, useToasts } from './Toast';
 export { Spinner } from './Spinner';

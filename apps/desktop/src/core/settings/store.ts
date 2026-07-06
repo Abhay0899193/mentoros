@@ -1,7 +1,9 @@
 import type Database from "better-sqlite3";
 import { isKnownTtsVoice } from "../voice/voices.js";
 import { STT_MODELS } from "../voice/sttModels.js";
-import type { AppSettings, SttModelId } from "../types.js";
+import { isCloudModel } from "../llm/anthropic.js";
+import { DEFAULT_MODEL } from "../ollama.js";
+import type { AppSettings, ModelChoice, ModelSurface, SttModelId } from "../types.js";
 
 /**
  * Typed settings over a plain KV backend (`settings(key,value)`). Values are
@@ -13,15 +15,45 @@ import type { AppSettings, SttModelId } from "../types.js";
  * SQLite-backed {@link SqliteSettingsKv}.
  */
 
+const LOCAL_DEFAULT_CHOICE: ModelChoice = { provider: "ollama", model: DEFAULT_MODEL };
+
 export const DEFAULT_SETTINGS: AppSettings = {
   ttsVoice: "af_heart",
   sttModel: "small.en",
   mentorIdentity: "orb",
+  cloudEnabled: false,
+  models: {
+    chat: { ...LOCAL_DEFAULT_CHOICE },
+    voice: { ...LOCAL_DEFAULT_CHOICE },
+    interviewer: { ...LOCAL_DEFAULT_CHOICE },
+    scorecard: { ...LOCAL_DEFAULT_CHOICE },
+  },
 };
 
 const STT_MODEL_IDS = new Set<string>(STT_MODELS.map((m) => m.id));
 const MENTOR_IDENTITIES = new Set<string>(["orb", "face"]);
-const ALLOWED_KEYS = new Set<keyof AppSettings>(["ttsVoice", "sttModel", "mentorIdentity"]);
+const MODEL_SURFACES: ModelSurface[] = ["chat", "voice", "interviewer", "scorecard"];
+const SURFACE_SET = new Set<string>(MODEL_SURFACES);
+const ALLOWED_KEYS = new Set<keyof AppSettings>([
+  "ttsVoice",
+  "sttModel",
+  "mentorIdentity",
+  "cloudEnabled",
+  "models",
+]);
+
+/** KV key for a per-surface routing choice, e.g. `models.chat`. */
+const modelKey = (surface: ModelSurface): string => `models.${surface}`;
+
+/** Validate a ModelChoice: known provider, non-empty model, catalog id for cloud. */
+function validateChoice(value: unknown): ModelChoice | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  if (v.provider !== "ollama" && v.provider !== "anthropic") return null;
+  if (typeof v.model !== "string" || v.model.trim().length === 0) return null;
+  if (v.provider === "anthropic" && !isCloudModel(v.model)) return null;
+  return { provider: v.provider, model: v.model };
+}
 
 /** Minimal KV persistence contract for settings. */
 export interface SettingsKv {
@@ -72,12 +104,33 @@ export class SettingsStore {
 
   /** Full settings: stored values merged over defaults (invalid values dropped). */
   get(): AppSettings {
-    const settings: AppSettings = { ...DEFAULT_SETTINGS };
+    const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      models: {
+        chat: { ...DEFAULT_SETTINGS.models.chat },
+        voice: { ...DEFAULT_SETTINGS.models.voice },
+        interviewer: { ...DEFAULT_SETTINGS.models.interviewer },
+        scorecard: { ...DEFAULT_SETTINGS.models.scorecard },
+      },
+    };
     for (const { key, value } of this.kv.readAll()) {
       if (key === "ttsVoice" && isKnownTtsVoice(value)) settings.ttsVoice = value;
       else if (key === "sttModel" && STT_MODEL_IDS.has(value)) settings.sttModel = value as SttModelId;
       else if (key === "mentorIdentity" && MENTOR_IDENTITIES.has(value))
         settings.mentorIdentity = value as AppSettings["mentorIdentity"];
+      else if (key === "cloudEnabled") settings.cloudEnabled = value === "true";
+      else if (key.startsWith("models.")) {
+        const surface = key.slice("models.".length);
+        if (!SURFACE_SET.has(surface)) continue;
+        // Stored garbage (bad JSON / invalid choice) silently reverts to default.
+        try {
+          const choice = validateChoice(JSON.parse(value));
+          if (choice) settings.models[surface as ModelSurface] = choice;
+        } catch {
+          /* keep the default for this surface */
+        }
+      }
+      // keys.* rows (secrets) and any other unknown keys are ignored on read.
     }
     return settings;
   }
@@ -113,6 +166,27 @@ export class SettingsStore {
           throw new SettingsValidationError(`invalid mentorIdentity: ${String(value)}`);
         }
         entries.push([key, value]);
+      } else if (key === "cloudEnabled") {
+        if (typeof value !== "boolean") {
+          throw new SettingsValidationError(`cloudEnabled must be a boolean`);
+        }
+        entries.push([key, value ? "true" : "false"]);
+      } else if (key === "models") {
+        if (value === null || typeof value !== "object") {
+          throw new SettingsValidationError(`models must be an object`);
+        }
+        // Per-surface merge: each provided surface is validated + stored under
+        // its own `models.<surface>` row; untouched surfaces keep their value.
+        for (const [surface, choice] of Object.entries(value as Record<string, unknown>)) {
+          if (!SURFACE_SET.has(surface)) {
+            throw new SettingsValidationError(`unknown model surface: ${surface}`);
+          }
+          const valid = validateChoice(choice);
+          if (!valid) {
+            throw new SettingsValidationError(`invalid model choice for ${surface}`);
+          }
+          entries.push([modelKey(surface as ModelSurface), JSON.stringify(valid)]);
+        }
       }
     }
 

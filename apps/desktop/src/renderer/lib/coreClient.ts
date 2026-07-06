@@ -54,6 +54,10 @@ export interface ChatMessage {
 export interface ModelStatus {
   state: 'ready' | 'ollama-offline' | 'model-missing';
   model: string;
+  /** Which provider the surface resolved to (absent = 'ollama', pre-slice shape). */
+  provider?: 'ollama' | 'anthropic';
+  /** Set when a cloud choice was silently downgraded to local (no key / cloud off). */
+  fellBack?: boolean;
 }
 
 export type ChatPhase = 'thinking' | 'drafting' | 'done' | 'error' | 'stopped';
@@ -443,6 +447,65 @@ export interface VoiceChannel {
 /** whisper.cpp model choices (quality vs latency ladder; small.en is the shipped default). */
 export type SttModelId = 'small.en' | 'medium.en' | 'large-v3-turbo';
 
+/* ---------------- Model switching (local Ollama + cloud Claude, §2.4 router) ---------------- */
+
+export type ModelProvider = 'ollama' | 'anthropic';
+
+/**
+ * The app surfaces that generate with an LLM, each independently routable.
+ * 'voice' is the Voice screen's spoken answers (rides POST /chat with
+ * surface:'voice'); the memory merge-judge is deliberately NOT routable — it
+ * stays on the local model (cheap latency-sensitive classifier).
+ */
+export type ModelSurface = 'chat' | 'voice' | 'interviewer' | 'scorecard';
+
+export interface ModelChoice {
+  provider: ModelProvider;
+  /** Ollama tag ('llama3.1:8b') or Anthropic model id ('claude-opus-4-8'). */
+  model: string;
+}
+
+/** One installed Ollama model (from /api/tags). */
+export interface LocalModelInfo {
+  model: string;
+  label: string;
+  sizeBytes: number;
+}
+
+/** One entry of the static Claude catalog (core owns ids + pricing copy). */
+export interface CloudModelInfo {
+  model: string;
+  label: string;
+  /** USD per million tokens, for the picker's cost hint. */
+  inputPerMTok: number;
+  outputPerMTok: number;
+  /** One-line positioning copy ('Most capable — deep reviews', …). */
+  note: string;
+  /** Server-recommended default cloud pick (Opus 4.8). */
+  recommended?: boolean;
+}
+
+export type ApiKeyState = 'none' | 'valid' | 'invalid';
+
+/**
+ * Provider availability for the Settings pickers. The key itself is never
+ * returned — only a display mask ('sk-ant-…f3a2') and its validation state.
+ */
+export interface ProvidersInfo {
+  ollama: {
+    reachable: boolean;
+    models: LocalModelInfo[];
+    defaultModel: string;
+  };
+  anthropic: {
+    keyState: ApiKeyState;
+    keyMask?: string;
+    /** Human reason when keyState is 'invalid' (auth failed, network…). */
+    keyError?: string;
+    catalog: CloudModelInfo[];
+  };
+}
+
 export interface AppSettings {
   /** Kokoro voice id, e.g. 'af_heart'. Applies to the next utterance. */
   ttsVoice: string;
@@ -450,6 +513,17 @@ export interface AppSettings {
   sttModel: SttModelId;
   /** Mentor identity on the Voice screen: shader Orb or the animated face. */
   mentorIdentity: 'orb' | 'face';
+  /**
+   * Master cloud opt-in (§2.4: cloud is an accelerator, never a dependency).
+   * While false, cloud choices below are inert and every surface resolves local.
+   */
+  cloudEnabled: boolean;
+  /**
+   * Per-surface model routing. A cloud choice only takes effect while
+   * cloudEnabled and a valid Anthropic key are present; otherwise the router
+   * silently falls back to the local default (no broken surfaces, ever).
+   */
+  models: Record<ModelSurface, ModelChoice>;
 }
 
 export interface TtsVoiceInfo {
@@ -584,11 +658,26 @@ export interface CoreClient {
     threadId: string,
     content: string,
     persona: Persona,
+    /** Which routing surface is asking ('voice' from the Voice screen). Default 'chat'. */
+    surface?: Extract<ModelSurface, 'chat' | 'voice'>,
   ): Promise<{ userMessageId: string; assistantMessageId: string }>;
   stopGeneration(messageId: string): Promise<void>;
-  modelStatus(): Promise<ModelStatus>;
+  /** Pre-flight for the model a surface currently resolves to (default 'chat'). */
+  modelStatus(surface?: ModelSurface): Promise<ModelStatus>;
   /** Starts a pull of the default (or given) model; progress via `models.pull`. */
   pullModel(model?: string): Promise<void>;
+
+  /* model providers (Settings → Models) */
+  /** Availability + catalogs for both providers; key returned masked only. */
+  listProviders(): Promise<ProvidersInfo>;
+  /**
+   * Store + live-validate the Anthropic API key (a cheap authenticated call).
+   * Resolves with the resulting state; 'invalid' keys are still stored so the
+   * user can see/fix them, but the router treats them as absent.
+   */
+  setAnthropicKey(apiKey: string): Promise<{ keyState: ApiKeyState; keyMask?: string; keyError?: string }>;
+  /** Forget the stored key; cloud choices fall back to local immediately. */
+  clearAnthropicKey(): Promise<void>;
 
   /* memory */
   listMemories(opts?: { type?: MemoryType; q?: string; limit?: number }): Promise<MemoryRecord[]>;
@@ -793,15 +882,29 @@ export function createCoreClient(): CoreClient {
         if (!r.ok) throw new Error(`core request failed: ${r.status}`);
       }),
     getMessages: (threadId) => get<ChatMessage[]>(`/threads/${threadId}/messages`),
-    sendMessage: (threadId, content, persona) =>
+    sendMessage: (threadId, content, persona, surface) =>
       post<{ userMessageId: string; assistantMessageId: string }>('/chat', {
         threadId,
         content,
         persona,
+        ...(surface ? { surface } : {}),
       }),
     stopGeneration: (messageId) => post<void>(`/chat/${messageId}/stop`),
-    modelStatus: () => get<ModelStatus>('/models/status'),
+    modelStatus: (surface) =>
+      get<ModelStatus>(`/models/status${surface ? `?surface=${surface}` : ''}`),
     pullModel: (model) => post<void>('/models/pull', { model }),
+
+    listProviders: () => get<ProvidersInfo>('/models/providers'),
+    setAnthropicKey: (apiKey) =>
+      fetch(`${baseUrl}/models/keys/anthropic`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ apiKey }),
+      }).then((r) => json<{ keyState: ApiKeyState; keyMask?: string; keyError?: string }>(r)),
+    clearAnthropicKey: () =>
+      fetch(`${baseUrl}/models/keys/anthropic`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`core request failed: ${r.status}`);
+      }),
 
     listMemories: (opts) => {
       const p = new URLSearchParams();

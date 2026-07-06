@@ -14,13 +14,11 @@ import { createInterviewSystem } from "./interview/index.js";
 import { registerInterviewRoutes } from "./interview/routes.js";
 import { createSettingsSystem } from "./settings/index.js";
 import { registerSettingsRoutes } from "./settings/routes.js";
-import {
-  DEFAULT_MODEL,
-  modelStatus as probeModelStatus,
-  pullModel,
-} from "./ollama.js";
+import { createLlmSystem } from "./llm/index.js";
+import { registerModelRoutes } from "./llm/routes.js";
+import { DEFAULT_MODEL, pullModel } from "./ollama.js";
 import { registerVoice } from "./voice/index.js";
-import type { CoreEvents, Persona } from "./types.js";
+import type { CoreEvents, ModelSurface, Persona } from "./types.js";
 
 /**
  * MentorOS core server.
@@ -72,11 +70,12 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   };
 
   const settings = createSettingsSystem(dataDir);
+  const llm = createLlmSystem(dataDir, settings.store);
   const memory = createMemorySystem(dataDir, broadcast);
   const learning = createLearningSystem(dataDir, memory.engine);
   const kb = createKbSystem(dataDir, broadcast);
-  const interview = createInterviewSystem(dataDir, broadcast, memory.engine);
-  const engine = new ChatEngine(store, broadcast, memory.engine, kb.engine);
+  const interview = createInterviewSystem(dataDir, broadcast, memory.engine, llm.router);
+  const engine = new ChatEngine(store, broadcast, llm.router, memory.engine, kb.engine);
 
   void app.register(websocket);
   void app.register(cors, {
@@ -88,6 +87,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     kb.close();
     learning.close();
     memory.close();
+    llm.close();
     settings.close();
     store.close();
   });
@@ -136,27 +136,28 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   );
 
   /* -------------------------------- chat --------------------------------- */
-  app.post<{ Body: { threadId?: string; content?: string; persona?: Persona } }>(
-    "/chat",
-    async (req, reply) => {
-      const { threadId, content, persona } = req.body ?? {};
-      if (!threadId || !store.threadExists(threadId)) {
-        return reply.code(404).send({ error: "thread not found" });
-      }
-      if (!content || content.trim().length === 0) {
-        return reply.code(400).send({ error: "content is required" });
-      }
-      const resolvedPersona: Persona = PERSONAS.includes(persona as Persona)
-        ? (persona as Persona)
-        : "staff-engineer";
+  app.post<{
+    Body: { threadId?: string; content?: string; persona?: Persona; surface?: ModelSurface };
+  }>("/chat", async (req, reply) => {
+    const { threadId, content, persona, surface } = req.body ?? {};
+    if (!threadId || !store.threadExists(threadId)) {
+      return reply.code(404).send({ error: "thread not found" });
+    }
+    if (!content || content.trim().length === 0) {
+      return reply.code(400).send({ error: "content is required" });
+    }
+    const resolvedPersona: Persona = PERSONAS.includes(persona as Persona)
+      ? (persona as Persona)
+      : "staff-engineer";
+    // The Voice screen rides /chat with surface:'voice'; everything else is chat.
+    const resolvedSurface: "chat" | "voice" = surface === "voice" ? "voice" : "chat";
 
-      const user = store.addUserMessage(threadId, content, resolvedPersona);
-      const assistant = store.addAssistantPlaceholder(threadId, resolvedPersona);
-      // Respond immediately; tokens/status arrive over the /events websocket.
-      engine.start(assistant, resolvedPersona, content);
-      return { userMessageId: user.id, assistantMessageId: assistant.id };
-    },
-  );
+    const user = store.addUserMessage(threadId, content, resolvedPersona);
+    const assistant = store.addAssistantPlaceholder(threadId, resolvedPersona);
+    // Respond immediately; tokens/status arrive over the /events websocket.
+    engine.start(assistant, resolvedPersona, content, resolvedSurface);
+    return { userMessageId: user.id, assistantMessageId: assistant.id };
+  });
 
   app.post<{ Params: { messageId: string } }>(
     "/chat/:messageId/stop",
@@ -167,7 +168,8 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   );
 
   /* -------------------------------- models ------------------------------- */
-  app.get("/models/status", async () => probeModelStatus(DEFAULT_MODEL));
+  // /models/status (per-surface), /models/providers, /models/keys/anthropic.
+  registerModelRoutes(app, { router: llm.router, keys: llm.keys });
 
   app.post<{ Body: { model?: string } }>("/models/pull", async (req, reply) => {
     const model = req.body?.model?.trim() || DEFAULT_MODEL;

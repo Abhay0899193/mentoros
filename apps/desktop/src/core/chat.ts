@@ -1,6 +1,6 @@
 import type { Store } from "./db.js";
-import { chatStream, DEFAULT_MODEL, modelStatus } from "./ollama.js";
 import type { OllamaMessage } from "./ollama.js";
+import type { ModelRouter } from "./llm/router.js";
 import { systemPrompt } from "./personas.js";
 import { TeachingSegmenter } from "./segmenter.js";
 import type { MemoryEngine } from "./memory/engine.js";
@@ -11,10 +11,14 @@ import type {
   CoreEvents,
   MemoryType,
   MessageCitation,
+  ModelSurface,
   Persona,
   RecallHit,
   SaveMemoryInput,
 } from "./types.js";
+
+/** Chat rides two routing surfaces: the Chat screen and the Voice screen. */
+type ChatSurface = Extract<ModelSurface, "chat" | "voice">;
 
 type Broadcast = <E extends keyof CoreEvents>(
   event: E,
@@ -73,14 +77,19 @@ export class ChatEngine {
   constructor(
     private readonly store: Store,
     private readonly broadcast: Broadcast,
+    private readonly router: ModelRouter,
     private readonly memory?: MemoryEngine,
     private readonly kb?: KbEngine,
-    private readonly model: string = DEFAULT_MODEL,
   ) {}
 
   /** Fire-and-forget: kicks off async generation for an assistant message. */
-  start(assistant: ChatMessage, persona: Persona, userContent = ""): void {
-    void this.run(assistant, persona, userContent);
+  start(
+    assistant: ChatMessage,
+    persona: Persona,
+    userContent = "",
+    surface: ChatSurface = "chat",
+  ): void {
+    void this.run(assistant, persona, userContent, surface);
   }
 
   stop(messageId: string): boolean {
@@ -95,12 +104,14 @@ export class ChatEngine {
     assistant: ChatMessage,
     persona: Persona,
     userContent: string,
+    surface: ChatSurface,
   ): Promise<void> {
     const { id: messageId, threadId } = assistant;
     this.broadcast("chat.status", { messageId, threadId, phase: "thinking" });
 
-    // Degraded pre-flight: never start a stream we can't sustain.
-    const status = await modelStatus(this.model);
+    // Degraded pre-flight: never start a stream we can't sustain. Only the local
+    // (Ollama) path can be unavailable here — a cloud surface reports 'ready'.
+    const status = await this.router.status(surface);
     if (status.state !== "ready") {
       this.broadcast("chat.status", {
         messageId,
@@ -109,7 +120,7 @@ export class ChatEngine {
         error:
           status.state === "ollama-offline"
             ? "Ollama is not running"
-            : `Model ${this.model} is not pulled`,
+            : `Model ${status.model} is not pulled`,
       });
       return;
     }
@@ -129,8 +140,8 @@ export class ChatEngine {
 
     let sawToken = false;
     try {
-      await chatStream({
-        model: this.model,
+      await this.router.stream({
+        surface,
         messages,
         signal: controller.signal,
         onChunk: (content) => {

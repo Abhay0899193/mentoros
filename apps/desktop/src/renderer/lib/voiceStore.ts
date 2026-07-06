@@ -71,7 +71,7 @@ export const useVoice = create<VoiceStoreState>((set, get) => {
     segments = {};
     const threadId = await ensureThread();
     const persona = useChat.getState().persona;
-    const res = await coreClient.sendMessage(threadId, text, persona);
+    const res = await coreClient.sendMessage(threadId, text, persona, 'voice');
     assistantId = res.assistantMessageId;
   }
 

@@ -1,4 +1,4 @@
-import type { ModelStatus } from "./types.js";
+import type { LocalModelInfo, ModelStatus } from "./types.js";
 
 /**
  * Native Ollama adapter — talks HTTP to a locally running Ollama daemon. No SDK
@@ -60,6 +60,35 @@ export async function modelStatus(model = DEFAULT_MODEL): Promise<ModelStatus> {
     return { state: present ? "ready" : "model-missing", model };
   } catch {
     return { state: "ollama-offline", model };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const TAGS_TIMEOUT_MS = 800;
+
+/**
+ * Enumerate installed Ollama models for the Settings picker. Never throws;
+ * resolves `reachable:false` with an empty list when the daemon is down.
+ */
+export async function listLocalModels(): Promise<{
+  reachable: boolean;
+  models: LocalModelInfo[];
+}> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TAGS_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${OLLAMA_BASE}/api/tags`, { signal: controller.signal });
+    if (!res.ok) return { reachable: false, models: [] };
+    const data = (await res.json()) as {
+      models?: Array<{ name?: string; size?: number }>;
+    };
+    const models: LocalModelInfo[] = (data.models ?? [])
+      .filter((m): m is { name: string; size?: number } => typeof m.name === "string")
+      .map((m) => ({ model: m.name, label: m.name, sizeBytes: m.size ?? 0 }));
+    return { reachable: true, models };
+  } catch {
+    return { reachable: false, models: [] };
   } finally {
     clearTimeout(timer);
   }

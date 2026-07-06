@@ -34,6 +34,10 @@ export interface ChatMessage {
 export interface ModelStatus {
   state: "ready" | "ollama-offline" | "model-missing";
   model: string;
+  /** Which provider the surface resolved to (absent = 'ollama', pre-slice shape). */
+  provider?: "ollama" | "anthropic";
+  /** Set when a cloud choice was silently downgraded to local (no key / cloud off). */
+  fellBack?: boolean;
 }
 
 export type ChatPhase = "thinking" | "drafting" | "done" | "error" | "stopped";
@@ -381,6 +385,65 @@ export interface VoiceStatus {
 /** whisper.cpp model choices (quality vs latency ladder; small.en default). */
 export type SttModelId = "small.en" | "medium.en" | "large-v3-turbo";
 
+/* -------- Model switching (local Ollama + cloud Claude, §2.4 router) ------- */
+
+export type ModelProvider = "ollama" | "anthropic";
+
+/**
+ * The app surfaces that generate with an LLM, each independently routable.
+ * 'voice' is the Voice screen's spoken answers (rides POST /chat with
+ * surface:'voice'); the memory merge-judge is deliberately NOT routable — it
+ * stays local (cheap latency-sensitive classifier).
+ */
+export type ModelSurface = "chat" | "voice" | "interviewer" | "scorecard";
+
+export interface ModelChoice {
+  provider: ModelProvider;
+  /** Ollama tag ('llama3.1:8b') or Anthropic model id ('claude-opus-4-8'). */
+  model: string;
+}
+
+/** One installed Ollama model (from /api/tags). */
+export interface LocalModelInfo {
+  model: string;
+  label: string;
+  sizeBytes: number;
+}
+
+/** One entry of the static Claude catalog (core owns ids + pricing copy). */
+export interface CloudModelInfo {
+  model: string;
+  label: string;
+  /** USD per million tokens, for the picker's cost hint. */
+  inputPerMTok: number;
+  outputPerMTok: number;
+  /** One-line positioning copy. */
+  note: string;
+  /** Server-recommended default cloud pick (Opus 4.8). */
+  recommended?: boolean;
+}
+
+export type ApiKeyState = "none" | "valid" | "invalid";
+
+/**
+ * Provider availability for the Settings pickers. The key itself is never
+ * returned — only a display mask ('sk-ant-…f3a2') and its validation state.
+ */
+export interface ProvidersInfo {
+  ollama: {
+    reachable: boolean;
+    models: LocalModelInfo[];
+    defaultModel: string;
+  };
+  anthropic: {
+    keyState: ApiKeyState;
+    keyMask?: string;
+    /** Human reason when keyState is 'invalid' (auth failed, network…). */
+    keyError?: string;
+    catalog: CloudModelInfo[];
+  };
+}
+
 export interface AppSettings {
   /** Kokoro voice id, e.g. 'af_heart'. Applies to the next utterance. */
   ttsVoice: string;
@@ -388,6 +451,17 @@ export interface AppSettings {
   sttModel: SttModelId;
   /** Mentor identity on the Voice screen: shader Orb or the animated face. */
   mentorIdentity: "orb" | "face";
+  /**
+   * Master cloud opt-in (§2.4: cloud is an accelerator, never a dependency).
+   * While false, cloud choices below are inert and every surface resolves local.
+   */
+  cloudEnabled: boolean;
+  /**
+   * Per-surface model routing. A cloud choice only takes effect while
+   * cloudEnabled and a valid Anthropic key are present; otherwise the router
+   * silently falls back to the local default (no broken surfaces, ever).
+   */
+  models: Record<ModelSurface, ModelChoice>;
 }
 
 export interface TtsVoiceInfo {

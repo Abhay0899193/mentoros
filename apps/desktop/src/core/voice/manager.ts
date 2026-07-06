@@ -19,6 +19,7 @@ import {
   sttModelUrl,
 } from "./sttModels.js";
 import { downloadFile, firstExisting, run } from "./util.js";
+import { DEFAULT_SETTINGS } from "../settings/store.js";
 import type { AppSettings, CoreEvents, SttModelId, SttModelInfo, VoiceStatus } from "../types.js";
 
 type Broadcast = <E extends keyof CoreEvents>(event: E, payload: CoreEvents[E]) => void;
@@ -54,9 +55,9 @@ export class VoiceManager {
     dataDir: string,
     private readonly broadcast: Broadcast,
     private readonly getSettings: GetSettings = () => ({
+      ...DEFAULT_SETTINGS,
       ttsVoice: KOKORO_VOICE,
       sttModel: DEFAULT_STT_MODEL,
-      mentorIdentity: "orb",
     }),
   ) {
     this.paths = voicePaths(dataDir);

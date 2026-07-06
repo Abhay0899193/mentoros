@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_MODEL } from "../ollama.js";
+import type { ModelRouter } from "../llm/router.js";
 import type {
   CoreEvents,
   EvalResult,
@@ -53,7 +53,8 @@ export interface InterviewEngineDeps {
   interviewer?: IInterviewer;
   runFn?: RunFn;
   gradeFn?: GradeFn;
-  model?: string;
+  /** Routes interviewer + scorecard surfaces (local or cloud). */
+  router?: ModelRouter;
 }
 
 class NotFoundError extends Error {}
@@ -74,19 +75,26 @@ export class InterviewEngine {
   private readonly interviewer: IInterviewer;
   private readonly runFn: RunFn;
   private readonly gradeFn: GradeFn;
-  private readonly model: string;
+  private readonly router?: ModelRouter;
   private readonly tmpRoot: string;
 
   constructor(deps: InterviewEngineDeps) {
     this.store = deps.store;
     this.broadcast = deps.broadcast;
     if (deps.memory) this.memory = deps.memory;
-    this.model = deps.model ?? DEFAULT_MODEL;
-    this.interviewer = deps.interviewer ?? new Interviewer(deps.broadcast, this.model);
+    if (deps.router) this.router = deps.router;
+    // The default Interviewer needs a router; tests inject a fake interviewer so
+    // this RHS never evaluates without one.
+    this.interviewer = deps.interviewer ?? new Interviewer(deps.broadcast, this.needRouter());
     this.runFn = deps.runFn ?? runTests;
     this.gradeFn = deps.gradeFn ?? gradeScorecard;
     this.tmpRoot = join(deps.dataDir, "tmp");
     mkdirSync(this.tmpRoot, { recursive: true });
+  }
+
+  private needRouter(): ModelRouter {
+    if (!this.router) throw new Error("interview engine requires a model router");
+    return this.router;
   }
 
   /* ------------------------------ problems ----------------------------- */
@@ -366,6 +374,7 @@ export class InterviewEngine {
       0,
       Math.round((Date.parse(endISO) - Date.parse(session.startedAt)) / 1000),
     );
+    const router = this.router;
     const scorecard = await this.gradeFn({
       problem,
       session,
@@ -375,7 +384,19 @@ export class InterviewEngine {
       hintsUsed: session.hintsUsed,
       durationSec,
       endISO,
-      model: this.model,
+      // Route the grader through the scorecard surface (local or cloud). If no
+      // router is wired the default falls back to a direct local call.
+      ...(router
+        ? {
+            once: (o) =>
+              router.once({
+                surface: "scorecard",
+                messages: o.messages,
+                ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
+                ...(o.format ? { format: o.format } : {}),
+              }),
+          }
+        : {}),
     });
     if (this.memory) {
       const memory = this.memory;

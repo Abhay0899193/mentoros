@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import type { CoreEvents } from "../types.js";
+import type { ModelRouter } from "../llm/router.js";
 import { InterviewEngine, type InterviewMemory } from "./engine.js";
 import { InterviewStore } from "./store.js";
 
@@ -25,6 +26,7 @@ export function createInterviewSystem(
   dataDir: string,
   broadcast: Broadcast,
   memory?: InterviewMemory,
+  router?: ModelRouter,
 ): InterviewSystem {
   mkdirSync(dataDir, { recursive: true });
   const db = new Database(join(dataDir, "mentoros.db"));
@@ -32,7 +34,7 @@ export function createInterviewSystem(
   db.pragma("foreign_keys = ON");
 
   const store = new InterviewStore(db);
-  const engine = new InterviewEngine({ store, broadcast, dataDir, memory });
+  const engine = new InterviewEngine({ store, broadcast, dataDir, memory, router });
 
   return {
     engine,

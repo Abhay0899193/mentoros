@@ -1,4 +1,4 @@
-import { chatOnce, DEFAULT_MODEL } from "../ollama.js";
+import { chatOnce, type OllamaMessage } from "../ollama.js";
 import type {
   EvalResult,
   InterviewScorecard,
@@ -55,6 +55,17 @@ export function nextReviewDate(grade: number, fromISO: string): string {
   return out.toISOString();
 }
 
+/**
+ * A single non-streaming completion for grading — routed (surface 'scorecard')
+ * by the engine, or the local default below. format:'json' is meaningful on the
+ * Ollama path; cloud ignores it (the prompt already demands JSON).
+ */
+export type ScorecardOnce = (opts: {
+  messages: OllamaMessage[];
+  format?: "json";
+  timeoutMs?: number;
+}) => Promise<string>;
+
 export interface GradeInput {
   problem: BankProblem;
   session: InterviewSession;
@@ -65,8 +76,18 @@ export interface GradeInput {
   durationSec: number;
   /** Session end timestamp — the anchor for the next-review date. */
   endISO: string;
-  model?: string;
+  /** Injected grader call; defaults to a local Ollama completion. */
+  once?: ScorecardOnce;
 }
+
+/** Local grader used when the engine wires no router (deterministic temp 0). */
+const localOnce: ScorecardOnce = (o) =>
+  chatOnce({
+    messages: o.messages,
+    options: { temperature: 0 },
+    ...(o.format ? { format: o.format } : {}),
+    ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
+  });
 
 /** Best attempt = the run with the most passing tests (ties: latest). */
 function bestAttempt(attempts: EvalResult[]): EvalResult | undefined {
@@ -177,21 +198,19 @@ function validateGrade(raw: unknown): ParsedGrade | null {
 /** Grade a finished session. Never throws — always returns a scorecard. */
 export async function gradeScorecard(input: GradeInput): Promise<InterviewScorecard> {
   const { passed, total } = testTotals(input);
-  const model = input.model ?? DEFAULT_MODEL;
+  const once = input.once ?? localOnce;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const raw = await chatOnce({
-        model,
+      const raw = await once({
         messages: gradingMessages(input, passed, total),
         format: "json",
-        options: { temperature: 0 },
         timeoutMs: 45_000,
       });
       const parsed = validateGrade(JSON.parse(raw));
       if (parsed) return assemble(input, parsed, passed, total, false);
     } catch {
-      break; // daemon unreachable — go straight to the offline fallback
+      break; // adapter threw (daemon down / cloud error) — offline fallback
     }
   }
   return assemble(input, fallbackGrade(input, passed, total), passed, total, true);

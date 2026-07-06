@@ -5,6 +5,7 @@ import { useSettings } from '../../../lib/settingsStore';
 import { riseIn, staggerChildren, reduced } from '../../../motion/springs';
 import { Button } from '../../../ui';
 import { VoiceSection } from './VoiceSection';
+import { ModelsSection } from './ModelsSection';
 import { TranscriptionSection } from './TranscriptionSection';
 import { IdentitySection } from './IdentitySection';
 
@@ -46,6 +47,7 @@ export function SettingsScreen() {
           <SectionSkeleton />
           <SectionSkeleton />
           <SectionSkeleton />
+          <SectionSkeleton />
         </div>
       ) : settingsError && !settings ? (
         <div className="flex flex-col items-center gap-3 rounded-[14px] bg-surface-1 hairline py-16 text-center">
@@ -67,6 +69,9 @@ export function SettingsScreen() {
         >
           <motion.div variants={reduced(reduce, riseIn)}>
             <VoiceSection />
+          </motion.div>
+          <motion.div variants={reduced(reduce, riseIn)}>
+            <ModelsSection />
           </motion.div>
           <motion.div variants={reduced(reduce, riseIn)}>
             <TranscriptionSection />
