@@ -36,6 +36,11 @@ export interface StreamTurnArgs {
   interrogationOpener?: boolean;
   /** Persist the completed reply text (engine writes it to the store). */
   onComplete: (text: string) => void;
+  /**
+   * Framing only: fired (after onComplete) when the interviewer judged the
+   * candidate's framing adequate and emitted the [BEGIN CODING] marker.
+   */
+  onBeginCoding?: () => void;
 }
 
 export interface IInterviewer {
@@ -60,6 +65,7 @@ function phasePrompt(args: StreamTurnArgs): string {
       "PHASE: Framing. Present the problem in at most 2 lines (do not paste the full statement back).",
       "Then require the candidate to (a) restate it in their own words, (b) confirm the constraints, and (c) name 2-3 edge cases before writing any code.",
       "If this is the opening message, deliver that framing and ask them to restate. Otherwise respond to what they said and hold them to confirming constraints + edge cases before coding.",
+      `Once (and only once) the candidate has adequately restated the problem, confirmed the constraints, and named 2-3 plausible edge cases, end your reply with the exact text ${BEGIN_CODING_MARKER} on its own final line. Never emit it in your opening message and never emit it while any of the three items is missing or wrong.`,
     ].join("\n\n");
   }
 
@@ -96,6 +102,17 @@ function phasePrompt(args: StreamTurnArgs): string {
   return [PERSONA, problemBlock].join("\n\n");
 }
 
+export const BEGIN_CODING_MARKER = "[BEGIN CODING]";
+const BEGIN_CODING_RE = /\s*\[BEGIN CODING\]\s*$/;
+/** Tail chars withheld from the live stream so the marker never reaches the renderer. */
+const MARKER_HOLDBACK = BEGIN_CODING_MARKER.length + 8;
+
+/** Strips a trailing [BEGIN CODING] marker; returns the clean text + whether it was present. */
+export function stripBeginMarker(text: string): { text: string; beginCoding: boolean } {
+  if (!BEGIN_CODING_RE.test(text)) return { text, beginCoding: false };
+  return { text: text.replace(BEGIN_CODING_RE, ""), beginCoding: true };
+}
+
 function buildMessages(args: StreamTurnArgs): OllamaMessage[] {
   const out: OllamaMessage[] = [{ role: "system", content: phasePrompt(args) }];
   for (const t of args.turns) {
@@ -103,6 +120,20 @@ function buildMessages(args: StreamTurnArgs): OllamaMessage[] {
     out.push({
       role: t.role === "candidate" ? "user" : "assistant",
       content: t.content,
+    });
+  }
+  // llama3.1 returns an empty completion when the transcript does not end with
+  // a user turn (fresh framing opener, interrogation opener after /finish) —
+  // give it a candidate line to respond to. Never persisted as a turn.
+  if (out[out.length - 1]!.role !== "user") {
+    out.push({
+      role: "user",
+      content:
+        args.phase === "framing"
+          ? "I'm ready — go ahead."
+          : args.interrogationOpener === true
+            ? "I'm done — my code is submitted. Go ahead with your questions."
+            : "Go ahead.",
     });
   }
   return out;
@@ -134,8 +165,21 @@ export class Interviewer implements IInterviewer {
 
     const messages = buildMessages(args);
     const controller = new AbortController();
+    // During framing the reply may end with [BEGIN CODING]; hold back a small
+    // tail so the marker is stripped before it ever reaches the renderer.
+    const holdback = args.phase === "framing" ? MARKER_HOLDBACK : 0;
     let text = "";
+    let emitted = 0;
     let sawToken = false;
+    const flushTo = (end: number) => {
+      if (end <= emitted) return;
+      this.broadcast("interview.token", {
+        sessionId,
+        turnId,
+        token: text.slice(emitted, end),
+      });
+      emitted = end;
+    };
     try {
       await chatStream({
         model: this.model,
@@ -147,12 +191,17 @@ export class Interviewer implements IInterviewer {
             this.broadcast("interview.status", { sessionId, turnId, phase: "drafting" });
           }
           text += content;
-          this.broadcast("interview.token", { sessionId, turnId, token: content });
+          flushTo(text.length - holdback);
         },
       });
-      args.onComplete(text);
+      const { text: finalText, beginCoding } =
+        args.phase === "framing" ? stripBeginMarker(text) : { text, beginCoding: false };
+      flushTo(finalText.length);
+      args.onComplete(finalText);
       this.broadcast("interview.status", { sessionId, turnId, phase: "done" });
+      if (beginCoding) args.onBeginCoding?.();
     } catch (err) {
+      flushTo(text.length);
       if (text) args.onComplete(text);
       this.broadcast("interview.status", {
         sessionId,

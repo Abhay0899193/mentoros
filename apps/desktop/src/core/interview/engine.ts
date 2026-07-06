@@ -334,6 +334,22 @@ export class InterviewEngine {
       turns,
       onComplete: (text) => this.store.updateTurnContent(turnId, text),
     };
+    if (phase === "framing") {
+      // Interviewer signals an adequate framing with [BEGIN CODING] (stripped
+      // before it reaches the renderer). /run and /hint remain the fail-open
+      // mechanical transition if the model never emits it.
+      args.onBeginCoding = () => {
+        const current = this.store.getSession(session.id);
+        if (!current || current.phase !== "framing") return;
+        this.store.addTurn({
+          sessionId: session.id,
+          role: "interviewer",
+          kind: "phase",
+          content: "Framing accepted — start coding.",
+        });
+        this.maybeEnterCoding(current);
+      };
+    }
     if (extra?.code) args.code = extra.code;
     if (extra?.lastEval) args.lastEval = extra.lastEval;
     if (extra?.interrogationOpener) args.interrogationOpener = true;

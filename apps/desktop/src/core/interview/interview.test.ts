@@ -22,6 +22,7 @@ import {
 } from "./scorecard.js";
 import { recommendProblem, type MistakeSignal } from "./recommend.js";
 import { InterviewEngine, InterviewConflict } from "./engine.js";
+import { stripBeginMarker } from "./interviewer.js";
 import type {
   AddTurnInput,
   CreateSessionInput,
@@ -595,3 +596,36 @@ async function waitFor<T>(fn: () => T | undefined, tries = 50): Promise<T> {
   }
   throw new Error("waitFor: condition never met");
 }
+
+/* -------------------- framing marker + opener nudge -------------------- */
+
+test("stripBeginMarker: strips a trailing marker and reports it", () => {
+  const hit = stripBeginMarker("Constraints confirmed. Edge cases are fine.\n\n[BEGIN CODING]\n");
+  assert.equal(hit.beginCoding, true);
+  assert.equal(hit.text, "Constraints confirmed. Edge cases are fine.");
+  const miss = stripBeginMarker("Restate the problem first.");
+  assert.equal(miss.beginCoding, false);
+  assert.equal(miss.text, "Restate the problem first.");
+  const midText = stripBeginMarker("[BEGIN CODING] is what I will say later, not now.");
+  assert.equal(midText.beginCoding, false, "marker only counts at the end");
+});
+
+test("engine: interviewer [BEGIN CODING] signal moves framing → coding with a phase turn", () => {
+  const { engine, store, events, streamCalls } = makeEngine();
+  const { session } = engine.startSession({ type: "coding", language: "python" });
+  engine.say(session.id, "Restated: find two indices summing to target; n up to 1e4; edges: empty, single, duplicates.");
+  const framingReply = streamCalls.find((c) => c.phase === "framing" && c.onBeginCoding);
+  assert.ok(framingReply, "framing reply exposes onBeginCoding");
+  framingReply!.onBeginCoding!();
+  assert.equal(store.getSession(session.id)!.phase, "coding");
+  const turns = store.getTurns(session.id);
+  const phaseTurn = turns.find((t) => t.kind === "phase" && /start coding/i.test(t.content));
+  assert.ok(phaseTurn, "transcript records the transition");
+  assert.ok(
+    events.some((e) => e.event === "interview.phase" && (e.payload as { phase: string }).phase === "coding"),
+    "interview.phase broadcast",
+  );
+  // Idempotent: a second signal (or one arriving after /run already moved us) is a no-op.
+  framingReply!.onBeginCoding!();
+  assert.equal(store.getTurns(session.id).filter((t) => t.kind === "phase").length, 1);
+});
