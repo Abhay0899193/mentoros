@@ -143,6 +143,7 @@ export function registerVoice(app: FastifyInstance, deps: VoiceDeps): void {
         ttsAbort: null,
       };
       conns.add(conn);
+      mgr.warmStt();
 
       socket.on("message", (raw: Buffer, isBinary: boolean) => {
         if (isBinary) {

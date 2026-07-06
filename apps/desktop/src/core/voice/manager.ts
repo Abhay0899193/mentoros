@@ -2,7 +2,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, statSync } from "node:f
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { sttModelPath, voicePaths, WHISPER_MODEL_FILE, type VoicePaths } from "./paths.js";
-import { resolveWhisperBin } from "./stt.js";
+import { resolveWhisperBin, transcribe } from "./stt.js";
 import {
   detectTtsEngine,
   ensureKokoroScript,
@@ -68,6 +68,28 @@ export class VoiceManager {
 
   sttReady(): boolean {
     return !!resolveWhisperBin(this.paths) && existsSync(this.paths.whisperModel);
+  }
+
+  private warmedSttPath: string | null = null;
+
+  /**
+   * Fire-and-forget: pay whisper's cold start (model load + one-time Metal
+   * shader compile, ~7s) on a sliver of silence when a /voice channel opens,
+   * so the user's first real utterance transcribes fast instead of tripping
+   * the renderer's deadline. Re-warms when the active model changes.
+   */
+  warmStt(): void {
+    const bin = this.whisperBin();
+    if (!bin || !this.sttReady()) return;
+    const modelPath = this.activeSttModelPath();
+    if (this.warmedSttPath === modelPath) return;
+    this.warmedSttPath = modelPath;
+    const silence = Buffer.alloc(6400); // 200ms of 16kHz PCM16
+    void transcribe({ pcm: silence, sampleRate: 16000, paths: this.paths, bin, modelPath }).catch(
+      () => {
+        this.warmedSttPath = null;
+      },
+    );
   }
 
   whisperBin(): string | null {

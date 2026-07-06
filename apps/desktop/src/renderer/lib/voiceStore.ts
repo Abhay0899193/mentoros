@@ -142,10 +142,19 @@ export const useVoice = create<VoiceStoreState>((set, get) => {
         }
         if (transcriptTimeout) clearTimeout(transcriptTimeout);
         set({ interim: '', finalTranscript: text });
-        if (get().orb === 'thinking' && text.trim() !== '') void generateReply(text);
-        else if (text.trim() === '') {
+        if (text.trim() === '') {
           set({ error: 'I didn’t catch that — hold and try again.' });
           dispatch({ type: 'CANCEL' });
+          return;
+        }
+        // A slow whisper run (cold start, big model) can outlive the deadline
+        // below — if the words still arrived, answer them instead of stranding
+        // the user with their own transcript next to a timeout error.
+        const lateButUsable =
+          get().orb === 'idle' && get().error?.startsWith('Transcription timed out');
+        if (get().orb === 'thinking' || lateButUsable) {
+          if (lateButUsable) set({ error: null });
+          void generateReply(text);
         }
       },
       onTtsStart: (sampleRate) => {
@@ -216,12 +225,15 @@ export const useVoice = create<VoiceStoreState>((set, get) => {
       mic = null;
       channel?.micStop();
       dispatch({ type: 'PTT_UP' });
+      // Generous deadline: a cold whisper start (one-time Metal shader
+      // compile) or a larger STT model can legitimately take >8s; late
+      // arrivals are also recovered in onTranscript above.
       transcriptTimeout = setTimeout(() => {
         if (get().orb === 'thinking' && get().finalTranscript === '') {
           set({ error: 'Transcription timed out — try again.' });
           set({ orb: 'idle' });
         }
-      }, 8000);
+      }, 20000);
     },
 
     interrupt: () => {
