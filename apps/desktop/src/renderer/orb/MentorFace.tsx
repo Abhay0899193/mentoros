@@ -143,7 +143,10 @@ export function MentorFace({ state, levelRef, size, frozen }: MentorFaceProps) {
       hue = approach(hue, ORB_HUE[s], dt, 0.5);
 
       // Speaking mouth: fast attack, slower decay on the TTS envelope.
-      const level = s === 'speaking' ? Math.min(1, levelRef.current * 1.4) : 0;
+      // sqrt = perceptual boost — typical speech RMS (~0.1-0.3) must still
+      // read as a clearly open mouth, not a flat bar.
+      const raw = s === 'speaking' ? levelRef.current : 0;
+      const level = raw <= 0 ? 0 : Math.min(1, Math.sqrt(raw) * 1.35);
       const openTarget = level * 19;
       open = approach(open, openTarget, dt, openTarget > open ? 0.035 : 0.09);
 
