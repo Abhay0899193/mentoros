@@ -1,9 +1,13 @@
 # Realistic face presets — generation spec (one-time asset pipeline)
 
-Toolchain: mflux (MLX) — base t2i + FLUX Fill masked inpainting per
-`~/mentoros-imagegen/USAGE.md`. Content boundary (user-agreed): tasteful,
-non-explicit — normal attire only; the attractiveness axis is styling/glam,
-never undress.
+Toolchain: mflux (MLX) — base t2i (FLUX.1-schnell 4-bit) + **FLUX.1-Kontext
+instruction edits** for the mouth/blink variants, per
+`~/mentoros-imagegen/USAGE.md`. (Kontext replaced FLUX Fill — no 4-bit mflux
+Fill mirror exists; Kontext needs no masks and preserves identity. Edits are
+composited back onto the base through a feathered ellipse via
+`composite_variants.py` so frames stay pixel-aligned for the sprite stack.)
+Content boundary (user-agreed): tasteful, non-explicit — normal attire only;
+the attractiveness axis is styling/glam, never undress.
 
 Output goes to `apps/desktop/src/renderer/orb/faces/art/<id>/` as WebP
 (cwebp/sips convert from PNG, q≈82):
@@ -50,9 +54,17 @@ evening dress with tasteful neckline; editorial red-carpet polish" ·
 full-body: "floor-length emerald satin evening gown with tasteful neckline,
 delicate heels, small clutch"
 
-## Fill settings
-steps 30, guidance 30, same seed as the preset's base. Masks: white ellipse
-over the mouth (m1–m3) or both eyes (blink), feathered ~8px, coords picked
-per generated base image (they differ per face) via the mask helper in
-`make_masks.py`. Iterate seeds ±1..5 if a base render has artifacts (hands,
-warped teeth) — judge visually before cutting variants.
+## Kontext edit settings (replaces Fill)
+steps 16, guidance 4.0, same seed family as the preset's base. Prompts are
+action-first instructions ("Open her mouth wide as if speaking, saying 'ah',
+upper teeth visible.") — do NOT append "keep everything exactly the same"
+(probe-tested: with guidance 2.5 + keep-same clause the edit is silently
+ignored; Kontext preserves identity by default). Composite each edit onto its
+base with `composite_variants.py <base> <edit> <cx> <cy> <rx> <ry> <out>`
+(mouth ellipse for m1–m3, eye band for blink; coords picked per base image).
+Iterate seeds ±1..5 if a render has artifacts (warped teeth, drifted gaze) —
+judge visually before compositing. Bases: iterate seeds on framing failures
+too (mouth must be CLOSED on portrait-base; full-body must show head to
+shoes — add "entire body visible from head to shoes, standing on a dark
+studio floor" and swap the 85mm/shallow-DoF tail for "50mm lens, full-length
+fashion photography" if crops persist).
