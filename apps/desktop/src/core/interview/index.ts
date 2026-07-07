@@ -5,6 +5,7 @@ import type { CoreEvents } from "../types.js";
 import type { ModelRouter } from "../llm/router.js";
 import { InterviewEngine, type InterviewMemory } from "./engine.js";
 import { InterviewStore } from "./store.js";
+import { InterviewImportStore } from "./importStore.js";
 
 type Broadcast = <E extends keyof CoreEvents>(
   event: E,
@@ -34,7 +35,8 @@ export function createInterviewSystem(
   db.pragma("foreign_keys = ON");
 
   const store = new InterviewStore(db);
-  const engine = new InterviewEngine({ store, broadcast, dataDir, memory, router });
+  const importStore = new InterviewImportStore(db);
+  const engine = new InterviewEngine({ store, broadcast, dataDir, memory, importStore, router });
 
   return {
     engine,
@@ -46,4 +48,5 @@ export function createInterviewSystem(
 
 export { InterviewEngine } from "./engine.js";
 export { InterviewStore, migrateInterview } from "./store.js";
+export { InterviewImportStore, migrateImportStore } from "./importStore.js";
 export type { InterviewMemory } from "./engine.js";

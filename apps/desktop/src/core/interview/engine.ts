@@ -4,10 +4,12 @@ import { join } from "node:path";
 import type { ModelRouter } from "../llm/router.js";
 import type {
   CoreEvents,
+  DraftValidation,
   EvalResult,
   InterviewLanguage,
   InterviewPhase,
   InterviewProblem,
+  InterviewProblemDraft,
   InterviewProblemMeta,
   InterviewScorecard,
   InterviewSession,
@@ -19,15 +21,28 @@ import type {
   SaveMemoryResult,
 } from "../types.js";
 import {
-  getBankProblem,
-  PROBLEMS,
   toMeta,
   toPublicProblem,
   type BankProblem,
 } from "./problems.js";
+import {
+  allProblems,
+  findProblem,
+  isBuiltInProblem,
+  MemImportStore,
+  type IImportStore,
+} from "./importStore.js";
+import {
+  generateDraft,
+  saveDraft,
+  validateDraft,
+  DraftInvalidError,
+  DraftGenerationError,
+} from "./importer.js";
 import { Interviewer, type IInterviewer, type StreamTurnArgs } from "./interviewer.js";
 import { recommendProblem, type MistakeSignal, type RecResult } from "./recommend.js";
-import { gradeScorecard, writeScorecardMemories, type GradeInput } from "./scorecard.js";
+import { gradeScorecard, writeScorecardMemories, type GradeInput, type ScorecardOnce } from "./scorecard.js";
+import { chatOnce } from "../ollama.js";
 import { runTests, type RunTestsOpts } from "./runner.js";
 import type { IInterviewStore } from "./store.js";
 
@@ -53,14 +68,22 @@ export interface InterviewEngineDeps {
   interviewer?: IInterviewer;
   runFn?: RunFn;
   gradeFn?: GradeFn;
+  /** Persistence for user-imported problems (defaults to an empty in-memory store). */
+  importStore?: IImportStore;
   /** Routes interviewer + scorecard surfaces (local or cloud). */
   router?: ModelRouter;
 }
 
 class NotFoundError extends Error {}
 class ConflictError extends Error {}
+class ForbiddenError extends Error {}
 
-export { NotFoundError as InterviewNotFound, ConflictError as InterviewConflict };
+export {
+  NotFoundError as InterviewNotFound,
+  ConflictError as InterviewConflict,
+  ForbiddenError as InterviewForbidden,
+};
+export { DraftInvalidError, DraftGenerationError } from "./importer.js";
 
 /**
  * InterviewEngine — the coding-interview façade the routes call. Owns the
@@ -76,11 +99,13 @@ export class InterviewEngine {
   private readonly runFn: RunFn;
   private readonly gradeFn: GradeFn;
   private readonly router?: ModelRouter;
+  private readonly importStore: IImportStore;
   private readonly tmpRoot: string;
 
   constructor(deps: InterviewEngineDeps) {
     this.store = deps.store;
     this.broadcast = deps.broadcast;
+    this.importStore = deps.importStore ?? new MemImportStore();
     if (deps.memory) this.memory = deps.memory;
     if (deps.router) this.router = deps.router;
     // The default Interviewer needs a router; tests inject a fake interviewer so
@@ -102,7 +127,7 @@ export class InterviewEngine {
   listProblems(type: InterviewType = "coding"): InterviewProblemMeta[] {
     if (type !== "coding") return [];
     const stats = this.problemStats();
-    const metas = PROBLEMS.map(toMeta);
+    const metas = allProblems(this.importStore).map(toMeta);
     for (const m of metas) {
       const s = stats.get(m.id);
       if (s && s.best >= 0) m.lastScore = s.best;
@@ -120,7 +145,7 @@ export class InterviewEngine {
 
   listSessions(): InterviewSessionSummary[] {
     return this.store.listSessions().map((s) => {
-      const problem = getBankProblem(s.problemId);
+      const problem = findProblem(this.importStore, s.problemId);
       const sc = this.store.getScorecard(s.id);
       const sum: InterviewSessionSummary = {
         id: s.id,
@@ -135,6 +160,63 @@ export class InterviewEngine {
     });
   }
 
+  /* ------------------------------- importer ---------------------------- */
+
+  /**
+   * Draft a bank problem from a pasted statement (LLM, scorecard surface) and
+   * validate it by executing the reference solution against its own tests.
+   * Throws {@link DraftGenerationError} if the model output is unusable.
+   */
+  async importDraft(
+    sourceText: string,
+  ): Promise<{ draft: InterviewProblemDraft; validation: DraftValidation }> {
+    const draft = await generateDraft(sourceText, this.scorecardOnce());
+    const validation = await validateDraft(draft, this.runFn, this.tmpRoot);
+    return { draft, validation };
+  }
+
+  /** Re-run validation for a (possibly user-edited) draft. */
+  async validateDraftInput(draft: InterviewProblemDraft): Promise<DraftValidation> {
+    return validateDraft(draft, this.runFn, this.tmpRoot);
+  }
+
+  /**
+   * Persist a draft after a server-side re-validation (never trust the client).
+   * Throws {@link DraftInvalidError} (→ 422) when the draft does not validate.
+   */
+  async saveDraftInput(draft: InterviewProblemDraft): Promise<InterviewProblemMeta> {
+    const validation = await validateDraft(draft, this.runFn, this.tmpRoot);
+    const problem = saveDraft(draft, validation, this.importStore);
+    return toMeta(problem);
+  }
+
+  /** Delete a custom problem. Throws {@link ForbiddenError} for built-ins. */
+  deleteProblem(id: string): boolean {
+    if (isBuiltInProblem(id)) throw new ForbiddenError("built-in problems cannot be deleted");
+    return this.importStore.delete(id);
+  }
+
+  /** Route a single-shot completion through the scorecard surface (local-first). */
+  private scorecardOnce(): ScorecardOnce {
+    const router = this.router;
+    if (router) {
+      return (o) =>
+        router.once({
+          surface: "scorecard",
+          messages: o.messages,
+          ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
+          ...(o.format ? { format: o.format } : {}),
+        });
+    }
+    return (o) =>
+      chatOnce({
+        messages: o.messages,
+        options: { temperature: 0 },
+        ...(o.format ? { format: o.format } : {}),
+        ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
+      });
+  }
+
   /* ------------------------------ lifecycle ---------------------------- */
 
   startSession(input: {
@@ -143,7 +225,7 @@ export class InterviewEngine {
     language: InterviewLanguage;
   }): { session: InterviewSession; problem: InterviewProblem } {
     const problemId = input.problemId ?? this.recommendedOrDefault();
-    const problem = getBankProblem(problemId);
+    const problem = findProblem(this.importStore, problemId);
     if (!problem) throw new NotFoundError("problem not found");
 
     const session = this.store.createSession({
@@ -173,7 +255,7 @@ export class InterviewEngine {
     | undefined {
     const session = this.store.getSession(id);
     if (!session) return undefined;
-    const problem = getBankProblem(session.problemId);
+    const problem = findProblem(this.importStore, session.problemId);
     if (!problem) return undefined;
     const out = {
       session,
@@ -224,7 +306,7 @@ export class InterviewEngine {
     const session = this.requireSession(id);
     if (session.hintsUsed >= 3) throw new ConflictError("hint ladder exhausted");
     const level = (session.hintsUsed + 1) as 1 | 2 | 3;
-    const problem = getBankProblem(session.problemId);
+    const problem = findProblem(this.importStore, session.problemId);
     if (!problem) throw new NotFoundError("problem not found");
     const text = problem.hints[level - 1];
     const turn = this.store.addTurn({
@@ -244,7 +326,7 @@ export class InterviewEngine {
 
   async run(id: string, code: string): Promise<EvalResult> {
     const session = this.requireSession(id);
-    const problem = getBankProblem(session.problemId);
+    const problem = findProblem(this.importStore, session.problemId);
     if (!problem) throw new NotFoundError("problem not found");
     this.store.setCode(id, code);
     this.maybeEnterCoding(session);
@@ -329,7 +411,7 @@ export class InterviewEngine {
     turnId: string,
     extra?: { code?: string; lastEval?: EvalResult; interrogationOpener?: boolean },
   ): void {
-    const problem = getBankProblem(session.problemId);
+    const problem = findProblem(this.importStore, session.problemId);
     if (!problem) return;
     const turns = this.store
       .getTurns(session.id)
@@ -365,7 +447,7 @@ export class InterviewEngine {
   }
 
   private async gradeAndPersist(session: InterviewSession): Promise<void> {
-    const problem = getBankProblem(session.problemId);
+    const problem = findProblem(this.importStore, session.problemId);
     if (!problem) return;
     const endISO = new Date().toISOString();
     const attempts = this.store.getAttempts(session.id);
@@ -438,12 +520,12 @@ export class InterviewEngine {
         mistakes.push({ title: r.title, body: r.body, count: parseCount(r.tags) });
       }
     }
-    return recommendProblem(PROBLEMS, mistakes, solvedIds);
+    return recommendProblem(allProblems(this.importStore), mistakes, solvedIds);
   }
 
   private recommendedOrDefault(): string {
     const rec = this.recommend(this.problemStats());
-    return rec?.id ?? (PROBLEMS[0] as BankProblem).id;
+    return rec?.id ?? (allProblems(this.importStore)[0] as BankProblem).id;
   }
 }
 

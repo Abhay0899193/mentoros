@@ -1,7 +1,14 @@
 import type { FastifyInstance } from "fastify";
-import type { InterviewLanguage, InterviewType } from "../types.js";
+import type {
+  InterviewLanguage,
+  InterviewProblemDraft,
+  InterviewType,
+} from "../types.js";
 import {
+  DraftGenerationError,
+  DraftInvalidError,
   InterviewConflict,
+  InterviewForbidden,
   InterviewNotFound,
   type InterviewEngine,
 } from "./engine.js";
@@ -143,6 +150,67 @@ export function registerInterviewRoutes(
       const ok = engine.abandon(req.params.id);
       if (!ok) return reply.code(404).send({ error: "session not found" });
       return reply.code(204).send();
+    },
+  );
+
+  /* ------------------------------ importer ------------------------------ */
+
+  app.post<{ Body: { sourceText?: string } }>(
+    "/interview/import/draft",
+    async (req, reply) => {
+      const sourceText = req.body?.sourceText;
+      if (!sourceText || sourceText.trim().length === 0) {
+        return reply.code(400).send({ error: "sourceText is required" });
+      }
+      try {
+        return await engine.importDraft(sourceText);
+      } catch (err) {
+        if (err instanceof DraftGenerationError) {
+          return reply.code(502).send({ message: err.message });
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.post<{ Body: { draft?: InterviewProblemDraft } }>(
+    "/interview/import/validate",
+    async (req, reply) => {
+      const draft = req.body?.draft;
+      if (!draft) return reply.code(400).send({ error: "draft is required" });
+      return engine.validateDraftInput(draft);
+    },
+  );
+
+  app.post<{ Body: { draft?: InterviewProblemDraft } }>(
+    "/interview/import",
+    async (req, reply) => {
+      const draft = req.body?.draft;
+      if (!draft) return reply.code(400).send({ error: "draft is required" });
+      try {
+        return await engine.saveDraftInput(draft);
+      } catch (err) {
+        if (err instanceof DraftInvalidError) {
+          return reply.code(422).send({ message: err.message, validation: err.validation });
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    "/interview/problems/:id",
+    async (req, reply) => {
+      try {
+        const ok = engine.deleteProblem(req.params.id);
+        if (!ok) return reply.code(404).send({ error: "problem not found" });
+        return reply.code(204).send();
+      } catch (err) {
+        if (err instanceof InterviewForbidden) {
+          return reply.code(403).send({ error: err.message });
+        }
+        throw err;
+      }
     },
   );
 }

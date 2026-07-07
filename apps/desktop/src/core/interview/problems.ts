@@ -528,6 +528,7 @@ export function toPublicProblem(p: BankProblem): InterviewProblem {
     starterCode,
   };
   if (p.lcNumber !== undefined) meta.lcNumber = p.lcNumber;
+  if (p.custom) meta.custom = true;
   return meta;
 }
 
@@ -540,5 +541,6 @@ export function toMeta(p: BankProblem): InterviewProblemMeta {
     tags: [...p.tags],
   };
   if (p.lcNumber !== undefined) meta.lcNumber = p.lcNumber;
+  if (p.custom) meta.custom = true;
   return meta;
 }
