@@ -872,8 +872,38 @@ function resolveCorePort(): number {
 
 type Listener = (payload: CoreEvents[keyof CoreEvents]) => void;
 
+/** Thrown for non-2xx responses; carries the server's designed error body. */
+export class CoreRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    /** Parsed JSON error body when the server sent one (e.g. 422 {message, validation}). */
+    readonly body?: unknown,
+  ) {
+    super(message);
+    this.name = 'CoreRequestError';
+  }
+}
+
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(`core request failed: ${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    // Surface the server's designed message ({message} / {error}) when present —
+    // importer 502/422 bodies are user-facing copy, not debug noise.
+    let body: unknown;
+    let message = `core request failed: ${res.status} ${res.statusText}`;
+    try {
+      const text = await res.text();
+      if (text) {
+        body = JSON.parse(text);
+        const m = (body as { message?: unknown; error?: unknown }) ?? {};
+        if (typeof m.message === 'string' && m.message) message = m.message;
+        else if (typeof m.error === 'string' && m.error) message = m.error;
+      }
+    } catch {
+      /* non-JSON error body — keep the status-based message */
+    }
+    throw new CoreRequestError(res.status, message, body);
+  }
   // 204s and empty bodies (abandon, open-in-finder) have nothing to parse.
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;

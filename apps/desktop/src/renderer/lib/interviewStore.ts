@@ -2,9 +2,11 @@ import { create } from "zustand";
 import {
   coreClient,
   type ChatPhase,
+  type DraftValidation,
   type EvalResult,
   type InterviewLanguage,
   type InterviewProblem,
+  type InterviewProblemDraft,
   type InterviewProblemMeta,
   type InterviewScorecard,
   type InterviewSession,
@@ -12,6 +14,7 @@ import {
   type InterviewTurn,
   type InterviewType,
 } from "./coreClient";
+import { toast } from "../ui";
 
 type View = "launcher" | "session";
 
@@ -24,6 +27,15 @@ interface InterviewState {
   problems: InterviewProblemMeta[];
   problemsLoading: boolean;
   problemsError: string | null;
+
+  /* problem importer (paste → draft → review → save), plan.md problem bank */
+  importOpen: boolean;
+  importGenerating: boolean;
+  importGenerateError: string | null;
+  importValidating: boolean;
+  importSaving: boolean;
+  /** Set right after a successful save so the picker can select the new row. */
+  lastImportedProblemId: string | null;
 
   sessions: InterviewSessionSummary[];
   sessionsLoading: boolean;
@@ -54,6 +66,22 @@ interface InterviewState {
   setPickerLanguage: (l: InterviewLanguage) => void;
   loadProblems: (type: InterviewType) => Promise<void>;
   loadSessions: () => Promise<void>;
+
+  openImport: () => void;
+  closeImport: () => void;
+  clearImportGenerateError: () => void;
+  generateDraft: (
+    sourceText: string,
+  ) => Promise<{
+    draft: InterviewProblemDraft;
+    validation: DraftValidation;
+  } | null>;
+  validateDraft: (
+    draft: InterviewProblemDraft,
+  ) => Promise<DraftValidation | null>;
+  saveDraft: (draft: InterviewProblemDraft) => Promise<boolean>;
+  deleteProblem: (id: string) => Promise<void>;
+  clearLastImportedProblemId: () => void;
   start: (
     type: InterviewType,
     problemId: string | undefined,
@@ -126,6 +154,13 @@ export const useInterview = create<InterviewState>((set, get) => ({
   problems: [],
   problemsLoading: false,
   problemsError: null,
+
+  importOpen: false,
+  importGenerating: false,
+  importGenerateError: null,
+  importValidating: false,
+  importSaving: false,
+  lastImportedProblemId: null,
 
   sessions: [],
   sessionsLoading: false,
@@ -234,6 +269,92 @@ export const useInterview = create<InterviewState>((set, get) => ({
     }
   },
 
+  openImport: () => set({ importOpen: true, importGenerateError: null }),
+  closeImport: () => set({ importOpen: false }),
+  clearImportGenerateError: () => set({ importGenerateError: null }),
+
+  generateDraft: async (sourceText) => {
+    set({ importGenerating: true, importGenerateError: null });
+    try {
+      const result = await coreClient.generateInterviewDraft(sourceText);
+      set({ importGenerating: false });
+      return result;
+    } catch (err) {
+      set({
+        importGenerating: false,
+        importGenerateError: err instanceof Error ? err.message : SERVICE_ERROR,
+      });
+      return null;
+    }
+  },
+
+  validateDraft: async (draft) => {
+    set({ importValidating: true });
+    try {
+      const validation = await coreClient.validateInterviewDraft(draft);
+      set({ importValidating: false });
+      return validation;
+    } catch {
+      set({ importValidating: false });
+      toast({
+        tone: "danger",
+        title: "Could not re-validate this draft",
+        description: SERVICE_ERROR,
+        action: {
+          label: "Retry",
+          onClick: () => void get().validateDraft(draft),
+        },
+      });
+      return null;
+    }
+  },
+
+  saveDraft: async (draft) => {
+    set({ importSaving: true });
+    try {
+      const meta = await coreClient.saveInterviewProblem(draft);
+      set({
+        importSaving: false,
+        importOpen: false,
+        lastImportedProblemId: meta.id,
+      });
+      toast({
+        tone: "success",
+        title: "Problem added to the bank",
+        description: meta.title,
+      });
+      void get().loadProblems("coding");
+      return true;
+    } catch {
+      set({ importSaving: false });
+      toast({
+        tone: "danger",
+        title: "Could not save this problem",
+        description: SERVICE_ERROR,
+        action: { label: "Retry", onClick: () => void get().saveDraft(draft) },
+      });
+      return false;
+    }
+  },
+
+  deleteProblem: async (id) => {
+    const prevProblems = get().problems;
+    set({ problems: prevProblems.filter((p) => p.id !== id) });
+    try {
+      await coreClient.deleteInterviewProblem(id);
+    } catch {
+      set({ problems: prevProblems });
+      toast({
+        tone: "danger",
+        title: "Could not delete this problem",
+        description: SERVICE_ERROR,
+        action: { label: "Retry", onClick: () => void get().deleteProblem(id) },
+      });
+    }
+  },
+
+  clearLastImportedProblemId: () => set({ lastImportedProblemId: null }),
+
   start: async (type, problemId, language) => {
     set({
       sessionLoading: true,
@@ -285,7 +406,9 @@ export const useInterview = create<InterviewState>((set, get) => ({
         problem: data.problem,
         turns: data.turns,
         code:
-          data.session.code ?? data.problem.starterCode[data.session.language] ?? "",
+          data.session.code ??
+          data.problem.starterCode[data.session.language] ??
+          "",
         evalResult: lastAttempt,
         scorecard: data.scorecard ?? null,
         sessionLoading: false,
@@ -408,7 +531,9 @@ export const useInterview = create<InterviewState>((set, get) => ({
       const { replyTurnId } = await coreClient.finishCoding(sessionId, code);
       const now = new Date().toISOString();
       set((s) => ({
-        session: s.session ? { ...s.session, phase: "interrogation" } : s.session,
+        session: s.session
+          ? { ...s.session, phase: "interrogation" }
+          : s.session,
         turns: s.turns.some((t) => t.id === replyTurnId)
           ? s.turns
           : [
