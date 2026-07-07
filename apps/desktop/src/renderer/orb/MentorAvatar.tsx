@@ -7,6 +7,7 @@ import { FacePortrait } from './faces/FacePortrait';
 import { FACE_PRESET_MAP } from './faces/presets';
 import { RealisticPortrait } from './faces/RealisticPortrait';
 import { REALISTIC_PRESET_MAP } from './faces/realistic';
+import { useFaces } from '../lib/faceStore';
 import { ORB_HUE } from './orbState';
 
 /**
@@ -66,10 +67,15 @@ function useMentorLook(): MentorLook {
 export function MentorAvatar(props: OrbCanvasProps) {
   const look = useMentorLook();
   const reduce = useReducedMotion();
+  const customPresets = useFaces((s) => s.customPresets);
+  const initFaces = useFaces((s) => s.init);
+  useEffect(() => initFaces(), [initFaces]);
   const size = props.size ?? 340;
   const portrait = look.mentorIdentity === 'face' ? FACE_PRESET_MAP[look.mentorFace] : undefined;
   const realistic =
-    look.mentorIdentity === 'face' ? REALISTIC_PRESET_MAP[look.mentorFace] : undefined;
+    look.mentorIdentity === 'face'
+      ? (REALISTIC_PRESET_MAP[look.mentorFace] ?? customPresets.find((p) => p.id === look.mentorFace))
+      : undefined;
 
   if (look.mentorIdentity !== 'face') return <OrbCanvas {...props} />;
 

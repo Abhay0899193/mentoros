@@ -19,7 +19,60 @@ export interface CoreHealth {
 
 /* ---------------- Chat (Stage 1b) ---------------- */
 
-export type Persona = 'staff-engineer' | 'interviewer' | 'teacher' | 'architect';
+export type BuiltinPersonaId = 'staff-engineer' | 'interviewer' | 'teacher' | 'architect';
+/**
+ * Persona id: a built-in or a stored custom persona ('persona-<slug>').
+ * Unknown/deleted ids resolve to 'staff-engineer' server-side — a stale chip
+ * never breaks generation. (`string & {}` keeps built-in autocomplete.)
+ */
+export type Persona = BuiltinPersonaId | (string & {});
+
+/** Coaching stance — shapes the drafted blurb and is shown as a chip. */
+export type PersonaStyle = 'strict' | 'balanced' | 'supportive';
+
+/**
+ * One mentor persona. The blurb adjusts TONE only; core always appends the
+ * teaching-ladder instructions (hints before solution) for every persona —
+ * that posture is the product and is not persona-configurable. The strict
+ * interview-session interviewer is likewise NOT persona-swappable.
+ */
+export interface PersonaRecord {
+  id: Persona;
+  /** Display name ('Staff Engineer', 'Priya — FAANG Staff'). */
+  name: string;
+  /** One-line role summary under the name in pickers. */
+  tagline: string;
+  style: PersonaStyle;
+  /** Focus areas rendered as chips ('distributed systems', 'DP'). */
+  domains: string[];
+  /** The system-prompt tone paragraph (2nd person, ≤120 words). */
+  blurb: string;
+  /** Built-ins are read-only: PATCH/DELETE → 403. */
+  builtIn: boolean;
+  /** Optional identity bundle applied to settings when this persona is activated. */
+  mentorFace?: FacePresetId;
+  /** Kokoro voice id applied on activation (e.g. 'bf_emma'). */
+  ttsVoice?: string;
+  createdAt?: string; // ISO, custom only
+  updatedAt?: string; // ISO, custom only
+}
+
+/** Create/update payload for a custom persona (id/builtIn are server-owned). */
+export type PersonaInput = Omit<PersonaRecord, 'id' | 'builtIn' | 'createdAt' | 'updatedAt'>;
+
+/**
+ * "Draft it for me": a short free-text description → model-drafted persona
+ * fields for the create form (user reviews/edits before saving). Runs on the
+ * scorecard routing surface (cloud-capable, local fallback); generation
+ * failure → 502 with a designed body, like the interview importer.
+ */
+export interface PersonaDraftRequest {
+  description: string;
+  /** Optional user-fixed fields the draft must respect. */
+  name?: string;
+  style?: PersonaStyle;
+}
+export type PersonaDraft = PersonaInput;
 
 /**
  * Teaching posture (§3.0.6): assistant answers stream as typed segments so the
@@ -552,9 +605,86 @@ export interface ProvidersInfo {
 /**
  * Face gallery preset ids — 'aura' is the minimal in-orb face; nova/ivy/rae are
  * stylized vector portraits; lena/sienna/kira are the realistic photo presets
- * (pre-generated stills with an animated lip-sync layer).
+ * (pre-generated stills with an animated lip-sync layer). Custom presets
+ * created from the user's own photos use 'face-<slug>' ids; unknown/deleted
+ * ids fall back to 'aura' on read.
  */
-export type FacePresetId = 'aura' | 'nova' | 'ivy' | 'rae' | 'lena' | 'sienna' | 'kira';
+export type BuiltinFacePresetId = 'aura' | 'nova' | 'ivy' | 'rae' | 'lena' | 'sienna' | 'kira';
+export type FacePresetId = BuiltinFacePresetId | (string & {});
+
+/* ------------- Custom face presets (create from your own photos) ------------- */
+
+/** Axis-aligned rectangle in ORIGINAL uploaded-portrait pixel space. */
+export interface FaceRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * A user-created realistic preset. Same sprite contract as the built-in
+ * realistic presets (base + 3 mouth apertures + blink, pixel-aligned full
+ * frames); art lives under userData and is served by core — the client
+ * returns absolute URLs ready for <img src>.
+ */
+export interface CustomFacePreset {
+  id: FacePresetId; // 'face-<slug>'
+  name: string;
+  /** Accent hex sampled from the portrait; tints the ambient aura. */
+  accent: string;
+  portrait: {
+    base: string;
+    mouthSmall: string;
+    mouthOpen: string;
+    mouthWide: string;
+    blink: string;
+  };
+  /** Present only when a full-body photo was provided. */
+  full?: string;
+  createdAt: string; // ISO
+}
+
+/**
+ * Generation shells out to the local mflux/FLUX-Kontext toolchain kept at
+ * ~/mentoros-imagegen. 'missing' → Settings shows a designed setup state
+ * instead of the create flow.
+ */
+export interface FaceToolchainStatus {
+  state: 'ready' | 'missing';
+  /** Human reason when missing ('mflux not installed', 'Kontext weights absent'). */
+  detail?: string;
+}
+
+export interface CreateFacePresetInput {
+  name: string;
+  /** Absolute path of the portrait photo (native file bridge). Frontal, mouth CLOSED, ≥768px short side. */
+  portraitPath: string;
+  /** Optional full-body still (head-to-shoes). */
+  fullPath?: string;
+  /** Mouth/eyes rectangles from the region picker — the composite windows. */
+  mouth: FaceRegion;
+  eyes: FaceRegion;
+}
+
+/**
+ * One preset generation = 4 Kontext edits (m2 → m1-derived-from-m2 → m3 →
+ * blink) + anti-drift compositing; ~10-15 min per edit on the local GPU, so
+ * the job runs in the background, survives navigation, resumes skip-if-exists
+ * after an app restart, and streams progress via the `face.job` event.
+ */
+export interface FaceJobStatus {
+  jobId: string;
+  presetId: string;
+  name: string;
+  state: 'queued' | 'generating' | 'compositing' | 'done' | 'error' | 'cancelled';
+  /** Human step ('Mouth frame 2 of 3', 'Compositing blink'). */
+  step: string;
+  completedFrames: number;
+  totalFrames: number;
+  startedAt: string; // ISO
+  error?: string;
+}
 /** Styling intensity applied to portrait presets. */
 export type FaceGlam = 'natural' | 'polished' | 'glam';
 /** Apparent maturity applied to portrait presets (all adult). */
@@ -577,6 +707,13 @@ export interface AppSettings {
   faceMaturity: FaceMaturity;
   /** Portrait framing: face cameo or full-body (ignored by 'aura'). */
   faceView: FaceView;
+  /**
+   * Default persona for new chat threads and the Voice screen. Setting it to a
+   * persona that bundles mentorFace/ttsVoice also applies those fields (core
+   * merges them into the same settings write → one settings.changed event).
+   * Deleting the active custom persona resets this to 'staff-engineer'.
+   */
+  activePersona: Persona;
   /**
    * Master cloud opt-in (§2.4: cloud is an accelerator, never a dependency).
    * While false, cloud choices below are inert and every surface resolves local.
@@ -644,6 +781,12 @@ export interface CoreEvents {
   };
   /** Settings changed (any writer) — screens re-read what they care about. */
   'settings.changed': { settings: AppSettings };
+  /** Persona list changed (create/update/delete) — pickers re-fetch. */
+  'personas.changed': { personas: PersonaRecord[] };
+  /** Custom-face generation progress (long job — drives the Settings progress card). */
+  'face.job': FaceJobStatus;
+  /** Custom preset list changed (job finished / preset deleted). */
+  'faces.changed': { presets: CustomFacePreset[] };
   /** Global push-to-talk hotkey (from Electron main via core). */
   'voice.ptt': { pressed: boolean };
   /** A memory was created or merged — drives "Profile updated" moments. */
@@ -742,6 +885,18 @@ export interface CoreClient {
   setAnthropicKey(apiKey: string): Promise<{ keyState: ApiKeyState; keyMask?: string; keyError?: string }>;
   /** Forget the stored key; cloud choices fall back to local immediately. */
   clearAnthropicKey(): Promise<void>;
+
+  /* personas (Settings → Personas + chat/voice persona pickers) */
+  /** Built-ins first, then custom by createdAt. */
+  listPersonas(): Promise<PersonaRecord[]>;
+  /** Creates a custom persona (id = 'persona-<slug>', deduped). 422 on invalid input. */
+  createPersona(input: PersonaInput): Promise<PersonaRecord>;
+  /** Custom only — 403 for built-ins, 404 unknown. */
+  updatePersona(id: Persona, patch: Partial<PersonaInput>): Promise<PersonaRecord>;
+  /** Custom only — 403/404 as above. Active persona resets to 'staff-engineer'. */
+  deletePersona(id: Persona): Promise<void>;
+  /** Model-drafted persona fields from a description (slow — show a working state). */
+  draftPersona(req: PersonaDraftRequest): Promise<PersonaDraft>;
 
   /* memory */
   listMemories(opts?: { type?: MemoryType; q?: string; limit?: number }): Promise<MemoryRecord[]>;
@@ -846,6 +1001,24 @@ export interface CoreClient {
   /** Synthesize text; audio streams back over the open /voice channel. */
   speak(text: string): Promise<void>;
   openVoiceChannel(handlers: VoiceChannelHandlers): VoiceChannel;
+
+  /* custom face presets (Settings → Identity → Create preset) */
+  /** Whether the local image-gen toolchain is usable. */
+  faceToolchainStatus(): Promise<FaceToolchainStatus>;
+  /** Finished custom presets (art URLs absolute, ready for <img src>). */
+  listCustomFacePresets(): Promise<CustomFacePreset[]>;
+  /**
+   * Validate inputs and start generation. 422 = bad image/regions (designed
+   * body), 503 = toolchain missing, 409 = a job is already running (one at a
+   * time — it monopolizes the GPU). Progress via `face.job`.
+   */
+  createFacePreset(input: CreateFacePresetInput): Promise<{ job: FaceJobStatus }>;
+  /** The in-flight (or most recent unresolved) job, for UI resume. Null when idle. */
+  activeFaceJob(): Promise<FaceJobStatus | null>;
+  /** Cancel a running job; partial frames are kept for skip-if-exists retry. */
+  cancelFaceJob(jobId: string): Promise<void>;
+  /** Custom only — 403 built-ins, 404 unknown. Active mentorFace resets to 'aura'. */
+  deleteFacePreset(id: FacePresetId): Promise<void>;
 
   /* settings + voice options */
   getSettings(): Promise<AppSettings>;
@@ -1018,6 +1191,20 @@ export function createCoreClient(): CoreClient {
         if (!r.ok) throw new Error(`core request failed: ${r.status}`);
       }),
 
+    listPersonas: () => get<PersonaRecord[]>('/personas'),
+    createPersona: (input) => post<PersonaRecord>('/personas', input),
+    updatePersona: (id, patch) =>
+      fetch(`${baseUrl}/personas/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(patch),
+      }).then((r) => json<PersonaRecord>(r)),
+    deletePersona: (id) =>
+      fetch(`${baseUrl}/personas/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`core request failed: ${r.status}`);
+      }),
+    draftPersona: (req) => post<PersonaDraft>('/personas/draft', req),
+
     listMemories: (opts) => {
       const p = new URLSearchParams();
       if (opts?.type) p.set('type', opts.type);
@@ -1106,6 +1293,27 @@ export function createCoreClient(): CoreClient {
     voiceStatus: () => get<VoiceStatus>('/voice/status'),
     installVoice: () => post<void>('/voice/install'),
     speak: (text) => post<void>('/voice/speak', { text }),
+
+    faceToolchainStatus: () => get<FaceToolchainStatus>('/faces/toolchain'),
+    listCustomFacePresets: () =>
+      get<CustomFacePreset[]>('/faces/custom').then((presets) =>
+        // Core returns server-relative art paths; absolutize once here so every
+        // consumer can drop them straight into <img src>.
+        presets.map((p) => ({
+          ...p,
+          portrait: Object.fromEntries(
+            Object.entries(p.portrait).map(([k, v]) => [k, `${baseUrl}${v}`]),
+          ) as CustomFacePreset['portrait'],
+          ...(p.full ? { full: `${baseUrl}${p.full}` } : {}),
+        })),
+      ),
+    createFacePreset: (input) => post<{ job: FaceJobStatus }>('/faces/custom', input),
+    activeFaceJob: () => get<FaceJobStatus | null>('/faces/jobs/active'),
+    cancelFaceJob: (jobId) => post<void>(`/faces/jobs/${jobId}/cancel`),
+    deleteFacePreset: (id) =>
+      fetch(`${baseUrl}/faces/custom/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`core request failed: ${r.status}`);
+      }),
 
     getSettings: () => get<AppSettings>('/settings'),
     updateSettings: (patch) => post<AppSettings>('/settings', patch),

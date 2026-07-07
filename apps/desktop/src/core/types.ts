@@ -4,7 +4,56 @@
  * that file (the lead agent owns it); do not diverge.
  */
 
-export type Persona = "staff-engineer" | "interviewer" | "teacher" | "architect";
+export type BuiltinPersonaId =
+  | "staff-engineer"
+  | "interviewer"
+  | "teacher"
+  | "architect";
+
+/**
+ * Persona id: a built-in or a stored custom persona ('persona-<slug>').
+ * Unknown/deleted ids resolve to 'staff-engineer' server-side. (`string & {}`
+ * keeps built-in autocomplete while accepting any custom id.)
+ */
+export type Persona = BuiltinPersonaId | (string & {});
+
+/** Coaching stance — shapes the drafted blurb and is shown as a chip. */
+export type PersonaStyle = "strict" | "balanced" | "supportive";
+
+/**
+ * One mentor persona. The blurb adjusts TONE only; core always appends the
+ * teaching-ladder instructions for every persona — that posture is not
+ * persona-configurable.
+ */
+export interface PersonaRecord {
+  id: Persona;
+  name: string;
+  tagline: string;
+  style: PersonaStyle;
+  domains: string[];
+  blurb: string;
+  /** Built-ins are read-only: PATCH/DELETE → 403. */
+  builtIn: boolean;
+  /** Optional identity bundle applied to settings when this persona is activated. */
+  mentorFace?: FacePresetId;
+  ttsVoice?: string;
+  createdAt?: string; // ISO, custom only
+  updatedAt?: string; // ISO, custom only
+}
+
+/** Create/update payload for a custom persona (id/builtIn are server-owned). */
+export type PersonaInput = Omit<
+  PersonaRecord,
+  "id" | "builtIn" | "createdAt" | "updatedAt"
+>;
+
+/** "Draft it for me": free-text description → model-drafted persona fields. */
+export interface PersonaDraftRequest {
+  description: string;
+  name?: string;
+  style?: PersonaStyle;
+}
+export type PersonaDraft = PersonaInput;
 
 export type Segment = "prose" | "hint1" | "hint2" | "approach" | "solution";
 
@@ -509,6 +558,13 @@ export interface AppSettings {
   /** Portrait framing: face cameo or full-body (ignored by 'aura'). */
   faceView: FaceView;
   /**
+   * Default persona for new chat threads and the Voice screen. Setting it to a
+   * persona that bundles mentorFace/ttsVoice also applies those fields (core
+   * merges them into the same settings write → one settings.changed event).
+   * Deleting the active custom persona resets this to 'staff-engineer'.
+   */
+  activePersona: Persona;
+  /**
    * Master cloud opt-in (§2.4: cloud is an accelerator, never a dependency).
    * While false, cloud choices below are inert and every surface resolves local.
    */
@@ -581,6 +637,8 @@ export interface CoreEvents {
   };
   /** Settings changed (any writer) — screens re-read what they care about. */
   "settings.changed": { settings: AppSettings };
+  /** Persona list changed (create/update/delete) — pickers re-fetch. */
+  "personas.changed": { personas: PersonaRecord[] };
   "voice.ptt": { pressed: boolean };
   /** A memory was created or merged — drives "Profile updated" moments. */
   "memory.saved": {

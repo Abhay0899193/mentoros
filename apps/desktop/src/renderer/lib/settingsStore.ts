@@ -5,6 +5,7 @@ import {
   type AppSettings,
   type ModelChoice,
   type ModelSurface,
+  type Persona,
   type ProvidersInfo,
   type SttModelId,
   type SttModelInfo,
@@ -65,6 +66,8 @@ interface SettingsState {
   previewVoice: (id: string) => void;
   stopPreview: () => void;
 
+  /** Switches the default persona for new chat/voice threads; may also change face/voice (core merges). */
+  setActivePersona: (id: Persona) => Promise<void>;
   setCloudEnabled: (enabled: boolean) => Promise<void>;
   /** Resolves to the resulting key state, or null if the request itself failed (no round trip). */
   saveAnthropicKey: (key: string) => Promise<ApiKeyState | null>;
@@ -312,6 +315,24 @@ export const useSettings = create<SettingsState>((set, get) => ({
   stopPreview: () => {
     stopPreviewAudio();
     set({ previewingVoiceId: null, previewLoadingId: null });
+  },
+
+  setActivePersona: async (id) => {
+    const prev = get().settings;
+    if (!prev || prev.activePersona === id) return;
+    set({ settings: { ...prev, activePersona: id } });
+    try {
+      const settings = await coreClient.updateSettings({ activePersona: id });
+      set({ settings });
+    } catch {
+      set({ settings: prev });
+      toast({
+        tone: 'danger',
+        title: 'Could not switch persona',
+        description: 'The settings service did not respond.',
+        action: { label: 'Retry', onClick: () => void get().setActivePersona(id) },
+      });
+    }
   },
 
   setCloudEnabled: async (enabled) => {

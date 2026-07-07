@@ -1,7 +1,8 @@
 import type { Store } from "./db.js";
 import type { OllamaMessage } from "./ollama.js";
 import type { ModelRouter } from "./llm/router.js";
-import { systemPrompt } from "./personas.js";
+import { systemPrompt } from "./personas/prompt.js";
+import type { PersonaStore } from "./personas/store.js";
 import { TeachingSegmenter } from "./segmenter.js";
 import type { MemoryEngine } from "./memory/engine.js";
 import type { KbEngine } from "./kb/engine.js";
@@ -80,6 +81,8 @@ export class ChatEngine {
     private readonly router: ModelRouter,
     private readonly memory?: MemoryEngine,
     private readonly kb?: KbEngine,
+    /** Resolves custom-persona blurbs; absent → built-in blurbs only. */
+    private readonly personas?: PersonaStore,
   ) {}
 
   /** Fire-and-forget: kicks off async generation for an assistant message. */
@@ -329,7 +332,7 @@ export class ChatEngine {
     excludeId: string,
   ): OllamaMessage[] {
     const out: OllamaMessage[] = [
-      { role: "system", content: systemPrompt(persona) },
+      { role: "system", content: systemPrompt(persona, this.personas) },
     ];
     for (const m of this.store.getMessages(threadId)) {
       if (m.id === excludeId) continue;

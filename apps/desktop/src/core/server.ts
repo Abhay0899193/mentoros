@@ -18,6 +18,11 @@ import { createLlmSystem } from "./llm/index.js";
 import { registerModelRoutes } from "./llm/routes.js";
 import { DEFAULT_MODEL, pullModel } from "./ollama.js";
 import { registerVoice } from "./voice/index.js";
+import {
+  createPersonaSystem,
+  registerPersonaRoutes,
+  type PersonaDraftOnce,
+} from "./personas/index.js";
 import type { CoreEvents, ModelSurface, Persona } from "./types.js";
 
 /**
@@ -32,13 +37,6 @@ export const CORE_VERSION = "0.0.0";
 export const DEFAULT_CORE_PORT = 4820;
 const HOST = "127.0.0.1";
 const MAX_PORT_SCAN = 32;
-
-const PERSONAS: readonly Persona[] = [
-  "staff-engineer",
-  "interviewer",
-  "teacher",
-  "architect",
-];
 
 export interface CoreHandle {
   readonly port: number;
@@ -75,7 +73,19 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   const learning = createLearningSystem(dataDir, memory.engine);
   const kb = createKbSystem(dataDir, broadcast);
   const interview = createInterviewSystem(dataDir, broadcast, memory.engine, llm.router);
-  const engine = new ChatEngine(store, broadcast, llm.router, memory.engine, kb.engine);
+  // Personas: deleting the active custom persona resets settings.activePersona,
+  // so the store gets the settings store; settings, in turn, consults the store
+  // to validate/activate personas (wired after both exist).
+  const personas = createPersonaSystem(dataDir, settings.store);
+  settings.store.setPersonaLookup(personas.store);
+  const engine = new ChatEngine(
+    store,
+    broadcast,
+    llm.router,
+    memory.engine,
+    kb.engine,
+    personas.store,
+  );
 
   void app.register(websocket);
   void app.register(cors, {
@@ -86,6 +96,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   });
 
   app.addHook("onClose", async () => {
+    personas.close();
     interview.close();
     kb.close();
     learning.close();
@@ -149,9 +160,12 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     if (!content || content.trim().length === 0) {
       return reply.code(400).send({ error: "content is required" });
     }
-    const resolvedPersona: Persona = PERSONAS.includes(persona as Persona)
-      ? (persona as Persona)
-      : "staff-engineer";
+    // Accept any persona id; blurb resolution (unknown → staff-engineer) happens
+    // in the personas module via systemPrompt, so a stale chip never 500s.
+    const resolvedPersona: Persona =
+      typeof persona === "string" && persona.trim().length > 0
+        ? persona
+        : "staff-engineer";
     // The Voice screen rides /chat with surface:'voice'; everything else is chat.
     const resolvedSurface: "chat" | "voice" = surface === "voice" ? "voice" : "chat";
 
@@ -207,6 +221,21 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
 
   /* ------------------------------ settings ------------------------------- */
   registerSettingsRoutes(app, { store: settings.store, broadcast });
+
+  /* ------------------------------ personas ------------------------------- */
+  const personaDraftOnce: PersonaDraftOnce = (o) =>
+    llm.router.once({
+      surface: "scorecard",
+      messages: o.messages,
+      ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
+      ...(o.format ? { format: o.format } : {}),
+    });
+  registerPersonaRoutes(app, {
+    store: personas.store,
+    broadcast,
+    draftOnce: personaDraftOnce,
+    getSettings: () => settings.store.get(),
+  });
 
   /* -------------------------------- voice -------------------------------- */
   registerVoice(app, { broadcast, dataDir, getSettings: () => settings.store.get() });

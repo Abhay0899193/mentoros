@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Circle, SmilePlus } from 'lucide-react';
+import { Circle, Plus, SmilePlus, X } from 'lucide-react';
 import { useSettings } from '../../../lib/settingsStore';
+import { useFaces } from '../../../lib/faceStore';
+import { CreateFacePresetOverlay } from './CreateFacePresetOverlay';
 import { spring } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
 import type {
@@ -123,13 +125,25 @@ export function IdentitySection() {
   const [hovered, setHovered] = useState<FacePresetId | null>(null);
   const previewLevel = useRef(0);
 
+  const customPresets = useFaces((s) => s.customPresets);
+  const job = useFaces((s) => s.job);
+  const initFaces = useFaces((s) => s.init);
+  const cancelJob = useFaces((s) => s.cancelJob);
+  const dismissJob = useFaces((s) => s.dismissJob);
+  const removePreset = useFaces((s) => s.remove);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<FacePresetId | null>(null);
+  useEffect(() => initFaces(), [initFaces]);
+
   const identity = settings?.mentorIdentity ?? 'orb';
   const faceId = settings?.mentorFace ?? 'aura';
   const glam = settings?.faceGlam ?? 'polished';
   const maturity = settings?.faceMaturity ?? 'balanced';
   const view = settings?.faceView ?? 'cameo';
   const selected = FACE_PRESET_MAP[faceId];
-  const selectedRealistic = REALISTIC_PRESET_MAP[faceId];
+  const selectedRealistic =
+    REALISTIC_PRESET_MAP[faceId] ?? customPresets.find((p) => p.id === faceId);
+  const jobLive = !!job && ['queued', 'generating', 'compositing'].includes(job.state);
 
   return (
     <Panel title="Mentor identity">
@@ -266,38 +280,127 @@ export function IdentitySection() {
                   Realistic
                 </span>
                 <div role="radiogroup" aria-label="Realistic face preset" className="flex flex-wrap gap-2.5">
-                  {REALISTIC_PRESETS.map((preset) => {
+                  {[...REALISTIC_PRESETS, ...customPresets].map((preset) => {
                     const active = faceId === preset.id;
+                    const confirming = confirmDelete === preset.id;
                     return (
-                      <button
-                        key={preset.id}
-                        role="radio"
-                        aria-checked={active}
-                        onClick={() => void setMentorLook({ mentorFace: preset.id })}
-                        className={cn(
-                          'group flex w-[104px] flex-col items-center gap-1.5 rounded-lg bg-surface-2 p-2.5 pb-2 hairline transition-colors',
-                          active
-                            ? 'hairline-strong bg-surface-3 outline outline-2 outline-offset-2 outline-[var(--iris)]'
-                            : 'hover:bg-surface-3',
-                        )}
-                      >
-                        <img
-                          src={preset.portrait.base}
-                          alt=""
-                          draggable={false}
-                          className="h-20 w-20 rounded-full object-cover"
-                        />
-                        <span
+                      <div key={preset.id} className="group/card relative">
+                        <button
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => void setMentorLook({ mentorFace: preset.id })}
                           className={cn(
-                            'text-small font-medium',
-                            active ? 'text-ink' : 'text-muted group-hover:text-body',
+                            'group flex w-[104px] flex-col items-center gap-1.5 rounded-lg bg-surface-2 p-2.5 pb-2 hairline transition-colors',
+                            active
+                              ? 'hairline-strong bg-surface-3 outline outline-2 outline-offset-2 outline-[var(--iris)]'
+                              : 'hover:bg-surface-3',
                           )}
                         >
-                          {preset.name}
-                        </span>
-                      </button>
+                          <img
+                            src={preset.portrait.base}
+                            alt=""
+                            draggable={false}
+                            className="h-20 w-20 rounded-full object-cover"
+                          />
+                          <span
+                            className={cn(
+                              'truncate text-small font-medium',
+                              active ? 'text-ink' : 'text-muted group-hover:text-body',
+                            )}
+                            style={{ maxWidth: 84 }}
+                          >
+                            {preset.name}
+                          </span>
+                        </button>
+                        {preset.custom && !confirming && (
+                          <button
+                            aria-label={`Delete ${preset.name}`}
+                            onClick={() => setConfirmDelete(preset.id)}
+                            className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface-3 text-muted opacity-0 transition-opacity hairline hover:text-ink focus-visible:opacity-100 group-hover/card:opacity-100"
+                          >
+                            <X size={11} strokeWidth={2} />
+                          </button>
+                        )}
+                        {confirming && (
+                          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 rounded-lg bg-surface-3/95 p-2 hairline-strong">
+                            <span className="text-small text-body">Delete?</span>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setConfirmDelete(null);
+                                  void removePreset(preset.id);
+                                }}
+                                className="rounded-md bg-surface-2 px-2 py-0.5 text-small font-medium text-[var(--danger)] hairline hover:bg-surface-1"
+                              >
+                                Delete
+                              </button>
+                              <button
+                                onClick={() => setConfirmDelete(null)}
+                                className="rounded-md bg-surface-2 px-2 py-0.5 text-small text-body hairline hover:bg-surface-1"
+                              >
+                                Keep
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
+
+                  {/* one slot: the generation job card while live, else the create tile */}
+                  {job && (jobLive || job.state === 'error') ? (
+                    <div className="flex w-[168px] flex-col justify-between gap-1.5 rounded-lg bg-surface-2 p-2.5 hairline">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-small font-medium text-ink">{job.name}</span>
+                        {jobLive ? (
+                          <button
+                            onClick={() => void cancelJob()}
+                            className="shrink-0 text-small text-muted hover:text-body"
+                          >
+                            Cancel
+                          </button>
+                        ) : (
+                          <button
+                            onClick={dismissJob}
+                            className="shrink-0 text-small text-muted hover:text-body"
+                          >
+                            Dismiss
+                          </button>
+                        )}
+                      </div>
+                      {jobLive ? (
+                        <>
+                          <span className="text-small text-muted">{job.step}</span>
+                          <div className="h-1 overflow-hidden rounded-full bg-surface-3">
+                            <motion.div
+                              className="h-full rounded-full"
+                              style={{ background: 'var(--aurora)' }}
+                              animate={{
+                                width: `${Math.max(4, (job.completedFrames / Math.max(1, job.totalFrames)) * 100)}%`,
+                              }}
+                              transition={spring.smooth}
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-small text-[var(--danger)]">
+                          {job.error ?? 'Generation failed.'} Start again to retry — finished frames
+                          are reused.
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setCreateOpen(true)}
+                      className="flex h-[132px] w-[104px] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--line-strong)] text-muted transition-colors hover:bg-surface-2 hover:text-body"
+                    >
+                      <Plus size={18} strokeWidth={1.5} />
+                      <span className="text-small font-medium">New preset</span>
+                      <span className="px-2 text-center text-[11px] leading-tight text-faint">
+                        from your photos
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -347,6 +450,7 @@ export function IdentitySection() {
             : 'The Orb is the default mentor presence on the Voice screen.'}
         </p>
       </div>
+      <CreateFacePresetOverlay open={createOpen} onClose={() => setCreateOpen(false)} />
     </Panel>
   );
 }

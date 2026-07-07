@@ -5,9 +5,10 @@ import type { ChatMessage, Segment } from '../../../lib/coreClient';
 import { useChat } from '../../../lib/chatStore';
 import { useShell } from '../../../lib/store';
 import { useKb } from '../../../lib/kbStore';
+import { usePersonas } from '../../../lib/personaStore';
 import { Button, Chip } from '../../../ui';
 import { RichText } from './RichText';
-import { personaMeta } from './personas';
+import { resolvePersonaMeta } from './personas';
 
 const LADDER: { segment: Segment; level: number; revealLabel: string; icon: typeof Lightbulb }[] = [
   { segment: 'hint1', level: 1, revealLabel: 'Hint 1', icon: Lightbulb },
@@ -35,7 +36,8 @@ export function AssistantMessage({ message, streaming, onExplainLine }: Assistan
   const revealedLevel = useChat((s) => s.revealed[message.id] ?? 1);
   const reveal = useChat((s) => s.reveal);
   const setActive = useShell((s) => s.setActive);
-  const persona = personaMeta(message.persona ?? 'staff-engineer');
+  const personas = usePersonas((s) => s.personas);
+  const persona = resolvePersonaMeta(message.persona ?? 'staff-engineer', personas);
 
   const citations = message.citations ?? [];
   const citedNs = citations.length > 0 ? new Set(citations.map((c) => c.n)) : undefined;
@@ -50,7 +52,9 @@ export function AssistantMessage({ message, streaming, onExplainLine }: Assistan
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <span className="text-label font-medium tracking-[0.02em] text-faint uppercase">Mentor</span>
-        <Chip tone={persona.tone}>{persona.label}</Chip>
+        <Chip tone={persona.tone} className="max-w-[220px]">
+          <span className="truncate">{persona.label}</span>
+        </Chip>
       </div>
 
       {prose !== undefined && (

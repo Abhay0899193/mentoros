@@ -8,6 +8,7 @@ import { VoiceSection } from './VoiceSection';
 import { ModelsSection } from './ModelsSection';
 import { TranscriptionSection } from './TranscriptionSection';
 import { IdentitySection } from './IdentitySection';
+import { PersonasSection } from './PersonasSection';
 
 function SectionSkeleton() {
   return (
@@ -48,6 +49,7 @@ export function SettingsScreen() {
           <SectionSkeleton />
           <SectionSkeleton />
           <SectionSkeleton />
+          <SectionSkeleton />
         </div>
       ) : settingsError && !settings ? (
         <div className="flex flex-col items-center gap-3 rounded-[14px] bg-surface-1 hairline py-16 text-center">
@@ -78,6 +80,9 @@ export function SettingsScreen() {
           </motion.div>
           <motion.div variants={reduced(reduce, riseIn)}>
             <IdentitySection />
+          </motion.div>
+          <motion.div variants={reduced(reduce, riseIn)}>
+            <PersonasSection />
           </motion.div>
         </motion.div>
       )}

@@ -13,12 +13,13 @@ import { useMemories } from '../../../lib/memoryStore';
 import { spring, dur, riseIn, staggerChildren, reduced } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
 import { useChat } from '../../../lib/chatStore';
+import { usePersonas } from '../../../lib/personaStore';
 import type { ChatMessage } from '../../../lib/coreClient';
 import { Button, Chip, Card } from '../../../ui';
 import { AssistantMessage } from './AssistantMessage';
 import { Composer, type ComposerHandle } from './Composer';
 import { ModelBanner } from './ModelBanner';
-import { PERSONAS, personaMeta } from './personas';
+import { PERSONAS, resolvePersonaMeta } from './personas';
 
 /* Suggested prompts (§4.2): tied to Abhay's profile — never a blank box. */
 const SUGGESTED = [
@@ -30,8 +31,12 @@ const SUGGESTED = [
 
 function PersonaPicker() {
   const { persona, setPersona, streamingMessageId } = useChat();
+  const records = usePersonas((s) => s.personas);
   const [open, setOpen] = useState(false);
-  const meta = personaMeta(persona);
+  // Live built-ins + customs once loaded; the static 4 keep the picker
+  // populated (never blank) before `listPersonas()` resolves.
+  const items = records.length > 0 ? records.map((r) => resolvePersonaMeta(r.id, records)) : PERSONAS;
+  const meta = resolvePersonaMeta(persona, records);
 
   return (
     <div className="relative">
@@ -41,7 +46,9 @@ function PersonaPicker() {
         aria-label="Switch persona"
         className="flex items-center gap-1.5 rounded-full py-0.5 pr-1 hover:opacity-80 disabled:opacity-50"
       >
-        <Chip tone={meta.tone}>{meta.label}</Chip>
+        <Chip tone={meta.tone} className="max-w-[200px]">
+          <span className="truncate">{meta.label}</span>
+        </Chip>
         <ChevronDown size={14} strokeWidth={1.5} className="text-faint" />
       </button>
       <AnimatePresence>
@@ -53,9 +60,9 @@ function PersonaPicker() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, transition: { duration: dur.micro } }}
               transition={spring.smooth}
-              className="glass overlay-shadow absolute top-9 left-0 z-40 w-72 rounded-[14px] bg-surface-1/90 p-1.5"
+              className="glass overlay-shadow absolute top-9 left-0 z-40 max-h-80 w-72 overflow-y-auto rounded-[14px] bg-surface-1/90 p-1.5"
             >
-              {PERSONAS.map((p) => (
+              {items.map((p) => (
                 <li key={p.id}>
                   <button
                     onClick={() => {
@@ -67,8 +74,8 @@ function PersonaPicker() {
                       p.id === persona && 'bg-surface-2',
                     )}
                   >
-                    <span className="text-small font-medium text-ink">{p.label}</span>
-                    <span className="text-[12px] text-muted">{p.tagline}</span>
+                    <span className="truncate text-small font-medium text-ink">{p.label}</span>
+                    <span className="truncate text-[12px] text-muted">{p.tagline}</span>
                   </button>
                 </li>
               ))}
@@ -269,10 +276,12 @@ export function ChatScreen() {
     generationError,
     modelStatus,
   } = useChat();
+  const initPersonas = usePersonas((s) => s.init);
   const composerRef = useRef<ComposerHandle>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => init(), [init]);
+  useEffect(() => initPersonas(), [initPersonas]);
 
   // Follow the stream (§4.2) — pin to bottom while tokens arrive.
   useEffect(() => {

@@ -30,6 +30,12 @@ import kiraFull from './art/kira/full.webp';
 
 export type RealisticPresetId = Extract<FacePresetId, 'lena' | 'sienna' | 'kira'>;
 
+/**
+ * User-created presets (Settings → Identity → New preset) satisfy this same
+ * shape — their art is served by core from userData instead of being bundled,
+ * and faceStore adapts them so the player/gallery treat both alike.
+ */
+
 export interface RealisticSprites {
   /** Mouth closed, eyes open — the resting frame, always painted. */
   base: string;
@@ -44,8 +50,10 @@ export interface RealisticSprites {
 }
 
 export interface RealisticPreset {
-  id: RealisticPresetId;
+  id: FacePresetId;
   name: string;
+  /** True for user-created presets (deletable; art served by core). */
+  custom?: boolean;
   /** One-line personality for the gallery card. */
   vibe: string;
   /** Accent sampled from the artwork; tints the ambient aura. */

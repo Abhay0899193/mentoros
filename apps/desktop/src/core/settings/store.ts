@@ -15,6 +15,26 @@ import type {
 } from "../types.js";
 
 /**
+ * Persona lookup the settings store consults for `activePersona` validation and
+ * the identity-bundle merge on activation. Injected after construction so
+ * settings and personas can be wired without an import cycle.
+ */
+export interface PersonaLookup {
+  /** True when the id is a known persona (built-in or custom). */
+  has(id: string): boolean;
+  /** Identity fields applied to settings when the persona is activated. */
+  identity(id: string): { mentorFace?: FacePresetId; ttsVoice?: string } | null;
+}
+
+/** Built-in persona ids (kept in lock-step with the personas module). */
+const BUILTIN_PERSONA_IDS = new Set<string>([
+  "staff-engineer",
+  "interviewer",
+  "teacher",
+  "architect",
+]);
+
+/**
  * Typed settings over a plain KV backend (`settings(key,value)`). Values are
  * validated on write so bad input never persists; unknown/stored-garbage keys
  * are ignored on read. `settings.changed` is broadcast by the route layer.
@@ -34,6 +54,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   faceGlam: "polished",
   faceMaturity: "balanced",
   faceView: "cameo",
+  activePersona: "staff-engineer",
   cloudEnabled: false,
   models: {
     chat: { ...LOCAL_DEFAULT_CHOICE },
@@ -60,6 +81,7 @@ const ALLOWED_KEYS = new Set<keyof AppSettings>([
   "faceGlam",
   "faceMaturity",
   "faceView",
+  "activePersona",
   "cloudEnabled",
   "models",
 ]);
@@ -122,7 +144,15 @@ export class SqliteSettingsKv implements SettingsKv {
 }
 
 export class SettingsStore {
-  constructor(private readonly kv: SettingsKv) {}
+  constructor(
+    private readonly kv: SettingsKv,
+    private personas?: PersonaLookup,
+  ) {}
+
+  /** Wire the persona lookup after construction (avoids a settings↔personas cycle). */
+  setPersonaLookup(personas: PersonaLookup): void {
+    this.personas = personas;
+  }
 
   /** Full settings: stored values merged over defaults (invalid values dropped). */
   get(): AppSettings {
@@ -146,6 +176,10 @@ export class SettingsStore {
       else if (key === "faceMaturity" && FACE_MATURITIES.has(value))
         settings.faceMaturity = value as FaceMaturity;
       else if (key === "faceView" && FACE_VIEWS.has(value)) settings.faceView = value as FaceView;
+      // Lenient on read: a stored active persona is trusted (delete resets it to a
+      // built-in), so we reflect any non-empty value rather than re-verifying it.
+      else if (key === "activePersona" && value.trim().length > 0)
+        settings.activePersona = value;
       else if (key === "cloudEnabled") settings.cloudEnabled = value === "true";
       else if (key.startsWith("models.")) {
         const surface = key.slice("models.".length);
@@ -214,6 +248,36 @@ export class SettingsStore {
           throw new SettingsValidationError(`invalid faceView: ${String(value)}`);
         }
         entries.push([key, value]);
+      } else if (key === "activePersona") {
+        if (typeof value !== "string" || value.trim().length === 0) {
+          throw new SettingsValidationError(`invalid activePersona: ${String(value)}`);
+        }
+        const known = BUILTIN_PERSONA_IDS.has(value) || (this.personas?.has(value) ?? false);
+        if (!known) {
+          throw new SettingsValidationError(`unknown persona: ${value}`);
+        }
+        entries.push([key, value]);
+        // Bundle: apply the persona's identity fields UNLESS this same patch sets
+        // them explicitly (explicit wins) — one write → one settings.changed.
+        const identity = this.personas?.identity(value) ?? null;
+        if (identity) {
+          if (
+            identity.mentorFace &&
+            !("mentorFace" in patch) &&
+            FACE_PRESETS.has(identity.mentorFace)
+          ) {
+            entries.push(["mentorFace", identity.mentorFace]);
+            // A face implies the face identity so the Voice screen shows it.
+            if (!("mentorIdentity" in patch)) entries.push(["mentorIdentity", "face"]);
+          }
+          if (
+            identity.ttsVoice &&
+            !("ttsVoice" in patch) &&
+            isKnownTtsVoice(identity.ttsVoice)
+          ) {
+            entries.push(["ttsVoice", identity.ttsVoice]);
+          }
+        }
       } else if (key === "cloudEnabled") {
         if (typeof value !== "boolean") {
           throw new SettingsValidationError(`cloudEnabled must be a boolean`);

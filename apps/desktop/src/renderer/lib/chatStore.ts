@@ -20,6 +20,8 @@ interface ChatState {
   activeThreadId: string | null;
   messages: ChatMessage[];
   persona: Persona;
+  /** Mirrors settings.activePersona — the picker resets to this on "New chat". */
+  defaultPersona: Persona;
   /** Non-null while an assistant message is being generated. */
   streamingMessageId: string | null;
   phase: ChatPhase | null;
@@ -48,6 +50,7 @@ export const useChat = create<ChatState>((set, get) => ({
   activeThreadId: null,
   messages: [],
   persona: 'staff-engineer',
+  defaultPersona: 'staff-engineer',
   streamingMessageId: null,
   phase: null,
   generationError: null,
@@ -97,6 +100,27 @@ export const useChat = create<ChatState>((set, get) => ({
       if (done && !error) void get().refreshModelStatus();
     });
 
+    // Default persona for new threads (§Personas) — track settings.activePersona
+    // live, but only reassign the *current* picker while no thread is open, so
+    // changing it elsewhere never yanks the persona out of an active chat.
+    coreClient.on('settings.changed', ({ settings }) => {
+      set((s) => ({
+        defaultPersona: settings.activePersona,
+        persona: s.activeThreadId === null ? settings.activePersona : s.persona,
+      }));
+    });
+    coreClient
+      .getSettings()
+      .then((settings) => {
+        set((s) => ({
+          defaultPersona: settings.activePersona,
+          persona: s.activeThreadId === null ? settings.activePersona : s.persona,
+        }));
+      })
+      .catch(() => {
+        /* settings not up yet — hardcoded fallback persona stands */
+      });
+
     void get().refreshThreads();
     void get().refreshModelStatus();
   },
@@ -111,7 +135,13 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   selectThread: async (id) => {
-    set({ activeThreadId: id, messages: [], generationError: null });
+    set((s) => ({
+      activeThreadId: id,
+      messages: [],
+      generationError: null,
+      // "New chat" resets the picker to the live default persona.
+      persona: id === null ? s.defaultPersona : s.persona,
+    }));
     if (!id) return;
     const messages = await coreClient.getMessages(id);
     set((s) => (s.activeThreadId === id ? { messages } : s));
