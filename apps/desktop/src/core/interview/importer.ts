@@ -66,7 +66,7 @@ function systemPrompt(): string {
     '  "referenceSolution": string            // a CORRECT python implementation of functionName that passes every test above',
     "}",
     "",
-    "Rules: functionName must be identical across starterCode.python, starterCode.javascript, and referenceSolution. args are spread as positional arguments into functionName. Keep everything JSON-serializable. Return the JSON object and nothing else.",
+    'Rules: functionName must be identical across starterCode.python, starterCode.javascript, and referenceSolution. args are spread as positional arguments into functionName, so every test\'s args must contain exactly one JSON value per parameter — an empty-string input is [""] never [] (an empty args array calls the function with zero arguments). Keep everything JSON-serializable. Return the JSON object and nothing else.',
   ].join("\n");
 }
 
@@ -146,6 +146,27 @@ function coerceDraft(o: Record<string, unknown>): InterviewProblemDraft {
 }
 
 /**
+ * Local models often serialize a single empty-string input as `args: []`
+ * (observed with llama3.1). When every other test establishes the function
+ * takes exactly one string argument, an empty args array can only mean `""` —
+ * repair it so validation doesn't fail on a TypeError the user must hand-fix.
+ */
+export function repairEmptyStringArgs(
+  draft: InterviewProblemDraft,
+): InterviewProblemDraft {
+  const withArgs = draft.tests.filter((t) => t.args.length > 0);
+  if (withArgs.length === 0 || withArgs.length === draft.tests.length) return draft;
+  const singleStringArity = withArgs.every(
+    (t) => t.args.length === 1 && typeof t.args[0] === "string",
+  );
+  if (!singleStringArity) return draft;
+  return {
+    ...draft,
+    tests: draft.tests.map((t) => (t.args.length === 0 ? { ...t, args: [""] } : t)),
+  };
+}
+
+/**
  * Ask the model once for a draft. Strict parse: extract the first JSON object
  * and require an object shape; anything unparseable throws {@link
  * DraftGenerationError} (no silent fallback).
@@ -176,7 +197,7 @@ export async function generateDraft(
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new DraftGenerationError();
   }
-  return coerceDraft(parsed as Record<string, unknown>);
+  return repairEmptyStringArgs(coerceDraft(parsed as Record<string, unknown>));
 }
 
 /* ------------------------------- validation -------------------------------- */

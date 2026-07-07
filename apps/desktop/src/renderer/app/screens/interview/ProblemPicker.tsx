@@ -207,7 +207,10 @@ export function ProblemPicker() {
   useEffect(() => {
     if (!lastImportedProblemId) return;
     const idx = ordered.findIndex((p) => p.id === lastImportedProblemId);
-    if (idx !== -1) setSelected(idx);
+    // The list refresh is async — keep the flag until the new row exists,
+    // otherwise the select-after-import intent is lost to the race.
+    if (idx === -1) return;
+    setSelected(idx);
     clearLastImportedProblemId();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastImportedProblemId, problems]);

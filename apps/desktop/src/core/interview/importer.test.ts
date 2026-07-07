@@ -12,6 +12,7 @@ import {
   draftShapeErrors,
   extractFirstJsonObject,
   generateDraft,
+  repairEmptyStringArgs,
   saveDraft,
   validateDraft,
 } from "./importer.js";
@@ -60,6 +61,47 @@ function validDraft(overrides: Partial<InterviewProblemDraft> = {}): InterviewPr
     ...overrides,
   };
 }
+
+/* --------------------------- empty-args repair ---------------------------- */
+
+const stringTests = (extra: InterviewProblemDraft["tests"]) =>
+  [
+    { name: "example 1", args: ["abcabcbb"], expected: 3, normalize: null },
+    { name: "example 2", args: ["bbbbb"], expected: 1, normalize: null },
+    ...extra,
+  ] as InterviewProblemDraft["tests"];
+
+test("repairEmptyStringArgs: [] becomes [\"\"] when peers are single-string", () => {
+  const draft = validDraft({
+    tests: stringTests([{ name: "empty", args: [], expected: 0, normalize: null }]),
+  });
+  const out = repairEmptyStringArgs(draft);
+  assert.deepEqual(out.tests[2].args, [""]);
+  assert.deepEqual(out.tests[0].args, ["abcabcbb"]);
+});
+
+test("repairEmptyStringArgs: untouched when peers are multi-arg or non-string", () => {
+  const multiArg = validDraft({
+    tests: [
+      ...validDraft().tests,
+      { name: "empty", args: [], expected: [], normalize: null },
+    ],
+  });
+  assert.deepEqual(repairEmptyStringArgs(multiArg).tests.at(-1)?.args, []);
+
+  const nonString = validDraft({
+    tests: [
+      { name: "n1", args: [[1, 2]], expected: 2, normalize: null },
+      { name: "empty", args: [], expected: 0, normalize: null },
+    ],
+  });
+  assert.deepEqual(repairEmptyStringArgs(nonString).tests.at(-1)?.args, []);
+
+  const allEmpty = validDraft({
+    tests: [{ name: "empty", args: [], expected: 0, normalize: null }],
+  });
+  assert.deepEqual(repairEmptyStringArgs(allEmpty).tests[0].args, []);
+});
 
 /* ------------------------------ shape errors ----------------------------- */
 

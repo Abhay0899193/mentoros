@@ -80,6 +80,9 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   void app.register(websocket);
   void app.register(cors, {
     origin: [/^https?:\/\/localhost(:\d+)?$/, /^https?:\/\/127\.0\.0\.1(:\d+)?$/, "null"],
+    // @fastify/cors defaults to CORS-safelisted methods only (GET/HEAD/POST) —
+    // DELETE/PUT/PATCH preflights fail without an explicit list.
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
   });
 
   app.addHook("onClose", async () => {
