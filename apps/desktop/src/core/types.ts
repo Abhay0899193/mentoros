@@ -279,12 +279,48 @@ export interface InterviewProblemMeta {
   recommended?: boolean;
   recommendedReason?: string;
   lastScore?: number;
+  /** True for user-imported problems (deletable, "custom" chip in the picker). */
+  custom?: boolean;
 }
 
 export interface InterviewProblem extends InterviewProblemMeta {
   promptMd: string;
   functionName: string;
   starterCode: Record<InterviewLanguage, string>;
+}
+
+/* ---- problem importer (paste statement → LLM draft → review → save) ---- */
+
+export interface ImportedTestDraft {
+  name: string;
+  args: unknown[];
+  expected: unknown;
+  normalize?: "sortInner" | "sortOuter" | null;
+}
+
+/**
+ * Model-generated, user-editable pre-save problem. `referenceSolution` is only
+ * for server-side test validation (sandboxed runner) — discarded on save,
+ * never sent to a candidate session.
+ */
+export interface InterviewProblemDraft {
+  title: string;
+  lcNumber?: number;
+  difficulty: "easy" | "medium" | "hard";
+  pattern: string;
+  tags: string[];
+  functionName: string;
+  promptMd: string;
+  starterCode: Record<InterviewLanguage, string>;
+  hints: [string, string, string];
+  tests: ImportedTestDraft[];
+  referenceSolution: string;
+}
+
+export interface DraftValidation {
+  ok: boolean;
+  tests: { name: string; passed: boolean; detail?: string }[];
+  errors: string[];
 }
 
 export interface InterviewSession {
