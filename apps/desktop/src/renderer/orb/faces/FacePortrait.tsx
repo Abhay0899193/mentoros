@@ -68,6 +68,9 @@ function lashLinePath(w: number, h: number): string {
   return `M ${-w + 1.6} ${-h * 0.32} C ${-w * 0.45} ${-h - 0.4} ${w * 0.5} ${-h * 1.02 - 0.4} ${w} -0.8`;
 }
 
+/** Neck shape in world coords (also the clip for the under-jaw shadow). */
+const NECK_PATH = 'M 87 138 L 85 176 Q 100 182 115 176 L 113 138 Z';
+
 /** Right brow in world coords; the left is mirrored around x=100. */
 function browPath(g: FaceGeometry): string {
   const y = g.browY;
@@ -75,7 +78,7 @@ function browPath(g: FaceGeometry): string {
   const x1 = 100 + g.eyeDX + 1;
   const x2 = 100 + g.eyeDX + 13;
   const arch = g.browArch * 5;
-  const th = g.browThick;
+  const th = g.browThick + 0.3;
   return [
     `M ${x0} ${y + 2.4}`,
     `C ${x0 + 4} ${y - arch * 0.7} ${x1 - 5} ${y - arch} ${x1} ${y - arch}`,
@@ -533,6 +536,9 @@ export function FacePortrait({
         <clipPath id={id('faceC')}>
           <path d={face} />
         </clipPath>
+        <clipPath id={id('neckC')}>
+          <path d={NECK_PATH} />
+        </clipPath>
         <clipPath id={id('mouthC')}>
           <path ref={innerClipRef} d={m0.inner} />
         </clipPath>
@@ -558,12 +564,11 @@ export function FacePortrait({
               />
             </g>
 
-            {/* neck */}
-            <path
-              d={`M ${100 - 13} 138 L ${100 - 15} 176 Q 100 182 ${100 + 15} 176 L ${100 + 13} 138 Z`}
-              fill={p.skin}
-            />
-            <ellipse cx="100" cy="150" rx="14.5" ry="9" fill={p.skinShade} opacity="0.55" />
+            {/* neck (jaw shadow clipped to the neck shape so it doesn't band the sides) */}
+            <path d={NECK_PATH} fill={p.skin} />
+            <g clipPath={url('neckC')}>
+              <ellipse cx="100" cy="143" rx="14.5" ry="8" fill={p.skinShade} opacity="0.4" />
+            </g>
 
             {/* ears */}
             <ellipse cx={100 - earX} cy={103} rx={4.4} ry={7.6} fill={p.skin} />
@@ -632,12 +637,12 @@ export function FacePortrait({
             {/* nose */}
             <g>
               <path
-                d={`M 96.8 97 C 96 105 95.6 112 96.4 116.5`}
-                fill="none" stroke={p.skinShade} strokeWidth="1.6" opacity="0.1"
+                d={`M 96.3 106 C 96 110 95.9 113.5 96.5 116`}
+                fill="none" stroke={p.skinShade} strokeWidth="1.4" opacity="0.08"
               />
               <path
-                d={`M 103.2 97 C 104 105 104.4 112 103.6 116.5`}
-                fill="none" stroke={p.skinShade} strokeWidth="1.8" opacity="0.16"
+                d={`M 103.7 106 C 104 110 104.1 113.5 103.5 116`}
+                fill="none" stroke={p.skinShade} strokeWidth="1.6" opacity="0.1"
               />
               <ellipse cx="100" cy="118" rx="2.3" ry="1.4" fill={p.skinLight} opacity="0.5" />
               <path
@@ -648,8 +653,8 @@ export function FacePortrait({
                 d={`M ${100 + g.noseW} 119.5 Q ${100 + g.noseW + 1.7} 121.3 ${100 + g.noseW - 0.7} 122.9`}
                 fill="none" stroke={p.skinShade} strokeWidth="1.1" opacity="0.55"
               />
-              <ellipse cx={100 - 3.5} cy={121.9} rx={1.5} ry={0.85} fill={hexMix(p.skinShade, '#000000', 0.35)} opacity="0.5" transform={`rotate(24 ${100 - 3.5} 121.9)`} />
-              <ellipse cx={100 + 3.5} cy={121.9} rx={1.5} ry={0.85} fill={hexMix(p.skinShade, '#000000', 0.35)} opacity="0.5" transform={`rotate(-24 ${100 + 3.5} 121.9)`} />
+              <ellipse cx={100 - 3.5} cy={121.9} rx={1.25} ry={0.7} fill={hexMix(p.skinShade, '#000000', 0.35)} opacity="0.35" transform={`rotate(24 ${100 - 3.5} 121.9)`} />
+              <ellipse cx={100 + 3.5} cy={121.9} rx={1.25} ry={0.7} fill={hexMix(p.skinShade, '#000000', 0.35)} opacity="0.35" transform={`rotate(-24 ${100 + 3.5} 121.9)`} />
               <ellipse cx="100" cy="124.7" rx="4.2" ry="1.1" fill={p.skinShade} opacity="0.14" />
             </g>
 

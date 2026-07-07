@@ -53,10 +53,10 @@ interface SettingsState {
   setVoice: (id: string) => Promise<void>;
   setSttModel: (id: SttModelId) => Promise<void>;
   setMentorIdentity: (v: AppSettings['mentorIdentity']) => Promise<void>;
-  /** Patch any of the face-gallery keys (preset / glam / maturity / identity) together. */
+  /** Patch any of the face-gallery keys (preset / glam / maturity / view / identity) together. */
   setMentorLook: (
     patch: Partial<
-      Pick<AppSettings, 'mentorIdentity' | 'mentorFace' | 'faceGlam' | 'faceMaturity'>
+      Pick<AppSettings, 'mentorIdentity' | 'mentorFace' | 'faceGlam' | 'faceMaturity' | 'faceView'>
     >,
   ) => Promise<void>;
 

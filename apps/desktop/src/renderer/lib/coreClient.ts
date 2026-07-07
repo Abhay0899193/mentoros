@@ -506,12 +506,18 @@ export interface ProvidersInfo {
   };
 }
 
-/** Face gallery preset ids — 'aura' is the minimal in-orb face; the rest are portraits. */
-export type FacePresetId = 'aura' | 'nova' | 'ivy' | 'zara' | 'elle' | 'mira' | 'rae';
+/**
+ * Face gallery preset ids — 'aura' is the minimal in-orb face; nova/ivy/rae are
+ * stylized vector portraits; lena/sienna/kira are the realistic photo presets
+ * (pre-generated stills with an animated lip-sync layer).
+ */
+export type FacePresetId = 'aura' | 'nova' | 'ivy' | 'rae' | 'lena' | 'sienna' | 'kira';
 /** Styling intensity applied to portrait presets. */
 export type FaceGlam = 'natural' | 'polished' | 'glam';
 /** Apparent maturity applied to portrait presets (all adult). */
 export type FaceMaturity = 'youthful' | 'balanced' | 'mature';
+/** Portrait framing on the Voice screen: face cameo or full-body. */
+export type FaceView = 'cameo' | 'full';
 
 export interface AppSettings {
   /** Kokoro voice id, e.g. 'af_heart'. Applies to the next utterance. */
@@ -526,6 +532,8 @@ export interface AppSettings {
   faceGlam: FaceGlam;
   /** Apparent maturity for portrait faces (ignored by 'aura'). */
   faceMaturity: FaceMaturity;
+  /** Portrait framing: face cameo or full-body (ignored by 'aura'). */
+  faceView: FaceView;
   /**
    * Master cloud opt-in (§2.4: cloud is an accelerator, never a dependency).
    * While false, cloud choices below are inert and every surface resolves local.

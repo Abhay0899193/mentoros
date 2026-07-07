@@ -8,6 +8,7 @@ import type {
   FaceGlam,
   FaceMaturity,
   FacePresetId,
+  FaceView,
   ModelChoice,
   ModelSurface,
   SttModelId,
@@ -32,6 +33,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mentorFace: "aura",
   faceGlam: "polished",
   faceMaturity: "balanced",
+  faceView: "cameo",
   cloudEnabled: false,
   models: {
     chat: { ...LOCAL_DEFAULT_CHOICE },
@@ -43,9 +45,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 const STT_MODEL_IDS = new Set<string>(STT_MODELS.map((m) => m.id));
 const MENTOR_IDENTITIES = new Set<string>(["orb", "face"]);
-const FACE_PRESETS = new Set<string>(["aura", "nova", "ivy", "zara", "elle", "mira", "rae"]);
+// zara/elle/mira were retired in the face-gallery rework; stored ids fall back to default.
+const FACE_PRESETS = new Set<string>(["aura", "nova", "ivy", "rae", "lena", "sienna", "kira"]);
 const FACE_GLAMS = new Set<string>(["natural", "polished", "glam"]);
 const FACE_MATURITIES = new Set<string>(["youthful", "balanced", "mature"]);
+const FACE_VIEWS = new Set<string>(["cameo", "full"]);
 const MODEL_SURFACES: ModelSurface[] = ["chat", "voice", "interviewer", "scorecard"];
 const SURFACE_SET = new Set<string>(MODEL_SURFACES);
 const ALLOWED_KEYS = new Set<keyof AppSettings>([
@@ -55,6 +59,7 @@ const ALLOWED_KEYS = new Set<keyof AppSettings>([
   "mentorFace",
   "faceGlam",
   "faceMaturity",
+  "faceView",
   "cloudEnabled",
   "models",
 ]);
@@ -140,6 +145,7 @@ export class SettingsStore {
       else if (key === "faceGlam" && FACE_GLAMS.has(value)) settings.faceGlam = value as FaceGlam;
       else if (key === "faceMaturity" && FACE_MATURITIES.has(value))
         settings.faceMaturity = value as FaceMaturity;
+      else if (key === "faceView" && FACE_VIEWS.has(value)) settings.faceView = value as FaceView;
       else if (key === "cloudEnabled") settings.cloudEnabled = value === "true";
       else if (key.startsWith("models.")) {
         const surface = key.slice("models.".length);
@@ -201,6 +207,11 @@ export class SettingsStore {
       } else if (key === "faceMaturity") {
         if (typeof value !== "string" || !FACE_MATURITIES.has(value)) {
           throw new SettingsValidationError(`invalid faceMaturity: ${String(value)}`);
+        }
+        entries.push([key, value]);
+      } else if (key === "faceView") {
+        if (typeof value !== "string" || !FACE_VIEWS.has(value)) {
+          throw new SettingsValidationError(`invalid faceView: ${String(value)}`);
         }
         entries.push([key, value]);
       } else if (key === "cloudEnabled") {

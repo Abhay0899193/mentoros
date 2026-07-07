@@ -83,6 +83,25 @@ test("settings: face gallery keys persist and round-trip", () => {
   assert.deepEqual(store.get(), merged);
 });
 
+test("settings: retired face preset ids are rejected on write, fall back on read", () => {
+  const kv = memKv();
+  const store = new SettingsStore(kv);
+  // zara/elle/mira were retired in the face-gallery rework.
+  assert.throws(() => store.patch({ mentorFace: "mira" }), SettingsValidationError);
+  // A previously stored retired id silently reverts to the default preset.
+  kv.writeMany([["mentorFace", "zara"]]);
+  assert.equal(store.get().mentorFace, DEFAULT_SETTINGS.mentorFace);
+});
+
+test("settings: realistic presets + faceView round-trip; bad faceView rejected", () => {
+  const store = memStore();
+  const merged = store.patch({ mentorFace: "sienna", faceView: "full" });
+  assert.equal(merged.mentorFace, "sienna");
+  assert.equal(merged.faceView, "full");
+  assert.deepEqual(store.get(), merged);
+  assert.throws(() => store.patch({ faceView: "portrait" }), SettingsValidationError);
+});
+
 test("settings: a valid but atypical voice id (bm_fable) is accepted", () => {
   const store = memStore();
   assert.equal(store.patch({ ttsVoice: "bm_fable" }).ttsVoice, "bm_fable");

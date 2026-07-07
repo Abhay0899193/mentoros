@@ -195,27 +195,6 @@ export function resolveStyle(
   };
 }
 
-/* ------------------------------ hair helpers ----------------------------- */
-
-/** Scalloped near-circle (curl silhouettes) as a closed path. */
-function scallopCircle(cx: number, cy: number, r: number, bumps: number, amp: number): string {
-  const pts: Array<[number, number]> = [];
-  for (let i = 0; i < bumps; i++) {
-    const a = (i / bumps) * Math.PI * 2 - Math.PI / 2;
-    pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
-  }
-  let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
-  for (let i = 0; i < bumps; i++) {
-    const [x2, y2] = pts[(i + 1) % bumps];
-    const [x1, y1] = pts[i];
-    const midA = ((i + 0.5) / bumps) * Math.PI * 2 - Math.PI / 2;
-    const mx = cx + Math.cos(midA) * (r + amp);
-    const my = cy + Math.sin(midA) * (r + amp);
-    d += ` Q ${mx.toFixed(1)} ${my.toFixed(1)} ${((x1 + x2) / 2 + (x2 - x1) / 2).toFixed(1)} ${((y1 + y2) / 2 + (y2 - y1) / 2).toFixed(1)}`;
-  }
-  return d + ' Z';
-}
-
 /* -------------------------------- presets -------------------------------- */
 
 export const FACE_PRESETS: FacePreset[] = [
@@ -243,7 +222,7 @@ export const FACE_PRESETS: FacePreset[] = [
     hairBack:
       'M 100 20 C 62 20 42 46 39 76 C 36 100 45 114 38 134 C 32 152 44 162 37 180 C 34 190 38 197 42 202 L 158 202 C 163 196 166 188 162 178 C 156 162 169 150 163 132 C 156 112 165 98 161 76 C 156 46 138 20 100 20 Z',
     hairFront:
-      'M 100 24 C 66 24 48 48 50 82 C 51 94 55 104 60 110 C 58 96 58 84 63 74 C 66 66 71 60 78 56 C 74 64 72 72 73 80 C 78 66 88 56 103 53 C 120 55 132 64 137 78 C 140 68 145 62 152 60 C 149 76 152 90 148 106 C 153 98 156 90 156 80 C 158 48 134 24 100 24 Z',
+      'M 100 24 C 66 24 48 48 50 82 C 51 94 55 104 60 110 C 58 96 58 84 63 74 C 66 66 71 60 78 56 C 74 64 72 72 73 80 C 78 66 88 56 103 53 C 120 55 132 64 137 78 C 139 70 143 64 148 62 C 149 77 151 91 148 106 C 153 98 156 90 156 80 C 158 48 134 24 100 24 Z',
     hairShinePaths: [
       'M 64 60 C 74 46 90 40 104 41 C 88 44 74 52 66 66 Z',
       'M 142 66 C 136 56 126 48 114 45 C 128 46 140 54 146 64 Z',
@@ -297,116 +276,6 @@ export const FACE_PRESETS: FacePreset[] = [
     hairShinePaths: ['M 58 74 C 62 56 76 46 92 44 C 76 50 66 60 62 76 Z'],
     earring: 'drop',
     beautyMark: [117, 124],
-  },
-  {
-    id: 'zara',
-    name: 'Zara',
-    vibe: 'Crown of dark curls, gold at the ears.',
-    palette: {
-      skin: '#8A5535',
-      skinShade: '#68391D',
-      skinLight: '#AA7146',
-      hair: '#181210',
-      hairShine: '#4C382B',
-      hairDeep: '#0A0705',
-      iris: '#3A2418',
-      irisEdge: '#1C0F08',
-      brow: '#231710',
-      lipNatural: '#9C5B4C',
-      lipColor: '#A03A52',
-      blush: '#B0604A',
-      shadowTint: '#5E3823',
-      garment: '#242031',
-    },
-    geometry: {
-      ...BASE_GEOMETRY,
-      cheekW: 36,
-      jawW: 28,
-      eyeH: 7.6,
-      browArch: 0.7,
-      lipW: 14.5,
-      lipUpper: 4.4,
-      lipLower: 6,
-    },
-    hairBack: scallopCircle(100, 74, 62, 16, 9),
-    hairFront:
-      'M 100 26 C 68 26 51 47 52 76 C 52.5 88 57 98 63 103 C 60 90 60 78 65 68 C 62 80 64 92 70 99 C 68 86 71 74 79 66 C 76 76 78 86 84 92 C 83 80 88 68 100 63 C 112 68 117 80 116 92 C 122 86 124 76 121 66 C 129 74 132 86 130 99 C 136 92 138 80 135 68 C 140 78 140 90 137 103 C 143 98 147.5 88 148 76 C 149 47 132 26 100 26 Z',
-    earring: 'hoop',
-  },
-  {
-    id: 'elle',
-    name: 'Elle',
-    vibe: 'Platinum bob, glacier-blue gaze.',
-    palette: {
-      skin: '#F4D6C1',
-      skinShade: '#DCAE8C',
-      skinLight: '#FDEEDD',
-      hair: '#E6DCCB',
-      hairShine: '#FAF5EA',
-      hairDeep: '#BFB09A',
-      iris: '#4C7FAF',
-      irisEdge: '#28486B',
-      brow: '#8A7358',
-      lipNatural: '#D08A7B',
-      lipColor: '#C64A5E',
-      blush: '#EE9D89',
-      shadowTint: '#BB8668',
-      garment: '#26242C',
-    },
-    geometry: {
-      ...BASE_GEOMETRY,
-      cheekW: 33.5,
-      jawW: 24.5,
-      eyeH: 7.8,
-      browArch: 0.5,
-      browThick: 2.2,
-      chinY: 153,
-    },
-    hairBack:
-      'M 100 22 C 63 22 44 46 43 76 C 42 104 46 124 44 142 C 42.5 156 50 164 62 165 C 56 154 55 142 57 132 L 143 132 C 145 142 144 154 138 165 C 150 164 157.5 156 156 142 C 154 124 158 104 157 76 C 156 46 137 22 100 22 Z',
-    hairFront:
-      'M 100 26 C 66 26 50 50 52 84 C 53 96 57 106 63 112 C 60 94 61 76 70 64 C 78 53 90 48 106 48 C 94 54 86 62 82 74 C 92 60 108 53 126 56 C 136 60 143 70 146 84 C 148 96 146 106 141 112 C 146 106 149.5 96 149 84 C 148 50 134 26 100 26 Z',
-    hairShinePaths: ['M 60 78 C 63 60 76 50 92 47 C 78 54 68 64 64 80 Z'],
-    earring: 'drop',
-    beautyMark: [83, 126],
-  },
-  {
-    id: 'mira',
-    name: 'Mira',
-    vibe: 'Midnight waves tucked back, warm hazel eyes.',
-    palette: {
-      skin: '#BC8258',
-      skinShade: '#96603A',
-      skinLight: '#D9A272',
-      hair: '#241813',
-      hairShine: '#5C4028',
-      hairDeep: '#120B08',
-      iris: '#6E4A26',
-      irisEdge: '#3A2410',
-      brow: '#2E1D12',
-      lipNatural: '#A86352',
-      lipColor: '#AF3A4A',
-      blush: '#CD7757',
-      shadowTint: '#7A4A2C',
-      garment: '#1E2029',
-    },
-    geometry: {
-      ...BASE_GEOMETRY,
-      eyeH: 8,
-      eyeTilt: 3,
-      browArch: 0.58,
-      browThick: 3,
-      lipW: 14,
-      lipUpper: 4,
-      lipLower: 5.6,
-    },
-    hairBack:
-      'M 100 21 C 61 21 42 47 41 78 C 40 104 47 122 40 144 C 35 160 45 172 39 190 C 37 195 39 199 41 202 L 159 202 C 161 199 163 195 161 190 C 155 172 165 160 160 144 C 153 122 160 104 159 78 C 158 47 139 21 100 21 Z',
-    hairFront:
-      'M 100 25 C 65 25 49 51 51 86 C 52 96 55 104 59 109 C 57 92 58 74 66 62 C 74 51 86 46 98 45 L 100 41 L 102 45 C 114 46 126 51 134 62 C 142 74 143 92 141 109 C 145 104 148 96 149 86 C 151 51 135 25 100 25 Z',
-    hairShinePaths: ['M 140 70 C 136 58 126 50 112 46 C 128 48 138 56 143 68 Z'],
-    earring: 'hoop',
-    beautyMark: [120, 122],
   },
   {
     id: 'rae',
