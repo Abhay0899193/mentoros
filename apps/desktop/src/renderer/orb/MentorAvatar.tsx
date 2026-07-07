@@ -5,6 +5,8 @@ import { OrbCanvas, type OrbCanvasProps } from './OrbCanvas';
 import { MentorFace } from './MentorFace';
 import { FacePortrait } from './faces/FacePortrait';
 import { FACE_PRESET_MAP } from './faces/presets';
+import { RealisticPortrait } from './faces/RealisticPortrait';
+import { REALISTIC_PRESET_MAP } from './faces/realistic';
 import { ORB_HUE } from './orbState';
 
 /**
@@ -15,13 +17,17 @@ import { ORB_HUE } from './orbState';
  * rule (§3.0.3) holds in every identity.
  */
 
-type MentorLook = Pick<AppSettings, 'mentorIdentity' | 'mentorFace' | 'faceGlam' | 'faceMaturity'>;
+type MentorLook = Pick<
+  AppSettings,
+  'mentorIdentity' | 'mentorFace' | 'faceGlam' | 'faceMaturity' | 'faceView'
+>;
 
 let cachedLook: MentorLook = {
   mentorIdentity: 'orb',
   mentorFace: 'aura',
   faceGlam: 'polished',
   faceMaturity: 'balanced',
+  faceView: 'cameo',
 };
 
 function pickLook(s: AppSettings): MentorLook {
@@ -30,6 +36,7 @@ function pickLook(s: AppSettings): MentorLook {
     mentorFace: s.mentorFace,
     faceGlam: s.faceGlam,
     faceMaturity: s.faceMaturity,
+    faceView: s.faceView,
   };
 }
 
@@ -61,8 +68,41 @@ export function MentorAvatar(props: OrbCanvasProps) {
   const reduce = useReducedMotion();
   const size = props.size ?? 340;
   const portrait = look.mentorIdentity === 'face' ? FACE_PRESET_MAP[look.mentorFace] : undefined;
+  const realistic =
+    look.mentorIdentity === 'face' ? REALISTIC_PRESET_MAP[look.mentorFace] : undefined;
 
   if (look.mentorIdentity !== 'face') return <OrbCanvas {...props} />;
+
+  if (realistic) {
+    const hue = ORB_HUE[props.state];
+    return (
+      <button
+        aria-label={`${realistic.name} — ${props.state}. Tap to interrupt.`}
+        onClick={props.onTap}
+        className="relative cursor-default"
+        style={{ width: size, height: size }}
+      >
+        <div
+          aria-hidden
+          className="absolute inset-[-18%] rounded-full transition-opacity duration-700"
+          style={{
+            background: `radial-gradient(circle, hsl(${hue} 85% 62% / 0.22) 0%, ${realistic.accent}14 40%, transparent 62%)`,
+            filter: 'blur(28px)',
+          }}
+        />
+        <div className="relative">
+          <RealisticPortrait
+            preset={realistic}
+            state={props.state}
+            levelRef={props.levelRef}
+            size={size}
+            view={look.faceView}
+            frozen={!!reduce}
+          />
+        </div>
+      </button>
+    );
+  }
 
   if (portrait) {
     const hue = ORB_HUE[props.state];

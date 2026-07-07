@@ -4,11 +4,19 @@ import { Circle, SmilePlus } from 'lucide-react';
 import { useSettings } from '../../../lib/settingsStore';
 import { spring } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
-import type { AppSettings, FaceGlam, FaceMaturity, FacePresetId } from '../../../lib/coreClient';
+import type {
+  AppSettings,
+  FaceGlam,
+  FaceMaturity,
+  FacePresetId,
+  FaceView,
+} from '../../../lib/coreClient';
 import { Panel } from '../../../ui';
 import { MentorFace } from '../../../orb/MentorFace';
 import { FacePortrait } from '../../../orb/faces/FacePortrait';
 import { FACE_PRESETS, FACE_PRESET_MAP } from '../../../orb/faces/presets';
+import { RealisticPortrait } from '../../../orb/faces/RealisticPortrait';
+import { REALISTIC_PRESETS, REALISTIC_PRESET_MAP } from '../../../orb/faces/realistic';
 
 const IDENTITY_OPTIONS: { id: AppSettings['mentorIdentity']; label: string; icon: typeof Circle }[] = [
   { id: 'orb', label: 'Orb', icon: Circle },
@@ -25,6 +33,11 @@ const MATURITY_OPTIONS: { id: FaceMaturity; label: string }[] = [
   { id: 'youthful', label: 'Youthful' },
   { id: 'balanced', label: 'Balanced' },
   { id: 'mature', label: 'Mature' },
+];
+
+const VIEW_OPTIONS: { id: FaceView; label: string }[] = [
+  { id: 'cameo', label: 'Cameo' },
+  { id: 'full', label: 'Full body' },
 ];
 
 const AURA_VIBE = 'The minimal face, living inside the Orb itself.';
@@ -114,7 +127,9 @@ export function IdentitySection() {
   const faceId = settings?.mentorFace ?? 'aura';
   const glam = settings?.faceGlam ?? 'polished';
   const maturity = settings?.faceMaturity ?? 'balanced';
+  const view = settings?.faceView ?? 'cameo';
   const selected = FACE_PRESET_MAP[faceId];
+  const selectedRealistic = REALISTIC_PRESET_MAP[faceId];
 
   return (
     <Panel title="Mentor identity">
@@ -161,7 +176,17 @@ export function IdentitySection() {
           >
             {/* live preview of the current look */}
             <div className="flex w-[220px] shrink-0 flex-col items-center gap-3">
-              {selected ? (
+              {selectedRealistic ? (
+                <RealisticPortrait
+                  key={`${selectedRealistic.id}-${view}`}
+                  preset={selectedRealistic}
+                  state="idle"
+                  levelRef={previewLevel}
+                  size={200}
+                  view={view}
+                  frozen={!!reduce}
+                />
+              ) : selected ? (
                 <FacePortrait
                   key={`${selected.id}-${glam}-${maturity}`}
                   preset={selected}
@@ -176,59 +201,121 @@ export function IdentitySection() {
                 <AuraThumb size={200} />
               )}
               <div className="text-center">
-                <div className="text-h3 font-semibold text-ink">{selected?.name ?? 'Aura'}</div>
-                <p className="mt-0.5 text-small text-muted">{selected?.vibe ?? AURA_VIBE}</p>
+                <div className="text-h3 font-semibold text-ink">
+                  {selectedRealistic?.name ?? selected?.name ?? 'Aura'}
+                </div>
+                <p className="mt-0.5 text-small text-muted">
+                  {selectedRealistic?.vibe ?? selected?.vibe ?? AURA_VIBE}
+                </p>
               </div>
             </div>
 
             <div className="flex min-w-[320px] flex-1 flex-col gap-4">
-              {/* preset gallery */}
-              <div role="radiogroup" aria-label="Face preset" className="flex flex-wrap gap-2.5">
-                {[null, ...FACE_PRESETS].map((preset) => {
-                  const pid: FacePresetId = preset?.id ?? 'aura';
-                  const active = faceId === pid;
-                  return (
-                    <button
-                      key={pid}
-                      role="radio"
-                      aria-checked={active}
-                      onClick={() => void setMentorLook({ mentorFace: pid })}
-                      onMouseEnter={() => setHovered(pid)}
-                      onMouseLeave={() => setHovered((h) => (h === pid ? null : h))}
-                      className={cn(
-                        'group flex w-[104px] flex-col items-center gap-1.5 rounded-lg bg-surface-2 p-2.5 pb-2 hairline transition-colors',
-                        active
-                          ? 'hairline-strong bg-surface-3 outline outline-2 outline-offset-2 outline-[var(--iris)]'
-                          : 'hover:bg-surface-3',
-                      )}
-                    >
-                      {preset ? (
-                        <FacePortrait
-                          preset={preset}
-                          glam={glam}
-                          maturity={maturity}
-                          state="idle"
-                          size={80}
-                          frozen={!!reduce || hovered !== pid}
-                        />
-                      ) : (
-                        <AuraThumb size={80} />
-                      )}
-                      <span
+              {/* preset gallery — stylized art, then the realistic stills */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-label font-medium uppercase tracking-wide text-muted">
+                  Stylized
+                </span>
+                <div role="radiogroup" aria-label="Stylized face preset" className="flex flex-wrap gap-2.5">
+                  {[null, ...FACE_PRESETS].map((preset) => {
+                    const pid: FacePresetId = preset?.id ?? 'aura';
+                    const active = faceId === pid;
+                    return (
+                      <button
+                        key={pid}
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => void setMentorLook({ mentorFace: pid })}
+                        onMouseEnter={() => setHovered(pid)}
+                        onMouseLeave={() => setHovered((h) => (h === pid ? null : h))}
                         className={cn(
-                          'text-small font-medium',
-                          active ? 'text-ink' : 'text-muted group-hover:text-body',
+                          'group flex w-[104px] flex-col items-center gap-1.5 rounded-lg bg-surface-2 p-2.5 pb-2 hairline transition-colors',
+                          active
+                            ? 'hairline-strong bg-surface-3 outline outline-2 outline-offset-2 outline-[var(--iris)]'
+                            : 'hover:bg-surface-3',
                         )}
                       >
-                        {preset?.name ?? 'Aura'}
-                      </span>
-                    </button>
-                  );
-                })}
+                        {preset ? (
+                          <FacePortrait
+                            preset={preset}
+                            glam={glam}
+                            maturity={maturity}
+                            state="idle"
+                            size={80}
+                            frozen={!!reduce || hovered !== pid}
+                          />
+                        ) : (
+                          <AuraThumb size={80} />
+                        )}
+                        <span
+                          className={cn(
+                            'text-small font-medium',
+                            active ? 'text-ink' : 'text-muted group-hover:text-body',
+                          )}
+                        >
+                          {preset?.name ?? 'Aura'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* style dimensions (portraits only) */}
-              {selected ? (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-label font-medium uppercase tracking-wide text-muted">
+                  Realistic
+                </span>
+                <div role="radiogroup" aria-label="Realistic face preset" className="flex flex-wrap gap-2.5">
+                  {REALISTIC_PRESETS.map((preset) => {
+                    const active = faceId === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => void setMentorLook({ mentorFace: preset.id })}
+                        className={cn(
+                          'group flex w-[104px] flex-col items-center gap-1.5 rounded-lg bg-surface-2 p-2.5 pb-2 hairline transition-colors',
+                          active
+                            ? 'hairline-strong bg-surface-3 outline outline-2 outline-offset-2 outline-[var(--iris)]'
+                            : 'hover:bg-surface-3',
+                        )}
+                      >
+                        <img
+                          src={preset.portrait.base}
+                          alt=""
+                          draggable={false}
+                          className="h-20 w-20 rounded-full object-cover"
+                        />
+                        <span
+                          className={cn(
+                            'text-small font-medium',
+                            active ? 'text-ink' : 'text-muted group-hover:text-body',
+                          )}
+                        >
+                          {preset.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* style dimensions — morphs for stylized art, framing for realistic */}
+              {selectedRealistic ? (
+                <div className="flex flex-col gap-2.5">
+                  <SegmentedRow
+                    label="View"
+                    options={VIEW_OPTIONS}
+                    value={view}
+                    onChange={(v) => void setMentorLook({ faceView: v })}
+                    layoutId="face-view-indicator"
+                  />
+                  <p className="text-small text-muted">
+                    Realistic presets are fixed looks — styling is part of the portrait itself.
+                  </p>
+                </div>
+              ) : selected ? (
                 <div className="flex flex-col gap-2.5">
                   <SegmentedRow
                     label="Styling"
