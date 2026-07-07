@@ -64,6 +64,19 @@ const FACE_PRESETS = new Set<string>([
 ]);
 
 /**
+ * Custom-face lookup so a persona can bundle a `face-<slug>` preset. Injected
+ * after construction, mirror of the settings store's FaceLookup.
+ */
+export interface FaceLookup {
+  has(id: string): boolean;
+}
+
+/** A face id valid for a persona bundle: a built-in preset or a known custom one. */
+function faceKnownWith(faces?: FaceLookup): (id: string) => boolean {
+  return (id) => FACE_PRESETS.has(id) || (faces?.has(id) ?? false);
+}
+
+/**
  * The built-in personas. Their blurbs are the single source of truth for
  * {@link builtinBlurb} / the system prompt; name/tagline/style/domains give the
  * pickers something real to render.
@@ -252,7 +265,11 @@ export function migratePersonas(db: Database.Database): void {
  * {@link PersonaValidationError} on any bad field. Shared by create (raw input)
  * and update (existing record merged with the patch).
  */
-export function normalizePersonaInput(input: unknown): PersonaInput {
+export function normalizePersonaInput(
+  input: unknown,
+  opts?: { faceIsKnown?: (id: string) => boolean },
+): PersonaInput {
+  const faceIsKnown = opts?.faceIsKnown ?? ((id: string) => FACE_PRESETS.has(id));
   if (!input || typeof input !== "object") {
     throw new PersonaValidationError("persona payload must be an object");
   }
@@ -294,7 +311,7 @@ export function normalizePersonaInput(input: unknown): PersonaInput {
   const rec: PersonaInput = { name, tagline, style, domains, blurb };
 
   if (o.mentorFace !== undefined && o.mentorFace !== null) {
-    if (typeof o.mentorFace !== "string" || !FACE_PRESETS.has(o.mentorFace)) {
+    if (typeof o.mentorFace !== "string" || !faceIsKnown(o.mentorFace)) {
       throw new PersonaValidationError("mentorFace must be a known face preset");
     }
     rec.mentorFace = o.mentorFace as FacePresetId;
@@ -326,7 +343,7 @@ export interface ActivePersonaSettings {
   patch(input: { activePersona: Persona }): unknown;
 }
 
-function rowToRecord(row: PersonaRow): PersonaRecord {
+function rowToRecord(row: PersonaRow, faceIsKnown: (id: string) => boolean): PersonaRecord {
   const rec: PersonaRecord = {
     id: row.id,
     name: row.name,
@@ -338,7 +355,7 @@ function rowToRecord(row: PersonaRow): PersonaRecord {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
-  if (row.mentorFace && FACE_PRESETS.has(row.mentorFace)) {
+  if (row.mentorFace && faceIsKnown(row.mentorFace)) {
     rec.mentorFace = row.mentorFace as FacePresetId;
   }
   if (row.ttsVoice) rec.ttsVoice = row.ttsVoice;
@@ -383,14 +400,25 @@ function safeDomains(json: string): string[] {
 }
 
 export class PersonaStore {
+  private faces?: FaceLookup;
+
   constructor(
     private readonly repo: PersonaRepo,
     private readonly settings?: ActivePersonaSettings,
   ) {}
 
+  /** Wire the custom-face lookup after construction (avoids a personas↔faces cycle). */
+  setFaceLookup(faces: FaceLookup): void {
+    this.faces = faces;
+  }
+
+  private get faceIsKnown(): (id: string) => boolean {
+    return faceKnownWith(this.faces);
+  }
+
   /** Built-ins first (fixed order), then customs by createdAt. */
   list(): PersonaRecord[] {
-    return [...BUILTIN_PERSONAS, ...this.repo.all().map(rowToRecord)];
+    return [...BUILTIN_PERSONAS, ...this.repo.all().map((r) => rowToRecord(r, this.faceIsKnown))];
   }
 
   /** Resolve a persona by id (built-in or custom); null if unknown. */
@@ -398,7 +426,7 @@ export class PersonaStore {
     const builtin = BUILTIN_PERSONAS.find((p) => p.id === id);
     if (builtin) return builtin;
     const row = this.repo.get(id);
-    return row ? rowToRecord(row) : null;
+    return row ? rowToRecord(row, this.faceIsKnown) : null;
   }
 
   /** Tone blurb for the system prompt: custom → stored, built-in/unknown → blurb table. */
@@ -426,12 +454,12 @@ export class PersonaStore {
   }
 
   create(input: unknown): PersonaRecord {
-    const norm = normalizePersonaInput(input);
+    const norm = normalizePersonaInput(input, { faceIsKnown: this.faceIsKnown });
     const id = this.uniqueId(norm.name);
     const now = new Date().toISOString();
     const row = inputToRow(id, norm, now, now);
     this.repo.insert(row);
-    return rowToRecord(row);
+    return rowToRecord(row, this.faceIsKnown);
   }
 
   update(id: Persona, patch: unknown): PersonaRecord {
@@ -441,11 +469,14 @@ export class PersonaStore {
     if (!patch || typeof patch !== "object") {
       throw new PersonaValidationError("persona patch must be an object");
     }
-    const merged = { ...recordToInput(rowToRecord(row)), ...(patch as Record<string, unknown>) };
-    const norm = normalizePersonaInput(merged);
+    const merged = {
+      ...recordToInput(rowToRecord(row, this.faceIsKnown)),
+      ...(patch as Record<string, unknown>),
+    };
+    const norm = normalizePersonaInput(merged, { faceIsKnown: this.faceIsKnown });
     const next = inputToRow(id, norm, row.createdAt, new Date().toISOString());
     this.repo.update(next);
-    return rowToRecord(next);
+    return rowToRecord(next, this.faceIsKnown);
   }
 
   /** Delete a custom persona; reset settings.activePersona if it pointed here. */

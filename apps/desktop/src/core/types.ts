@@ -532,9 +532,88 @@ export interface ProvidersInfo {
 /**
  * Face gallery preset ids — 'aura' is the minimal in-orb face; nova/ivy/rae are
  * stylized vector portraits; lena/sienna/kira are the realistic photo presets
- * (pre-generated stills with an animated lip-sync layer).
+ * (pre-generated stills with an animated lip-sync layer). Custom presets created
+ * from the user's own photos use 'face-<slug>' ids; unknown/deleted ids fall
+ * back to 'aura' on read.
  */
-export type FacePresetId = "aura" | "nova" | "ivy" | "rae" | "lena" | "sienna" | "kira";
+export type BuiltinFacePresetId =
+  | "aura"
+  | "nova"
+  | "ivy"
+  | "rae"
+  | "lena"
+  | "sienna"
+  | "kira";
+export type FacePresetId = BuiltinFacePresetId | (string & {});
+
+/* ------------- Custom face presets (create from your own photos) ------------- */
+
+/** Axis-aligned rectangle in ORIGINAL uploaded-portrait pixel space. */
+export interface FaceRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * A user-created realistic preset. Same sprite contract as the built-in
+ * realistic presets (base + 3 mouth apertures + blink). Art lives under userData
+ * and is served by core; GET /faces/custom returns server-relative paths that
+ * the client absolutizes.
+ */
+export interface CustomFacePreset {
+  id: FacePresetId; // 'face-<slug>'
+  name: string;
+  /** Accent hex sampled from the portrait; tints the ambient aura. */
+  accent: string;
+  portrait: {
+    base: string;
+    mouthSmall: string;
+    mouthOpen: string;
+    mouthWide: string;
+    blink: string;
+  };
+  /** Present only when a full-body photo was provided. */
+  full?: string;
+  createdAt: string; // ISO
+}
+
+/** Whether the local mflux/FLUX-Kontext image-gen toolchain is usable. */
+export interface FaceToolchainStatus {
+  state: "ready" | "missing";
+  /** Human reason when missing ('mflux not installed', 'Kontext weights absent'). */
+  detail?: string;
+}
+
+export interface CreateFacePresetInput {
+  name: string;
+  /** Absolute path of the portrait photo (frontal, mouth CLOSED, ≥768px short side). */
+  portraitPath: string;
+  /** Optional full-body still (head-to-shoes). */
+  fullPath?: string;
+  /** Mouth/eyes rectangles from the region picker — the composite windows. */
+  mouth: FaceRegion;
+  eyes: FaceRegion;
+}
+
+/**
+ * One preset generation = 4 Kontext edits (m2 → m1-from-m2 → m3 → blink) +
+ * anti-drift compositing; the job runs in the background, survives navigation,
+ * resumes skip-if-exists after a restart, and streams progress via `face.job`.
+ */
+export interface FaceJobStatus {
+  jobId: string;
+  presetId: string;
+  name: string;
+  state: "queued" | "generating" | "compositing" | "done" | "error" | "cancelled";
+  /** Human step ('Mouth frame 2 of 3', 'Compositing blink'). */
+  step: string;
+  completedFrames: number;
+  totalFrames: number;
+  startedAt: string; // ISO
+  error?: string;
+}
 /** Styling intensity applied to portrait presets. */
 export type FaceGlam = "natural" | "polished" | "glam";
 /** Apparent maturity applied to portrait presets (all adult). */
@@ -639,6 +718,10 @@ export interface CoreEvents {
   "settings.changed": { settings: AppSettings };
   /** Persona list changed (create/update/delete) — pickers re-fetch. */
   "personas.changed": { personas: PersonaRecord[] };
+  /** Custom-face generation progress (long job — drives the Settings progress card). */
+  "face.job": FaceJobStatus;
+  /** Custom preset list changed (job finished / preset deleted). */
+  "faces.changed": { presets: CustomFacePreset[] };
   "voice.ptt": { pressed: boolean };
   /** A memory was created or merged — drives "Profile updated" moments. */
   "memory.saved": {

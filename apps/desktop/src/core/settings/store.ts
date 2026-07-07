@@ -26,6 +26,15 @@ export interface PersonaLookup {
   identity(id: string): { mentorFace?: FacePresetId; ttsVoice?: string } | null;
 }
 
+/**
+ * Custom-face lookup so `face-<slug>` mentorFace ids validate. Injected after
+ * construction (avoids a settings↔faces cycle), mirror of {@link PersonaLookup}.
+ */
+export interface FaceLookup {
+  /** True when the id is a known custom face preset. */
+  has(id: string): boolean;
+}
+
 /** Built-in persona ids (kept in lock-step with the personas module). */
 const BUILTIN_PERSONA_IDS = new Set<string>([
   "staff-engineer",
@@ -147,11 +156,22 @@ export class SettingsStore {
   constructor(
     private readonly kv: SettingsKv,
     private personas?: PersonaLookup,
+    private faces?: FaceLookup,
   ) {}
 
   /** Wire the persona lookup after construction (avoids a settings↔personas cycle). */
   setPersonaLookup(personas: PersonaLookup): void {
     this.personas = personas;
+  }
+
+  /** Wire the custom-face lookup after construction (avoids a settings↔faces cycle). */
+  setFaceLookup(faces: FaceLookup): void {
+    this.faces = faces;
+  }
+
+  /** A face id valid for mentorFace: a built-in preset or a known custom one. */
+  private isKnownFace(id: string): boolean {
+    return FACE_PRESETS.has(id) || (this.faces?.has(id) ?? false);
   }
 
   /** Full settings: stored values merged over defaults (invalid values dropped). */
@@ -170,7 +190,7 @@ export class SettingsStore {
       else if (key === "sttModel" && STT_MODEL_IDS.has(value)) settings.sttModel = value as SttModelId;
       else if (key === "mentorIdentity" && MENTOR_IDENTITIES.has(value))
         settings.mentorIdentity = value as AppSettings["mentorIdentity"];
-      else if (key === "mentorFace" && FACE_PRESETS.has(value))
+      else if (key === "mentorFace" && this.isKnownFace(value))
         settings.mentorFace = value as FacePresetId;
       else if (key === "faceGlam" && FACE_GLAMS.has(value)) settings.faceGlam = value as FaceGlam;
       else if (key === "faceMaturity" && FACE_MATURITIES.has(value))
@@ -229,7 +249,7 @@ export class SettingsStore {
         }
         entries.push([key, value]);
       } else if (key === "mentorFace") {
-        if (typeof value !== "string" || !FACE_PRESETS.has(value)) {
+        if (typeof value !== "string" || !this.isKnownFace(value)) {
           throw new SettingsValidationError(`unknown face preset: ${String(value)}`);
         }
         entries.push([key, value]);
@@ -264,7 +284,7 @@ export class SettingsStore {
           if (
             identity.mentorFace &&
             !("mentorFace" in patch) &&
-            FACE_PRESETS.has(identity.mentorFace)
+            this.isKnownFace(identity.mentorFace)
           ) {
             entries.push(["mentorFace", identity.mentorFace]);
             // A face implies the face identity so the Voice screen shows it.
