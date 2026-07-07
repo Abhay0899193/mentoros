@@ -506,6 +506,13 @@ export interface ProvidersInfo {
   };
 }
 
+/** Face gallery preset ids — 'aura' is the minimal in-orb face; the rest are portraits. */
+export type FacePresetId = 'aura' | 'nova' | 'ivy' | 'zara' | 'elle' | 'mira' | 'rae';
+/** Styling intensity applied to portrait presets. */
+export type FaceGlam = 'natural' | 'polished' | 'glam';
+/** Apparent maturity applied to portrait presets (all adult). */
+export type FaceMaturity = 'youthful' | 'balanced' | 'mature';
+
 export interface AppSettings {
   /** Kokoro voice id, e.g. 'af_heart'. Applies to the next utterance. */
   ttsVoice: string;
@@ -513,6 +520,12 @@ export interface AppSettings {
   sttModel: SttModelId;
   /** Mentor identity on the Voice screen: shader Orb or the animated face. */
   mentorIdentity: 'orb' | 'face';
+  /** Which face preset the 'face' identity wears. */
+  mentorFace: FacePresetId;
+  /** Styling intensity for portrait faces (ignored by 'aura'). */
+  faceGlam: FaceGlam;
+  /** Apparent maturity for portrait faces (ignored by 'aura'). */
+  faceMaturity: FaceMaturity;
   /**
    * Master cloud opt-in (§2.4: cloud is an accelerator, never a dependency).
    * While false, cloud choices below are inert and every surface resolves local.

@@ -3,7 +3,15 @@ import { isKnownTtsVoice } from "../voice/voices.js";
 import { STT_MODELS } from "../voice/sttModels.js";
 import { isCloudModel } from "../llm/anthropic.js";
 import { DEFAULT_MODEL } from "../ollama.js";
-import type { AppSettings, ModelChoice, ModelSurface, SttModelId } from "../types.js";
+import type {
+  AppSettings,
+  FaceGlam,
+  FaceMaturity,
+  FacePresetId,
+  ModelChoice,
+  ModelSurface,
+  SttModelId,
+} from "../types.js";
 
 /**
  * Typed settings over a plain KV backend (`settings(key,value)`). Values are
@@ -21,6 +29,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ttsVoice: "af_heart",
   sttModel: "small.en",
   mentorIdentity: "orb",
+  mentorFace: "aura",
+  faceGlam: "polished",
+  faceMaturity: "balanced",
   cloudEnabled: false,
   models: {
     chat: { ...LOCAL_DEFAULT_CHOICE },
@@ -32,12 +43,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 const STT_MODEL_IDS = new Set<string>(STT_MODELS.map((m) => m.id));
 const MENTOR_IDENTITIES = new Set<string>(["orb", "face"]);
+const FACE_PRESETS = new Set<string>(["aura", "nova", "ivy", "zara", "elle", "mira", "rae"]);
+const FACE_GLAMS = new Set<string>(["natural", "polished", "glam"]);
+const FACE_MATURITIES = new Set<string>(["youthful", "balanced", "mature"]);
 const MODEL_SURFACES: ModelSurface[] = ["chat", "voice", "interviewer", "scorecard"];
 const SURFACE_SET = new Set<string>(MODEL_SURFACES);
 const ALLOWED_KEYS = new Set<keyof AppSettings>([
   "ttsVoice",
   "sttModel",
   "mentorIdentity",
+  "mentorFace",
+  "faceGlam",
+  "faceMaturity",
   "cloudEnabled",
   "models",
 ]);
@@ -118,6 +135,11 @@ export class SettingsStore {
       else if (key === "sttModel" && STT_MODEL_IDS.has(value)) settings.sttModel = value as SttModelId;
       else if (key === "mentorIdentity" && MENTOR_IDENTITIES.has(value))
         settings.mentorIdentity = value as AppSettings["mentorIdentity"];
+      else if (key === "mentorFace" && FACE_PRESETS.has(value))
+        settings.mentorFace = value as FacePresetId;
+      else if (key === "faceGlam" && FACE_GLAMS.has(value)) settings.faceGlam = value as FaceGlam;
+      else if (key === "faceMaturity" && FACE_MATURITIES.has(value))
+        settings.faceMaturity = value as FaceMaturity;
       else if (key === "cloudEnabled") settings.cloudEnabled = value === "true";
       else if (key.startsWith("models.")) {
         const surface = key.slice("models.".length);
@@ -164,6 +186,21 @@ export class SettingsStore {
       } else if (key === "mentorIdentity") {
         if (typeof value !== "string" || !MENTOR_IDENTITIES.has(value)) {
           throw new SettingsValidationError(`invalid mentorIdentity: ${String(value)}`);
+        }
+        entries.push([key, value]);
+      } else if (key === "mentorFace") {
+        if (typeof value !== "string" || !FACE_PRESETS.has(value)) {
+          throw new SettingsValidationError(`unknown face preset: ${String(value)}`);
+        }
+        entries.push([key, value]);
+      } else if (key === "faceGlam") {
+        if (typeof value !== "string" || !FACE_GLAMS.has(value)) {
+          throw new SettingsValidationError(`invalid faceGlam: ${String(value)}`);
+        }
+        entries.push([key, value]);
+      } else if (key === "faceMaturity") {
+        if (typeof value !== "string" || !FACE_MATURITIES.has(value)) {
+          throw new SettingsValidationError(`invalid faceMaturity: ${String(value)}`);
         }
         entries.push([key, value]);
       } else if (key === "cloudEnabled") {

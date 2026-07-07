@@ -67,7 +67,20 @@ test("settings: invalid values are rejected per key", () => {
   assert.throws(() => store.patch({ ttsVoice: "zf_zzz" }), SettingsValidationError);
   assert.throws(() => store.patch({ sttModel: "tiny.en" }), SettingsValidationError);
   assert.throws(() => store.patch({ mentorIdentity: "avatar" }), SettingsValidationError);
+  assert.throws(() => store.patch({ mentorFace: "cortana" }), SettingsValidationError);
+  assert.throws(() => store.patch({ faceGlam: "maximal" }), SettingsValidationError);
+  assert.throws(() => store.patch({ faceMaturity: 30 }), SettingsValidationError);
   assert.deepEqual(store.get(), DEFAULT_SETTINGS);
+});
+
+test("settings: face gallery keys persist and round-trip", () => {
+  const store = memStore();
+  const merged = store.patch({ mentorFace: "nova", faceGlam: "glam", faceMaturity: "mature" });
+  assert.equal(merged.mentorFace, "nova");
+  assert.equal(merged.faceGlam, "glam");
+  assert.equal(merged.faceMaturity, "mature");
+  assert.equal(merged.mentorIdentity, DEFAULT_SETTINGS.mentorIdentity); // untouched
+  assert.deepEqual(store.get(), merged);
 });
 
 test("settings: a valid but atypical voice id (bm_fable) is accepted", () => {

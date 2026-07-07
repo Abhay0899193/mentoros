@@ -53,6 +53,12 @@ interface SettingsState {
   setVoice: (id: string) => Promise<void>;
   setSttModel: (id: SttModelId) => Promise<void>;
   setMentorIdentity: (v: AppSettings['mentorIdentity']) => Promise<void>;
+  /** Patch any of the face-gallery keys (preset / glam / maturity / identity) together. */
+  setMentorLook: (
+    patch: Partial<
+      Pick<AppSettings, 'mentorIdentity' | 'mentorFace' | 'faceGlam' | 'faceMaturity'>
+    >,
+  ) => Promise<void>;
 
   downloadModel: (id: SttModelId) => Promise<void>;
 
@@ -227,6 +233,27 @@ export const useSettings = create<SettingsState>((set, get) => ({
         title: 'Could not change mentor identity',
         description: 'The settings service did not respond.',
         action: { label: 'Retry', onClick: () => void get().setMentorIdentity(v) },
+      });
+    }
+  },
+
+  setMentorLook: async (patch) => {
+    const prev = get().settings;
+    if (!prev) return;
+    if ((Object.keys(patch) as Array<keyof typeof patch>).every((k) => prev[k] === patch[k])) {
+      return;
+    }
+    set({ settings: { ...prev, ...patch } });
+    try {
+      const settings = await coreClient.updateSettings(patch);
+      set({ settings });
+    } catch {
+      set({ settings: prev });
+      toast({
+        tone: 'danger',
+        title: 'Could not update the mentor look',
+        description: 'The settings service did not respond.',
+        action: { label: 'Retry', onClick: () => void get().setMentorLook(patch) },
       });
     }
   },
