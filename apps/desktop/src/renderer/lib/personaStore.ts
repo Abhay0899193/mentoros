@@ -75,7 +75,14 @@ export const usePersonas = create<PersonaState>((set, get) => ({
     set({ saving: true, saveError: null });
     try {
       const record = await coreClient.createPersona(input);
-      set((s) => ({ saving: false, personas: [...s.personas, record] }));
+      // The personas.changed broadcast can land before this response resolves —
+      // replace by id if the record is already in the list instead of appending.
+      set((s) => ({
+        saving: false,
+        personas: s.personas.some((p) => p.id === record.id)
+          ? s.personas.map((p) => (p.id === record.id ? record : p))
+          : [...s.personas, record],
+      }));
       toast({ tone: 'success', title: 'Persona created', description: record.name });
       return record;
     } catch (err) {

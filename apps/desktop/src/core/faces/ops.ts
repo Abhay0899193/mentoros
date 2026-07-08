@@ -135,7 +135,11 @@ export function createRealFaceOps(scriptsDir: string, config: RealFaceOpsConfig 
     async kontextEdit(inPng, outPng, prompt, seed, signal) {
       if (config.fakeGeneration) {
         // Tint the base by a per-variant amount so the sprite frames differ.
-        const tint = TINTS[seed % TINTS.length] ?? TINTS[0]!;
+        // Index by the prompt too — the seed is job-constant, and m2/m3 share
+        // the same source frame, so seed-only picks identical tints for them.
+        let promptHash = 0;
+        for (let i = 0; i < prompt.length; i++) promptHash = (promptHash * 31 + prompt.charCodeAt(i)) >>> 0;
+        const tint = TINTS[(seed + promptHash) % TINTS.length] ?? TINTS[0]!;
         const r = await uv(["tint", inPng, outPng, ...tint.map(String)], signal);
         check(r, "fake edit");
         return;

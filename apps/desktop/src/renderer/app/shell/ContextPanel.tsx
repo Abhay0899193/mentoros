@@ -7,7 +7,8 @@ import { useKb } from '../../lib/kbStore';
 import { Chip } from '../../ui';
 import type { MessageCitation } from '../../lib/coreClient';
 import { TYPE_COLOR, TYPE_ICON, typeLabel } from '../screens/memory/memoryMeta';
-import { personaMeta } from '../screens/chat/personas';
+import { resolvePersonaMeta } from '../screens/chat/personas';
+import { usePersonas } from '../../lib/personaStore';
 
 const NO_CITATIONS: MessageCitation[] = [];
 
@@ -32,7 +33,8 @@ export function ContextPanel() {
   const liveContext = useMemories((s) => s.liveContext);
   const select = useMemories((s) => s.select);
   const reduce = useReducedMotion();
-  const meta = personaMeta(persona);
+  const personas = usePersonas((s) => s.personas);
+  const meta = resolvePersonaMeta(persona, personas);
 
   return (
     <AnimatePresence initial={false}>

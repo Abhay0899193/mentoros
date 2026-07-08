@@ -336,18 +336,21 @@ export function CreateFacePresetOverlay({ open, onClose }: { open: boolean; onCl
   }, [portrait.picked]);
 
   const dirty = name.trim().length > 0 || !!portrait.picked || !!full.picked;
-  const requestClose = useCallback(() => {
-    if (dirty && !confirmDiscard) {
-      setConfirmDiscard(true);
-      return;
-    }
+  const closeAndReset = useCallback(() => {
     setConfirmDiscard(false);
     setStep('photos');
     setName('');
     portrait.clear();
     full.clear();
     onClose();
-  }, [dirty, confirmDiscard, onClose, portrait, full]);
+  }, [onClose, portrait, full]);
+  const requestClose = useCallback(() => {
+    if (dirty && !confirmDiscard) {
+      setConfirmDiscard(true);
+      return;
+    }
+    closeAndReset();
+  }, [dirty, confirmDiscard, closeAndReset]);
 
   const jobLive = job && ['queued', 'generating', 'compositing'].includes(job.state);
   const photosReady = name.trim().length >= 1 && name.trim().length <= 60 && portrait.picked && !portrait.error && !full.error;
@@ -376,7 +379,8 @@ export function CreateFacePresetOverlay({ open, onClose }: { open: boolean; onCl
       mouth: round(mouth),
       eyes: round(eyes),
     });
-    if (ok) requestClose();
+    // The job is running server-side now — nothing left to "discard", so skip the dirty gate.
+    if (ok) closeAndReset();
   };
 
   return (

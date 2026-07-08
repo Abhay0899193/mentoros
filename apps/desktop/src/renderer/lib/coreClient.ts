@@ -1087,6 +1087,16 @@ export function createCoreClient(): CoreClient {
   const baseUrl = `http://127.0.0.1:${port}`;
   const wsUrl = `ws://127.0.0.1:${port}/events`;
 
+  // Core returns server-relative art paths; absolutize at the client boundary
+  // (both fetch and event payloads) so every consumer can drop them into <img src>.
+  const absolutizeFacePreset = (p: CustomFacePreset): CustomFacePreset => ({
+    ...p,
+    portrait: Object.fromEntries(
+      Object.entries(p.portrait).map(([k, v]) => [k, `${baseUrl}${v}`]),
+    ) as CustomFacePreset['portrait'],
+    ...(p.full ? { full: `${baseUrl}${p.full}` } : {}),
+  });
+
   const listeners = new Map<keyof CoreEvents, Set<Listener>>();
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1110,7 +1120,12 @@ export function createCoreClient(): CoreClient {
     socket.addEventListener('message', (ev) => {
       try {
         const msg = JSON.parse(String(ev.data)) as { event?: keyof CoreEvents; payload?: unknown };
-        if (msg.event) emit(msg.event, msg.payload);
+        if (msg.event === 'faces.changed') {
+          const { presets } = msg.payload as CoreEvents['faces.changed'];
+          emit('faces.changed', { presets: presets.map(absolutizeFacePreset) });
+        } else if (msg.event) {
+          emit(msg.event, msg.payload);
+        }
       } catch {
         /* ignore malformed frames */
       }
@@ -1296,17 +1311,7 @@ export function createCoreClient(): CoreClient {
 
     faceToolchainStatus: () => get<FaceToolchainStatus>('/faces/toolchain'),
     listCustomFacePresets: () =>
-      get<CustomFacePreset[]>('/faces/custom').then((presets) =>
-        // Core returns server-relative art paths; absolutize once here so every
-        // consumer can drop them straight into <img src>.
-        presets.map((p) => ({
-          ...p,
-          portrait: Object.fromEntries(
-            Object.entries(p.portrait).map(([k, v]) => [k, `${baseUrl}${v}`]),
-          ) as CustomFacePreset['portrait'],
-          ...(p.full ? { full: `${baseUrl}${p.full}` } : {}),
-        })),
-      ),
+      get<CustomFacePreset[]>('/faces/custom').then((presets) => presets.map(absolutizeFacePreset)),
     createFacePreset: (input) => post<{ job: FaceJobStatus }>('/faces/custom', input),
     activeFaceJob: () => get<FaceJobStatus | null>('/faces/jobs/active'),
     cancelFaceJob: (jobId) => post<void>(`/faces/jobs/${jobId}/cancel`),
