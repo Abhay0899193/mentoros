@@ -578,6 +578,8 @@ export function AvatarStudioScreen() {
           open
           clip={clipEditor.clip}
           takenIds={(draft?.animations ?? []).map((c) => c.id)}
+          baseFrame={baseConfig?.baseFrame ?? null}
+          fullBase={baseConfig?.fullBase ?? null}
           onSave={saveClip}
           onClose={() => setClipEditor(null)}
         />

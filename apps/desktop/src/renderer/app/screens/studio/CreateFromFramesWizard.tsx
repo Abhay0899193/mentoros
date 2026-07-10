@@ -9,7 +9,7 @@ import {
   cropToSquareWebp,
   decodeImageFile,
   estimateShift,
-  loadDataUriImage,
+  loadFrameImage,
   revokeDecoded,
   sampleAccent,
   tileId,
@@ -137,7 +137,7 @@ export function CreateFromFramesWizard({
       return;
     }
     let stale = false;
-    void loadDataUriImage(baseUri).then((img) => {
+    void loadFrameImage(baseUri).then((img) => {
       if (stale) return;
       const w = img.naturalWidth;
       const h = img.naturalHeight;
@@ -161,13 +161,13 @@ export function CreateFromFramesWizard({
     setAligning(true);
     setError(null);
     try {
-      const baseImg = await loadDataUriImage(baseUri);
+      const baseImg = await loadFrameImage(baseUri);
       const exclude = eyes ? [mouth, eyes] : [mouth];
       const talk: Record<string, string> = {};
       for (const id of talkIds) {
         const uri = uriOf(id);
         if (!uri) continue;
-        const img = await loadDataUriImage(uri);
+        const img = await loadFrameImage(uri);
         const shift = autoAlign ? estimateShift(baseImg, img, exclude) : { dx: 0, dy: 0 };
         talk[id] = alignFrameToBase(baseImg, img, [mouth], shift);
         await new Promise((r) => setTimeout(r, 0)); // keep the UI breathing
@@ -175,7 +175,7 @@ export function CreateFromFramesWizard({
       const next: AlignedFrames = { talk };
       const blinkUri = uriOf(blinkId);
       if (blinkUri && eyes) {
-        const img = await loadDataUriImage(blinkUri);
+        const img = await loadFrameImage(blinkUri);
         const shift = autoAlign ? estimateShift(baseImg, img, exclude) : { dx: 0, dy: 0 };
         next.blink = alignFrameToBase(baseImg, img, [eyes], shift);
       }
@@ -253,7 +253,7 @@ export function CreateFromFramesWizard({
     setCreating(true);
     setError(null);
     try {
-      const baseImg = await loadDataUriImage(draftConfig.baseFrame);
+      const baseImg = await loadFrameImage(draftConfig.baseFrame);
       const preset = await createManual({
         name: name.trim(),
         accent: sampleAccent(baseImg),

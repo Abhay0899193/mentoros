@@ -53,6 +53,13 @@ GPU toolchain except the last section.
 - [ ] Trigger kinds spot-check: conversationEvent `speakingStarted`; shortcut `alt+shift+w`
       (fires anywhere in the app while the avatar is mounted); timer 10s; every 2 messages.
 - [ ] Enable/disable Switch on a trigger row takes effect after Save.
+- [ ] **Align in clip editor**: open a clip with ≥1 frame → "Align frames to the base…" link
+      under the strip → preset base shows with ONE free-form "Region" box (seeded near the
+      clip's track: mouth/eyes/center). Drag it over what moves, Align N frames → strip
+      thumbnails become base-composited (identical outside the box), Undo restores originals.
+- [ ] Align respects "Applies to": switch to `full` → the box now sits on the full-body still
+      (link hidden if the preset has no full still). Adding/removing frames clears the Undo.
+- [ ] Aligned clip Saves + plays without whole-frame jumping (check on Voice screen too).
 - [ ] Delete a clip → its triggers disappear with it (draft), Save persists.
 - [ ] Discard on the save bar reverts to the last saved doc.
 - [ ] Delete the preset (header) → gone from list + gallery; if it was active, mentor falls

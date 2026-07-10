@@ -188,10 +188,15 @@ export function tileId(): string {
 
 /* ---------------------------- align to base ------------------------------ */
 
-/** Decode a data URI back into an HTMLImageElement (no object URL to revoke). */
-export function loadDataUriImage(uri: string): Promise<HTMLImageElement> {
+/**
+ * Decode a frame source back into an HTMLImageElement (no object URL to
+ * revoke). Accepts data URIs and served art URLs — http(s) sources load with
+ * crossOrigin so they stay canvas-safe (core's CORS covers /faces/art).
+ */
+export function loadFrameImage(uri: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    if (/^https?:/i.test(uri)) img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error('Could not decode a frame.'));
     img.src = uri;

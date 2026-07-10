@@ -1,17 +1,34 @@
-import { useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, ImagePlus, X } from 'lucide-react';
-import { Overlay, Button } from '../../../ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, ArrowRight, ImagePlus, Wand2, X } from 'lucide-react';
+import { Overlay, Button, Switch, RegionBox } from '../../../ui';
 import { cn } from '../../../lib/cn';
-import type { AnimationClip, AnimationRegion } from '../../../lib/coreClient';
-import { cropToSquareWebp, decodeImageFile, revokeDecoded } from '../../../lib/imageTiles';
+import type { AnimationClip, AnimationRegion, FaceRegion } from '../../../lib/coreClient';
+import {
+  alignFrameToBase,
+  cropToSquareWebp,
+  decodeImageFile,
+  estimateShift,
+  loadFrameImage,
+  revokeDecoded,
+} from '../../../lib/imageTiles';
 import { SheetSlicer } from './SheetSlicer';
 
 /**
  * ClipEditor — create/edit one sprite clip of a custom preset. Frames accept
  * uploads (squared client-side) or sliced sheet tiles; existing frames keep
  * their art URLs (relativized on save by the screen). Procedural clips are
- * built-in-only, so the editor is sprite-only by design.
+ * built-in-only, so the editor is sprite-only by design. An optional align
+ * step composites each frame's marked region onto the preset base — the same
+ * anti-drift window as the wizard's Align step, but with a free-form box so
+ * any clip (wave, smirk, brow…) can be de-jittered, not just mouth/eyes.
  */
+
+/** Seed the align box where this track's motion usually lives. */
+function seedRegion(track: string, w: number, h: number): FaceRegion {
+  if (track === 'mouth') return { x: w * 0.38, y: h * 0.55, width: w * 0.24, height: h * 0.12 };
+  if (track === 'eyes') return { x: w * 0.28, y: h * 0.34, width: w * 0.44, height: h * 0.12 };
+  return { x: w * 0.3, y: h * 0.35, width: w * 0.4, height: h * 0.3 };
+}
 
 const CATEGORIES = ['reaction', 'gesture', 'expression', 'idle'] as const;
 const TRACKS = ['mouth', 'eyes', 'main'] as const;
@@ -76,11 +93,15 @@ export interface ClipEditorProps {
   clip: AnimationClip | null;
   /** Ids already used by the preset (uniqueness for new clips). */
   takenIds: string[];
+  /** Preset base portrait frame (data URI or art URL) — enables the align step. */
+  baseFrame?: string | null;
+  /** Preset full-body still — align target for appliesTo:'full' clips. */
+  fullBase?: string | null;
   onSave: (clip: AnimationClip) => void;
   onClose: () => void;
 }
 
-export function ClipEditor({ open, clip, takenIds, onSave, onClose }: ClipEditorProps) {
+export function ClipEditor({ open, clip, takenIds, baseFrame, fullBase, onSave, onClose }: ClipEditorProps) {
   const editing = !!clip;
   const [name, setName] = useState(clip?.name ?? '');
   const [category, setCategory] = useState<string>(clip?.category ?? 'gesture');
@@ -95,6 +116,17 @@ export function ClipEditor({ open, clip, takenIds, onSave, onClose }: ClipEditor
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Align-to-base step (only when the preset base is known).
+  const [showAlign, setShowAlign] = useState(false);
+  const [region, setRegion] = useState<FaceRegion | null>(null);
+  const [autoAlign, setAutoAlign] = useState(true);
+  const [aligning, setAligning] = useState(false);
+  /** Pre-align frames — restored on Undo, dropped on any other frame edit. */
+  const [preAlign, setPreAlign] = useState<string[] | null>(null);
+  const [baseDim, setBaseDim] = useState<{ w: number; h: number } | null>(null);
+
+  const alignBase = appliesTo === 'full' ? fullBase : baseFrame;
+
   const taken = useMemo(() => new Set(takenIds.filter((id) => id !== clip?.id)), [takenIds, clip]);
 
   const addFiles = (files: FileList) => {
@@ -108,7 +140,10 @@ export function ClipEditor({ open, clip, takenIds, onSave, onClose }: ClipEditor
         }),
       ),
     )
-      .then((uris) => setFrames((prev) => [...prev, ...uris].slice(0, 64)))
+      .then((uris) => {
+        setFrames((prev) => [...prev, ...uris].slice(0, 64));
+        setPreAlign(null);
+      })
       .catch((e: Error) => setError(e.message));
   };
 
@@ -120,6 +155,52 @@ export function ClipEditor({ open, clip, takenIds, onSave, onClose }: ClipEditor
       [next[i], next[j]] = [next[j], next[i]];
       return next;
     });
+
+  // Measure the align target and seed the box near this track's motion.
+  useEffect(() => {
+    if (!showAlign || !alignBase) return;
+    let stale = false;
+    void loadFrameImage(alignBase)
+      .then((img) => {
+        if (stale) return;
+        setBaseDim({ w: img.naturalWidth, h: img.naturalHeight });
+        setRegion((prev) => prev ?? seedRegion(track, img.naturalWidth, img.naturalHeight));
+      })
+      .catch(() => {
+        if (!stale) setError('Could not load the preset base frame.');
+      });
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAlign, alignBase]);
+
+  /**
+   * Composite each frame's boxed region onto the base through a feathered
+   * ellipse (same anti-drift window as the wizard), optionally correcting
+   * whole-frame drift first. Replaces the frame strip in place.
+   */
+  const runAlign = async () => {
+    if (!alignBase || !region || frames.length === 0) return;
+    setAligning(true);
+    setError(null);
+    try {
+      const baseImg = await loadFrameImage(alignBase);
+      const out: string[] = [];
+      for (const src of frames) {
+        const img = await loadFrameImage(src);
+        const shift = autoAlign ? estimateShift(baseImg, img, [region]) : { dx: 0, dy: 0 };
+        out.push(alignFrameToBase(baseImg, img, [region], shift));
+        await new Promise((r) => setTimeout(r, 0)); // keep the UI breathing
+      }
+      setPreAlign(frames);
+      setFrames(out);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Alignment failed.');
+    } finally {
+      setAligning(false);
+    }
+  };
 
   const save = () => {
     if (!name.trim()) {
@@ -175,7 +256,18 @@ export function ClipEditor({ open, clip, takenIds, onSave, onClose }: ClipEditor
           </div>
         </Row>
         <Row label="Applies to">
-          <Segments options={['portrait', 'full'] as const} value={appliesTo} onChange={setAppliesTo} label="Applies to" />
+          <Segments
+            options={['portrait', 'full'] as const}
+            value={appliesTo}
+            onChange={(v) => {
+              setAppliesTo(v);
+              // the align target flips between portrait base and full still
+              setBaseDim(null);
+              setRegion(null);
+              setPreAlign(null);
+            }}
+            label="Applies to"
+          />
         </Row>
         <Row label="Driver">
           <div className="flex items-center gap-2">
@@ -231,7 +323,14 @@ export function ClipEditor({ open, clip, takenIds, onSave, onClose }: ClipEditor
                   <button aria-label={`Move frame ${i + 1} earlier`} onClick={() => move(i, -1)} className="p-0.5 text-muted hover:text-ink">
                     <ArrowLeft size={12} />
                   </button>
-                  <button aria-label={`Remove frame ${i + 1}`} onClick={() => setFrames((p) => p.filter((_, k) => k !== i))} className="p-0.5 text-muted hover:text-[var(--danger)]">
+                  <button
+                    aria-label={`Remove frame ${i + 1}`}
+                    onClick={() => {
+                      setFrames((p) => p.filter((_, k) => k !== i));
+                      setPreAlign(null);
+                    }}
+                    className="p-0.5 text-muted hover:text-[var(--danger)]"
+                  >
                     <X size={12} />
                   </button>
                   <button aria-label={`Move frame ${i + 1} later`} onClick={() => move(i, 1)} className="p-0.5 text-muted hover:text-ink">
@@ -266,11 +365,80 @@ export function ClipEditor({ open, clip, takenIds, onSave, onClose }: ClipEditor
             <SheetSlicer
               onSlice={(tiles) => {
                 setFrames((prev) => [...prev, ...tiles].slice(0, 64));
+                setPreAlign(null);
                 setShowSlicer(false);
               }}
             />
           )}
+          {alignBase && frames.length > 0 && (
+            <button onClick={() => setShowAlign((v) => !v)} className="w-fit text-small text-muted underline-offset-2 hover:text-body hover:underline">
+              {showAlign ? 'Hide align' : 'Align frames to the base…'}
+            </button>
+          )}
         </div>
+
+        {/* align-to-base step */}
+        {showAlign && alignBase && frames.length > 0 && (
+          <div className="flex flex-col gap-3 rounded-[10px] bg-surface-2 p-3 hairline">
+            <p className="text-small text-muted">
+              Optional — paints only the boxed part of each frame onto the {appliesTo === 'full' ? 'full-body still' : 'base portrait'} through a
+              soft-edged window, so every frame is pixel-identical outside it and playback stops jumping. Put the box over what actually moves in
+              this clip.
+            </p>
+            {baseDim && region ? (
+              <div className="flex flex-wrap items-start gap-4">
+                <div
+                  className="relative select-none overflow-hidden rounded-lg hairline"
+                  style={{
+                    width: baseDim.w * Math.min(300 / baseDim.w, 300 / baseDim.h, 1),
+                    height: baseDim.h * Math.min(300 / baseDim.w, 300 / baseDim.h, 1),
+                  }}
+                >
+                  <img src={alignBase} alt="Preset base frame" draggable={false} className="h-full w-full" />
+                  <RegionBox
+                    label="Region"
+                    region={region}
+                    scale={Math.min(300 / baseDim.w, 300 / baseDim.h, 1)}
+                    selected
+                    onSelect={() => {}}
+                    onChange={(r) => {
+                      setRegion(r);
+                      setPreAlign(null);
+                    }}
+                    imgW={baseDim.w}
+                    imgH={baseDim.h}
+                  />
+                </div>
+                <div className="flex min-w-[220px] flex-1 flex-col gap-3">
+                  <p className="text-small text-faint">Drag to move, corner to resize — or arrow keys, Shift+arrows to resize.</p>
+                  <label className="flex items-center justify-between gap-3 rounded-[10px] bg-surface-1 p-2.5 hairline">
+                    <span className="text-small text-body">Auto-correct frame drift</span>
+                    <Switch checked={autoAlign} onChange={setAutoAlign} label="Auto-correct frame drift" />
+                  </label>
+                  <Button variant="primary" onClick={() => void runAlign()} loading={aligning} loadingLabel="Aligning…">
+                    <Wand2 size={14} strokeWidth={1.5} /> Align {frames.length} frame{frames.length === 1 ? '' : 's'}
+                  </Button>
+                  {preAlign && (
+                    <div className="flex items-center justify-between rounded-[10px] bg-surface-1 p-2.5 hairline">
+                      <span className="text-small text-body">Aligned — the strip above shows the results</span>
+                      <button
+                        onClick={() => {
+                          setFrames(preAlign);
+                          setPreAlign(null);
+                        }}
+                        className="text-small text-muted hover:text-body"
+                      >
+                        Undo
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-small text-faint">Loading the base frame…</p>
+            )}
+          </div>
+        )}
 
         {error && <p className="text-small text-[var(--danger)]">{error}</p>}
         <footer className="flex justify-end gap-2 border-t border-line pt-3">
