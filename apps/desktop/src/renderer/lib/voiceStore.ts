@@ -4,6 +4,19 @@ import { transition, type OrbState } from '../orb/orbState';
 import { startMicCapture, STT_SAMPLE_RATE, type MicCapture } from './micCapture';
 import { TtsPlayer } from './ttsPlayer';
 import { useChat } from './chatStore';
+import { publishAvatarEvent } from '../orb/animation/avatarEvents';
+
+/** Voice-loop transitions → avatar trigger events (conversationEvent rules). */
+function publishOrbTransition(prev: OrbState, next: OrbState): void {
+  if (prev === 'speaking') publishAvatarEvent({ type: 'conversation', event: 'speakingEnded' });
+  const map: Record<OrbState, 'listening' | 'thinking' | 'speakingStarted' | 'idle'> = {
+    listening: 'listening',
+    thinking: 'thinking',
+    speaking: 'speakingStarted',
+    idle: 'idle',
+  };
+  publishAvatarEvent({ type: 'conversation', event: map[next] });
+}
 
 interface InstallProgress {
   step: string;
@@ -54,7 +67,11 @@ declare global {
 
 export const useVoice = create<VoiceStoreState>((set, get) => {
   const dispatch = (event: Parameters<typeof transition>[1]) =>
-    set((s) => ({ orb: transition(s.orb, event) }));
+    set((s) => {
+      const orb = transition(s.orb, event);
+      if (orb !== s.orb) publishOrbTransition(s.orb, orb);
+      return { orb };
+    });
 
   async function ensureThread(): Promise<string> {
     const chat = useChat.getState();
@@ -66,6 +83,7 @@ export const useVoice = create<VoiceStoreState>((set, get) => {
   }
 
   async function generateReply(text: string): Promise<void> {
+    publishAvatarEvent({ type: 'userMessage', text });
     dispatch({ type: 'GENERATION_STARTED' });
     set({ reply: '' });
     segments = {};
@@ -145,6 +163,7 @@ export const useVoice = create<VoiceStoreState>((set, get) => {
         if (text.trim() === '') {
           set({ error: 'I didn’t catch that — hold and try again.' });
           dispatch({ type: 'CANCEL' });
+          publishAvatarEvent({ type: 'conversation', event: 'silenceTimeout' });
           return;
         }
         // A slow whisper run (cold start, big model) can outlive the deadline
@@ -184,6 +203,7 @@ export const useVoice = create<VoiceStoreState>((set, get) => {
       wireOnce();
       openChannel();
       void get().refreshStatus();
+      publishAvatarEvent({ type: 'conversation', event: 'conversationStarted' });
     },
 
     leave: () => {
@@ -191,6 +211,7 @@ export const useVoice = create<VoiceStoreState>((set, get) => {
       mic = null;
       ttsPlayer.stop();
       set({ orb: 'idle', interim: '' });
+      publishAvatarEvent({ type: 'conversation', event: 'conversationEnded' });
     },
 
     pttDown: async () => {
@@ -232,6 +253,7 @@ export const useVoice = create<VoiceStoreState>((set, get) => {
         if (get().orb === 'thinking' && get().finalTranscript === '') {
           set({ error: 'Transcription timed out — try again.' });
           set({ orb: 'idle' });
+          publishAvatarEvent({ type: 'conversation', event: 'silenceTimeout' });
         }
       }, 20000);
     },

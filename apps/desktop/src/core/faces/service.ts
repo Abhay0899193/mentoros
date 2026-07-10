@@ -2,15 +2,19 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
+  AnimationClip,
+  AvatarConfig,
   CoreEvents,
   CreateFacePresetInput,
+  CreateManualFacePresetInput,
   CustomFacePreset,
   FaceJobStatus,
   FaceToolchainStatus,
+  UpdateAvatarConfigInput,
 } from "../types.js";
 import { computeCrop } from "./crop.js";
 import type { FaceOps } from "./ops.js";
-import { presetDir, workDir } from "./paths.js";
+import { presetDir, SAFE_ART_FILE, workDir } from "./paths.js";
 import { runFaceJob, TOTAL_FRAMES } from "./runner.js";
 import {
   BUILTIN_FACE_IDS,
@@ -19,8 +23,12 @@ import {
   FaceNotFoundError,
   FaceStore,
   jobRowToStatus,
+  serializePreset,
   type JobRow,
+  type PresetRow,
 } from "./store.js";
+import { parseConfig } from "./config.js";
+import { FaceValidationError } from "./validate.js";
 import { FaceAbortError } from "./ops.js";
 import { evaluateToolchain, type ToolchainProbe } from "./toolchain.js";
 import type { ImageDims } from "./validate.js";
@@ -139,6 +147,113 @@ export class FaceService {
     return { mentorFaceReset };
   }
 
+  /* ------------------------- manual create / edit ------------------------- */
+
+  /**
+   * Create a preset from client-encoded webp frames (Avatar Studio). Fully
+   * synchronous — no GPU/job machinery, no toolchain requirement. Decoded frames
+   * are written under the preset dir and the built config is persisted.
+   */
+  createManual(input: CreateManualFacePresetInput): CustomFacePreset {
+    const presetId = this.deps.store.uniqueId(input.name);
+    const dir = presetDir(this.deps.dataDir, presetId);
+    mkdirSync(dir, { recursive: true });
+    const now = new Date().toISOString();
+
+    writeFileSync(join(dir, "portrait-base.webp"), decodeDataUri(input.baseFrame));
+    if (input.fullBase) writeFileSync(join(dir, "full.webp"), decodeDataUri(input.fullBase));
+
+    const animations: AnimationClip[] = input.animations.map((clip) => {
+      if (!clip.frames) return { ...clip };
+      const frames = clip.frames.map((frame, idx) => {
+        const file = `anim-${clip.id}-${idx}.webp`;
+        writeFileSync(join(dir, file), decodeDataUri(frame));
+        return file;
+      });
+      return { ...clip, frames };
+    });
+
+    const config: AvatarConfig = {
+      schemaVersion: 1,
+      presetId,
+      name: input.name,
+      accent: input.accent,
+      baseFrame: "portrait-base.webp",
+      ...(input.fullBase ? { fullBase: "full.webp" } : {}),
+      animations,
+      triggers: input.triggers,
+      ...(input.defaultAnimationId ? { defaultAnimationId: input.defaultAnimationId } : {}),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const row: PresetRow = {
+      id: presetId,
+      name: input.name,
+      accent: input.accent,
+      hasFull: !!input.fullBase,
+      createdAt: now,
+      configJson: JSON.stringify(config),
+    };
+    this.deps.store.insertPreset(row);
+    return serializePreset(row);
+  }
+
+  /**
+   * Frames-only editor save. Base frames + createdAt are preserved; clip frames
+   * that arrive as data URIs are written as new `anim-<clipId>-<n>.webp` files,
+   * frames that arrive as filenames must already exist on disk.
+   */
+  updateConfig(id: string, input: UpdateAvatarConfigInput): CustomFacePreset {
+    if (BUILTIN_FACE_IDS.has(id)) throw new FaceForbiddenError();
+    const row = this.deps.store.get(id);
+    if (!row) throw new FaceNotFoundError();
+    const dir = presetDir(this.deps.dataDir, id);
+    const existing = parseConfig(row);
+
+    const animations: AnimationClip[] = input.animations.map((clip) => {
+      if (!clip.frames) return { ...clip };
+      const frames = clip.frames.map((frame) => {
+        if (isDataUri(frame)) {
+          const file = nextAnimFile(dir, clip.id);
+          writeFileSync(join(dir, file), decodeDataUri(frame));
+          return file;
+        }
+        if (!SAFE_ART_FILE.test(frame) || !existsSync(join(dir, frame))) {
+          throw new FaceValidationError(`unknown frame file: ${frame}`);
+        }
+        return frame;
+      });
+      return { ...clip, frames };
+    });
+
+    const now = new Date().toISOString();
+    const name = input.name ?? row.name;
+    const accent = input.accent ?? row.accent;
+    const config: AvatarConfig = {
+      schemaVersion: 1,
+      presetId: id,
+      name,
+      accent,
+      baseFrame: existing.baseFrame,
+      ...(existing.fullBase ? { fullBase: existing.fullBase } : {}),
+      animations,
+      triggers: input.triggers,
+      ...(input.defaultAnimationId ? { defaultAnimationId: input.defaultAnimationId } : {}),
+      createdAt: existing.createdAt,
+      updatedAt: now,
+    };
+    const updated: PresetRow = {
+      id,
+      name,
+      accent,
+      hasFull: !!existing.fullBase,
+      createdAt: row.createdAt,
+      configJson: JSON.stringify(config),
+    };
+    this.deps.store.insertPreset(updated);
+    return serializePreset(updated);
+  }
+
   /* --------------------------------- run ---------------------------------- */
 
   private async run(
@@ -180,6 +295,7 @@ export class FaceService {
         accent: result.accent,
         hasFull: result.hasFull,
         createdAt: new Date().toISOString(),
+        configJson: null, // AI-generated: legacy config synthesized on read
       });
       status.state = "done";
       status.step = "Ready";
@@ -217,6 +333,22 @@ export class FaceService {
     }
     mkdirSync(dir, { recursive: true });
     writeFileSync(sigPath, sig);
+  }
+}
+
+const WEBP_DATA_URI = "data:image/webp;base64,";
+function isDataUri(value: string): boolean {
+  return value.startsWith(WEBP_DATA_URI);
+}
+/** Decode a (pre-validated) webp data URI to its raw bytes. */
+function decodeDataUri(value: string): Buffer {
+  return Buffer.from(value.slice(value.indexOf(",") + 1), "base64");
+}
+/** First free `anim-<clipId>-<n>.webp` (past any files already on disk). */
+function nextAnimFile(dir: string, clipId: string): string {
+  for (let n = 0; ; n += 1) {
+    const file = `anim-${clipId}-${n}.webp`;
+    if (!existsSync(join(dir, file))) return file;
   }
 }
 

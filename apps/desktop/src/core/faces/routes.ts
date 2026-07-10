@@ -6,6 +6,10 @@ import { FaceService } from "./service.js";
 import { FaceBusyError, FaceForbiddenError, FaceNotFoundError } from "./store.js";
 import { presetDir, SAFE_ART_FILE, SAFE_PRESET_ID } from "./paths.js";
 import { FaceValidationError, validateCreateInput, type ImageProbe } from "./validate.js";
+import { validateConfigUpdate, validateManualInput } from "./config.js";
+
+/** Manual create / editor save carry base64 webp frames — allow a large body. */
+const MANUAL_BODY_LIMIT = 128 * 1024 * 1024;
 
 type Broadcast = <E extends keyof CoreEvents>(event: E, payload: CoreEvents[E]) => void;
 
@@ -54,6 +58,48 @@ export function registerFaceRoutes(app: FastifyInstance, deps: FaceDeps): void {
       throw err;
     }
   });
+
+  app.post<{ Body: unknown }>(
+    "/faces/custom/manual",
+    { bodyLimit: MANUAL_BODY_LIMIT },
+    async (req, reply) => {
+      try {
+        const input = validateManualInput(req.body);
+        const preset = service.createManual(input);
+        broadcast("faces.changed", { presets: service.listCustom() });
+        return preset;
+      } catch (err) {
+        if (err instanceof FaceValidationError) {
+          return reply.code(422).send({ error: err.message });
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.put<{ Params: { id: string }; Body: unknown }>(
+    "/faces/custom/:id/config",
+    { bodyLimit: MANUAL_BODY_LIMIT },
+    async (req, reply) => {
+      try {
+        const input = validateConfigUpdate(req.body);
+        const preset = service.updateConfig(req.params.id, input);
+        broadcast("faces.changed", { presets: service.listCustom() });
+        return preset;
+      } catch (err) {
+        if (err instanceof FaceValidationError) {
+          return reply.code(422).send({ error: err.message });
+        }
+        if (err instanceof FaceForbiddenError) {
+          return reply.code(403).send({ error: err.message });
+        }
+        if (err instanceof FaceNotFoundError) {
+          return reply.code(404).send({ error: err.message });
+        }
+        throw err;
+      }
+    },
+  );
 
   app.get("/faces/jobs/active", async () => service.activeJob());
 

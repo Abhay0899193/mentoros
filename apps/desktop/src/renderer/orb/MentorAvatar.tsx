@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useReducedMotion } from 'motion/react';
 import { coreClient, type AppSettings } from '../lib/coreClient';
 import { OrbCanvas, type OrbCanvasProps } from './OrbCanvas';
 import { MentorFace } from './MentorFace';
 import { FacePortrait } from './faces/FacePortrait';
 import { FACE_PRESET_MAP } from './faces/presets';
-import { RealisticPortrait } from './faces/RealisticPortrait';
 import { REALISTIC_PRESET_MAP } from './faces/realistic';
+import { SpritePortrait } from './animation/SpritePortrait';
+import { realisticBuiltinConfig } from './animation/configs';
 import { useFaces } from '../lib/faceStore';
 import { ORB_HUE } from './orbState';
 
@@ -77,9 +78,16 @@ export function MentorAvatar(props: OrbCanvasProps) {
       ? (REALISTIC_PRESET_MAP[look.mentorFace] ?? customPresets.find((p) => p.id === look.mentorFace))
       : undefined;
 
+  // Custom presets carry the server's config; built-ins synthesize the
+  // equivalent legacy recipe (zero-migration guarantee).
+  const spriteConfig = useMemo(
+    () => (realistic ? (realistic.config ?? realisticBuiltinConfig(realistic)) : null),
+    [realistic],
+  );
+
   if (look.mentorIdentity !== 'face') return <OrbCanvas {...props} />;
 
-  if (realistic) {
+  if (realistic && spriteConfig) {
     const hue = ORB_HUE[props.state];
     return (
       <button
@@ -97,8 +105,8 @@ export function MentorAvatar(props: OrbCanvasProps) {
           }}
         />
         <div className="relative">
-          <RealisticPortrait
-            preset={realistic}
+          <SpritePortrait
+            config={spriteConfig}
             state={props.state}
             levelRef={props.levelRef}
             size={size}

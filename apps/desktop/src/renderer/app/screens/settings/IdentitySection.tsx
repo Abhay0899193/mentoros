@@ -17,7 +17,8 @@ import { Panel } from '../../../ui';
 import { MentorFace } from '../../../orb/MentorFace';
 import { FacePortrait } from '../../../orb/faces/FacePortrait';
 import { FACE_PRESETS, FACE_PRESET_MAP } from '../../../orb/faces/presets';
-import { RealisticPortrait } from '../../../orb/faces/RealisticPortrait';
+import { SpritePortrait } from '../../../orb/animation/SpritePortrait';
+import { realisticBuiltinConfig } from '../../../orb/animation/configs';
 import { REALISTIC_PRESETS, REALISTIC_PRESET_MAP } from '../../../orb/faces/realistic';
 
 const IDENTITY_OPTIONS: { id: AppSettings['mentorIdentity']; label: string; icon: typeof Circle }[] = [
@@ -191,14 +192,15 @@ export function IdentitySection() {
             {/* live preview of the current look */}
             <div className="flex w-[220px] shrink-0 flex-col items-center gap-3">
               {selectedRealistic ? (
-                <RealisticPortrait
+                <SpritePortrait
                   key={`${selectedRealistic.id}-${view}`}
-                  preset={selectedRealistic}
+                  config={selectedRealistic.config ?? realisticBuiltinConfig(selectedRealistic)}
                   state="idle"
                   levelRef={previewLevel}
                   size={200}
                   view={view}
                   frozen={!!reduce}
+                  reactive={false}
                 />
               ) : selected ? (
                 <FacePortrait
@@ -210,6 +212,7 @@ export function IdentitySection() {
                   levelRef={previewLevel}
                   size={200}
                   frozen={!!reduce}
+                  reactive={false}
                 />
               ) : (
                 <AuraThumb size={200} />
@@ -257,6 +260,7 @@ export function IdentitySection() {
                             state="idle"
                             size={80}
                             frozen={!!reduce || hovered !== pid}
+                            reactive={false}
                           />
                         ) : (
                           <AuraThumb size={80} />

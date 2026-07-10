@@ -1,6 +1,8 @@
 import { useEffect, useId, useMemo, useRef } from 'react';
 import type { FaceGlam, FaceMaturity } from '../../lib/coreClient';
 import { ORB_HUE, ORB_ENERGY, type OrbState } from '../orbState';
+import { AnimationController } from '../animation/controller';
+import { stylizedConfig } from '../animation/configs';
 import {
   hexMix,
   resolveStyle,
@@ -19,6 +21,12 @@ import {
  * no React state per frame): blinks, gaze wander/saccades, brow language,
  * head sway, breathing, and a TTS-envelope-driven articulated mouth.
  * `frozen` renders a calm static portrait and never starts the loop.
+ *
+ * Generic-animation participation: an AnimationController (procedural clips
+ * from stylizedConfig — nod/beam/brow-raise/…) STEERS the expression channels.
+ * An active clip's pose targets override the per-state EXPRESSIONS targets;
+ * the portrait's own spring smoothing, gaze, blink, and breath choreography
+ * stay intact — clips direct the face, they never replace the living math.
  */
 
 export interface FacePortraitProps {
@@ -30,6 +38,10 @@ export interface FacePortraitProps {
   levelRef?: React.MutableRefObject<number>;
   size: number;
   frozen?: boolean;
+  /** Previews pass false so gallery cards don't react to global triggers. */
+  reactive?: boolean;
+  /** Exposes the clip controller (Studio preview drives it manually). */
+  controllerRef?: React.MutableRefObject<AnimationController | null>;
 }
 
 /* --------------------------- geometry builders --------------------------- */
@@ -172,6 +184,8 @@ export function FacePortrait({
   levelRef = FALLBACK_LEVEL,
   size,
   frozen,
+  reactive = true,
+  controllerRef,
 }: FacePortraitProps) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
   const id = (name: string) => `fp-${uid}-${name}`;
@@ -211,6 +225,23 @@ export function FacePortrait({
     stateRef.current = state;
   }, [state]);
 
+  // Generic-animation participation: procedural gesture clips steer the
+  // expression channels through the shared controller/trigger machinery.
+  const controller = useMemo(
+    () =>
+      new AnimationController(stylizedConfig(preset), {
+        getOrbState: () => stateRef.current,
+        levelRef,
+        reactive,
+      }),
+    [preset, levelRef, reactive],
+  );
+  useEffect(() => {
+    if (controllerRef) controllerRef.current = controller;
+    controller.attach();
+    return () => controller.detach();
+  }, [controller, controllerRef]);
+
   useEffect(() => {
     if (frozen) return;
 
@@ -238,7 +269,11 @@ export function FacePortrait({
       const dt = Math.min((now - last) / 1000, 0.1);
       last = now;
       const s = stateRef.current;
-      const t = EXPRESSIONS[s];
+      controller.tick(now);
+      const pose = controller.poseTarget();
+      // An active clip's pose targets override the state expression targets;
+      // the approach() smoothing below keeps the motion spring-like either way.
+      const t = pose ? { ...EXPRESSIONS[s], ...pose } : EXPRESSIONS[s];
 
       /* gaze */
       if (s === 'thinking') {
@@ -279,6 +314,9 @@ export function FacePortrait({
                 : rand(2600, 6000));
         }
       }
+      // Clip-driven lid position (e.g. the slow-blink gesture) wins over the
+      // autonomous blink when it closes the eyes further.
+      if (pose?.blink != null) blinkScale = Math.min(blinkScale, Math.max(0.05, 1 - pose.blink));
 
       /* expression */
       aperture = approach(aperture, t.aperture, dt, 0.16);
@@ -358,7 +396,7 @@ export function FacePortrait({
 
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [frozen, levelRef, g]);
+  }, [frozen, levelRef, g, controller]);
 
   /* static render (also the frozen portrait) */
   const face = facePath(g);

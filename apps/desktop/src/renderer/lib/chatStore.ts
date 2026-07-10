@@ -7,6 +7,7 @@ import {
   type Persona,
   type ThreadSummary,
 } from './coreClient';
+import { publishAvatarEvent } from '../orb/animation/avatarEvents';
 
 interface PullProgress {
   active: boolean;
@@ -158,6 +159,7 @@ export const useChat = create<ChatState>((set, get) => ({
   send: async (content) => {
     const { activeThreadId, persona } = get();
     set({ generationError: null });
+    publishAvatarEvent({ type: 'userMessage', text: content });
 
     let threadId = activeThreadId;
     if (!threadId) {

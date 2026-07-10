@@ -1,4 +1,4 @@
-import type { FacePresetId } from '../../lib/coreClient';
+import type { AvatarConfig, FacePresetId } from '../../lib/coreClient';
 
 import lenaBase from './art/lena/portrait-base.webp';
 import lenaM1 from './art/lena/portrait-m1.webp';
@@ -61,6 +61,11 @@ export interface RealisticPreset {
   portrait: RealisticSprites;
   /** Full-body still (2:3), used when faceView is 'full'. */
   full: string;
+  /**
+   * Animation document. Custom presets carry the server's config verbatim;
+   * built-ins get theirs synthesized on demand (orb/animation/configs.ts).
+   */
+  config?: AvatarConfig;
 }
 
 export const REALISTIC_PRESETS: RealisticPreset[] = [

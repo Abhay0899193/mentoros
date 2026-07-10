@@ -633,6 +633,11 @@ export interface CustomFacePreset {
   name: string;
   /** Accent hex sampled from the portrait; tints the ambient aura. */
   accent: string;
+  /**
+   * Legacy sprite block (kept for gallery thumbnails / old consumers). For
+   * presets without AI-generated mouth/blink frames these fields fall back to
+   * `base` — playback always goes through `config`, never this block.
+   */
   portrait: {
     base: string;
     mouthSmall: string;
@@ -642,7 +647,178 @@ export interface CustomFacePreset {
   };
   /** Present only when a full-body photo was provided. */
   full?: string;
+  /**
+   * The generic animation config (always present — synthesized from the legacy
+   * frame convention when the preset predates configs). Frame paths arrive
+   * server-relative and are absolutized by the client like `portrait`.
+   */
+  config: AvatarConfig;
   createdAt: string; // ISO
+}
+
+/* ----------------- Generic avatar animation system (v1) ------------------ */
+
+/**
+ * Expression channels of the stylized (procedural SVG) family — exactly the
+ * axes FacePortrait animates. Procedural clips keyframe TARGETS in this space;
+ * the portrait's own spring smoothing/gaze/breath choreography stays intact
+ * (a clip steers the face, it never replaces the living-face math).
+ * `blink` is 0 open → 1 closed.
+ */
+export interface PoseChannels {
+  aperture: number;
+  browLift: number;
+  furrow: number;
+  smile: number;
+  tilt: number;
+  dy: number;
+  blink: number;
+}
+
+/** One procedural keyframe: normalized clip time (0..1) → channel targets. */
+export interface PoseKeyframe {
+  at: number;
+  pose: Partial<PoseChannels>;
+}
+
+export type AnimationDriver = 'time' | 'envelope';
+export type AnimationLoopMode = 'once' | 'loop' | 'pingpong' | 'holdLast';
+export type AnimationRegion = 'portrait' | 'full';
+export type AnimationRenderKind = 'sprite' | 'procedural';
+export type AnimationCategory = 'reaction' | 'gesture' | 'expression' | 'idle' | (string & {});
+
+/**
+ * A named animation. `renderKind` decides how a playhead position is painted
+ * (composite a webp frame vs. steer SVG pose channels); everything else —
+ * queueing, priority, triggers, drivers — is shared machinery.
+ *
+ * `track` is the concurrency lane: clips on different tracks play at the same
+ * time (that is how a blink lands mid-speech), while within one track higher
+ * `priority` preempts and equal/lower waits. Convention: 'eyes', 'mouth' for
+ * region overlays; 'main' for full-frame gestures (an active 'main' clip
+ * temporarily hides the overlay tracks of its region so pixel-aligned overlay
+ * frames are never composited onto a non-base frame).
+ *
+ * Drivers: 'time' advances by fps/durationMs; 'envelope' maps the live TTS
+ * RMS level to the playhead and is ALWAYS ARMED — it plays whenever the
+ * mentor is speaking and its track is free, no trigger needed.
+ */
+export interface AnimationClip {
+  id: string; // slug, unique within the preset
+  name: string;
+  description?: string;
+  category: AnimationCategory;
+  appliesTo: AnimationRegion;
+  renderKind: AnimationRenderKind;
+  track: string;
+  /** sprite: ordered full-frame art paths (server-relative → absolutized). */
+  frames?: string[];
+  /** procedural: pose-channel keyframes (see PoseChannels). */
+  proceduralPose?: PoseKeyframe[];
+  driver: AnimationDriver;
+  /** Frames per second for driver 'time' (default 8). */
+  fps?: number;
+  /** Total clip duration; overrides fps when set. */
+  durationMs?: number;
+  loopMode: AnimationLoopMode;
+  priority: number;
+  tags?: string[];
+  /** Art path of a thumbnail frame for library UI (defaults to first frame). */
+  thumbnail?: string;
+}
+
+/** Conversation lifecycle moments the trigger engine can react to. */
+export type ConversationEvent =
+  | 'conversationStarted'
+  | 'conversationEnded'
+  | 'listening'
+  | 'thinking'
+  | 'speakingStarted'
+  | 'speakingEnded'
+  | 'idle'
+  | 'silenceTimeout';
+
+export type TextMatchMode = 'contains' | 'regex' | 'startsWith' | 'endsWith' | 'keywords';
+
+interface TriggerBase {
+  id: string;
+  animationId: string;
+  enabled: boolean;
+}
+
+/**
+ * When to play a clip. Rules are pure data evaluated in the renderer (it owns
+ * every event source); adding a new `kind` is one evaluator-registry entry.
+ */
+export type TriggerRule =
+  | (TriggerBase & { kind: 'manual' })
+  | (TriggerBase & { kind: 'shortcut'; keys: string })
+  | (TriggerBase & { kind: 'api' })
+  | (TriggerBase & {
+      kind: 'textMatch';
+      mode: TextMatchMode;
+      patterns: string[];
+      target: 'assistant' | 'user';
+      caseSensitive?: boolean;
+    })
+  | (TriggerBase & { kind: 'conversationEvent'; event: ConversationEvent })
+  | (TriggerBase & { kind: 'everyNMessages'; n: number })
+  | (TriggerBase & { kind: 'timer'; intervalMs: number })
+  | (TriggerBase & { kind: 'randomInterval'; minMs: number; maxMs: number });
+
+/**
+ * The versioned avatar animation document. Stored per custom preset
+ * (face_presets.config_json); synthesized on read for presets that predate it
+ * (legacy AI-generated five-frame sets) and for the bundled built-ins — zero
+ * migration, pixel-identical playback.
+ */
+export interface AvatarConfig {
+  schemaVersion: 1;
+  presetId: string;
+  name: string;
+  accent: string;
+  /** Portrait base frame (art path). Always visible under portrait overlays. */
+  baseFrame: string;
+  /** Full-body base frame; present when the preset has a full-body region. */
+  fullBase?: string;
+  animations: AnimationClip[];
+  triggers: TriggerRule[];
+  /** Optional idle clip; absent = rest on the base frame. */
+  defaultAnimationId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Create a preset from user-supplied frames (Avatar Studio → Create from
+ * frames). No generation job — the client slices/encodes webp frames
+ * (canvas), the server just validates + persists, so this path never needs
+ * the mflux toolchain. Frame entries are `data:image/webp;base64,...` URIs.
+ */
+export interface CreateManualFacePresetInput {
+  name: string;
+  /** Accent hex sampled client-side from the base frame. */
+  accent: string;
+  /** webp data URI. */
+  baseFrame: string;
+  /** webp data URI (optional full-body base). */
+  fullBase?: string;
+  animations: AnimationClip[]; // clip.frames = webp data URIs
+  triggers: TriggerRule[];
+  defaultAnimationId?: string;
+}
+
+/**
+ * Replace a custom preset's animation document (Avatar Studio editor).
+ * Clip frame entries may be existing art file names (kept) or webp data URIs
+ * (persisted as new frames). Built-ins are 403 — their art is bundled.
+ */
+export interface UpdateAvatarConfigInput {
+  name?: string;
+  accent?: string;
+  animations: AnimationClip[];
+  triggers: TriggerRule[];
+  defaultAnimationId?: string;
 }
 
 /**
@@ -1019,6 +1195,13 @@ export interface CoreClient {
   cancelFaceJob(jobId: string): Promise<void>;
   /** Custom only — 403 built-ins, 404 unknown. Active mentorFace resets to 'aura'. */
   deleteFacePreset(id: FacePresetId): Promise<void>;
+  /**
+   * Create a preset from user-supplied frames (no generation job — returns the
+   * finished preset synchronously). 422 = designed validation body.
+   */
+  createManualFacePreset(input: CreateManualFacePresetInput): Promise<CustomFacePreset>;
+  /** Replace a custom preset's animations/triggers. 403 built-ins, 404 unknown. */
+  updateAvatarConfig(id: FacePresetId, input: UpdateAvatarConfigInput): Promise<CustomFacePreset>;
 
   /* settings + voice options */
   getSettings(): Promise<AppSettings>;
@@ -1089,12 +1272,23 @@ export function createCoreClient(): CoreClient {
 
   // Core returns server-relative art paths; absolutize at the client boundary
   // (both fetch and event payloads) so every consumer can drop them into <img src>.
+  const abs = (v: string): string => (v.startsWith('/') ? `${baseUrl}${v}` : v);
   const absolutizeFacePreset = (p: CustomFacePreset): CustomFacePreset => ({
     ...p,
     portrait: Object.fromEntries(
-      Object.entries(p.portrait).map(([k, v]) => [k, `${baseUrl}${v}`]),
+      Object.entries(p.portrait).map(([k, v]) => [k, abs(v as string)]),
     ) as CustomFacePreset['portrait'],
-    ...(p.full ? { full: `${baseUrl}${p.full}` } : {}),
+    ...(p.full ? { full: abs(p.full) } : {}),
+    config: {
+      ...p.config,
+      baseFrame: abs(p.config.baseFrame),
+      ...(p.config.fullBase ? { fullBase: abs(p.config.fullBase) } : {}),
+      animations: p.config.animations.map((c) => ({
+        ...c,
+        ...(c.frames ? { frames: c.frames.map(abs) } : {}),
+        ...(c.thumbnail ? { thumbnail: abs(c.thumbnail) } : {}),
+      })),
+    },
   });
 
   const listeners = new Map<keyof CoreEvents, Set<Listener>>();
@@ -1319,6 +1513,16 @@ export function createCoreClient(): CoreClient {
       fetch(`${baseUrl}/faces/custom/${id}`, { method: 'DELETE' }).then((r) => {
         if (!r.ok) throw new Error(`core request failed: ${r.status}`);
       }),
+    createManualFacePreset: (input) =>
+      post<CustomFacePreset>('/faces/custom/manual', input).then(absolutizeFacePreset),
+    updateAvatarConfig: (id, input) =>
+      fetch(`${baseUrl}/faces/custom/${id}/config`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+        .then((r) => json<CustomFacePreset>(r))
+        .then(absolutizeFacePreset),
 
     getSettings: () => get<AppSettings>('/settings'),
     updateSettings: (patch) => post<AppSettings>('/settings', patch),

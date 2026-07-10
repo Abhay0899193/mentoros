@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
-import type { CustomFacePreset, FaceJobStatus } from "../types.js";
+import type { AnimationClip, AvatarConfig, CustomFacePreset, FaceJobStatus } from "../types.js";
 import { FRAME_FILES } from "./paths.js";
+import { parseConfig } from "./config.js";
 
 /**
  * Persistence for custom face presets and their generation jobs. Presets are
@@ -61,6 +62,8 @@ export interface PresetRow {
   accent: string;
   hasFull: boolean;
   createdAt: string;
+  /** Serialized {@link AvatarConfig}; NULL for AI-generated (legacy) presets. */
+  configJson: string | null;
 }
 
 export type JobState = FaceJobStatus["state"];
@@ -102,7 +105,7 @@ export class SqliteFaceRepo implements FaceRepo {
   listPresets(): PresetRow[] {
     return this.db
       .prepare(
-        `SELECT id, name, accent, has_full AS hasFull, created_at AS createdAt
+        `SELECT id, name, accent, has_full AS hasFull, created_at AS createdAt, config_json AS configJson
          FROM face_presets ORDER BY created_at ASC, rowid ASC`,
       )
       .all()
@@ -112,7 +115,7 @@ export class SqliteFaceRepo implements FaceRepo {
   getPreset(id: string): PresetRow | null {
     const row = this.db
       .prepare(
-        `SELECT id, name, accent, has_full AS hasFull, created_at AS createdAt
+        `SELECT id, name, accent, has_full AS hasFull, created_at AS createdAt, config_json AS configJson
          FROM face_presets WHERE id = ?`,
       )
       .get(id) as RawPresetRow | undefined;
@@ -122,13 +125,14 @@ export class SqliteFaceRepo implements FaceRepo {
   insertPreset(row: PresetRow): void {
     this.db
       .prepare(
-        `INSERT INTO face_presets (id, name, accent, has_full, created_at)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO face_presets (id, name, accent, has_full, created_at, config_json)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name, accent = excluded.accent,
-           has_full = excluded.has_full, created_at = excluded.created_at`,
+           has_full = excluded.has_full, created_at = excluded.created_at,
+           config_json = excluded.config_json`,
       )
-      .run(row.id, row.name, row.accent, row.hasFull ? 1 : 0, row.createdAt);
+      .run(row.id, row.name, row.accent, row.hasFull ? 1 : 0, row.createdAt, row.configJson);
   }
 
   deletePreset(id: string): boolean {
@@ -214,9 +218,17 @@ interface RawPresetRow {
   accent: string;
   hasFull: number;
   createdAt: string;
+  configJson: string | null;
 }
 function toPresetRow(r: RawPresetRow): PresetRow {
-  return { id: r.id, name: r.name, accent: r.accent, hasFull: !!r.hasFull, createdAt: r.createdAt };
+  return {
+    id: r.id,
+    name: r.name,
+    accent: r.accent,
+    hasFull: !!r.hasFull,
+    createdAt: r.createdAt,
+    configJson: r.configJson ?? null,
+  };
 }
 
 interface RawJobRow {
@@ -260,7 +272,8 @@ export function migrateFaces(db: Database.Database): void {
       name TEXT NOT NULL,
       accent TEXT NOT NULL,
       has_full INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      config_json TEXT
     );
     CREATE TABLE IF NOT EXISTS face_jobs (
       id TEXT PRIMARY KEY,
@@ -274,6 +287,11 @@ export function migrateFaces(db: Database.Database): void {
       started_at TEXT NOT NULL
     );
   `);
+  // In-place upgrade for DBs created before the generic-config column.
+  const cols = db.prepare(`PRAGMA table_info(face_presets)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "config_json")) {
+    db.exec(`ALTER TABLE face_presets ADD COLUMN config_json TEXT`);
+  }
 }
 
 /* --------------------------------- slug ----------------------------------- */
@@ -291,21 +309,57 @@ export function slugifyFace(text: string): string {
 /** Server-relative art URLs (the client absolutizes them). */
 export function serializePreset(row: PresetRow): CustomFacePreset {
   const art = (file: string): string => `/faces/art/${row.id}/${file}`;
+  const config = parseConfig(row); // bare filenames
   const preset: CustomFacePreset = {
     id: row.id,
     name: row.name,
     accent: row.accent,
-    portrait: {
+    portrait: portraitBlock(row, config, art),
+    config: mapConfigArt(config, art),
+    createdAt: row.createdAt,
+  };
+  const fullFile = row.configJson ? config.fullBase : row.hasFull ? FRAME_FILES.full : undefined;
+  if (fullFile) preset.full = art(fullFile);
+  return preset;
+}
+
+/**
+ * Legacy sprite block (thumbnails/back-compat). NULL-config rows keep today's
+ * five-frame mapping; config-bearing rows point every window at the base frame
+ * (the block exists only for pickers that predate the generic config).
+ */
+function portraitBlock(
+  row: PresetRow,
+  config: AvatarConfig,
+  art: (file: string) => string,
+): CustomFacePreset["portrait"] {
+  if (!row.configJson) {
+    return {
       base: art(FRAME_FILES.base),
       mouthSmall: art(FRAME_FILES.m1),
       mouthOpen: art(FRAME_FILES.m2),
       mouthWide: art(FRAME_FILES.m3),
       blink: art(FRAME_FILES.blink),
-    },
-    createdAt: row.createdAt,
+    };
+  }
+  const base = art(config.baseFrame);
+  return { base, mouthSmall: base, mouthOpen: base, mouthWide: base, blink: base };
+}
+
+/** Map every art reference (bare filename → `/faces/art/<id>/<file>`). */
+function mapConfigArt(config: AvatarConfig, art: (file: string) => string): AvatarConfig {
+  const mapped: AvatarConfig = {
+    ...config,
+    baseFrame: art(config.baseFrame),
+    animations: config.animations.map((clip) => {
+      const c: AnimationClip = { ...clip };
+      if (clip.frames) c.frames = clip.frames.map(art);
+      if (clip.thumbnail) c.thumbnail = art(clip.thumbnail);
+      return c;
+    }),
   };
-  if (row.hasFull) preset.full = art(FRAME_FILES.full);
-  return preset;
+  if (config.fullBase) mapped.fullBase = art(config.fullBase);
+  return mapped;
 }
 
 export function jobRowToStatus(row: JobRow): FaceJobStatus {

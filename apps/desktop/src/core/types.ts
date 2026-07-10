@@ -567,6 +567,7 @@ export interface CustomFacePreset {
   name: string;
   /** Accent hex sampled from the portrait; tints the ambient aura. */
   accent: string;
+  /** Legacy sprite block (thumbnails/back-compat); missing frames fall back to base. */
   portrait: {
     base: string;
     mouthSmall: string;
@@ -576,7 +577,122 @@ export interface CustomFacePreset {
   };
   /** Present only when a full-body photo was provided. */
   full?: string;
+  /** Generic animation config (synthesized for legacy rows — see faces/config.ts). */
+  config: AvatarConfig;
   createdAt: string; // ISO
+}
+
+/* ----------------- Generic avatar animation system (v1) ------------------ */
+/* Mirrors renderer/lib/coreClient.ts — that file owns the contract. */
+
+export interface PoseChannels {
+  aperture: number;
+  browLift: number;
+  furrow: number;
+  smile: number;
+  tilt: number;
+  dy: number;
+  /** 0 open → 1 closed. */
+  blink: number;
+}
+
+export interface PoseKeyframe {
+  at: number;
+  pose: Partial<PoseChannels>;
+}
+
+export type AnimationDriver = "time" | "envelope";
+export type AnimationLoopMode = "once" | "loop" | "pingpong" | "holdLast";
+export type AnimationRegion = "portrait" | "full";
+export type AnimationRenderKind = "sprite" | "procedural";
+export type AnimationCategory = "reaction" | "gesture" | "expression" | "idle" | (string & {});
+
+export interface AnimationClip {
+  id: string;
+  name: string;
+  description?: string;
+  category: AnimationCategory;
+  appliesTo: AnimationRegion;
+  renderKind: AnimationRenderKind;
+  /** Concurrency lane ('eyes' | 'mouth' | 'main' | custom); queue/priority are per track. */
+  track: string;
+  frames?: string[];
+  proceduralPose?: PoseKeyframe[];
+  driver: AnimationDriver;
+  fps?: number;
+  durationMs?: number;
+  loopMode: AnimationLoopMode;
+  priority: number;
+  tags?: string[];
+  thumbnail?: string;
+}
+
+export type ConversationEvent =
+  | "conversationStarted"
+  | "conversationEnded"
+  | "listening"
+  | "thinking"
+  | "speakingStarted"
+  | "speakingEnded"
+  | "idle"
+  | "silenceTimeout";
+
+export type TextMatchMode = "contains" | "regex" | "startsWith" | "endsWith" | "keywords";
+
+interface TriggerBase {
+  id: string;
+  animationId: string;
+  enabled: boolean;
+}
+
+export type TriggerRule =
+  | (TriggerBase & { kind: "manual" })
+  | (TriggerBase & { kind: "shortcut"; keys: string })
+  | (TriggerBase & { kind: "api" })
+  | (TriggerBase & {
+      kind: "textMatch";
+      mode: TextMatchMode;
+      patterns: string[];
+      target: "assistant" | "user";
+      caseSensitive?: boolean;
+    })
+  | (TriggerBase & { kind: "conversationEvent"; event: ConversationEvent })
+  | (TriggerBase & { kind: "everyNMessages"; n: number })
+  | (TriggerBase & { kind: "timer"; intervalMs: number })
+  | (TriggerBase & { kind: "randomInterval"; minMs: number; maxMs: number });
+
+export interface AvatarConfig {
+  schemaVersion: 1;
+  presetId: string;
+  name: string;
+  accent: string;
+  baseFrame: string;
+  fullBase?: string;
+  animations: AnimationClip[];
+  triggers: TriggerRule[];
+  defaultAnimationId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Manual creation (Avatar Studio). Frames are webp data URIs, client-encoded. */
+export interface CreateManualFacePresetInput {
+  name: string;
+  accent: string;
+  baseFrame: string;
+  fullBase?: string;
+  animations: AnimationClip[];
+  triggers: TriggerRule[];
+  defaultAnimationId?: string;
+}
+
+/** Editor save. Frame entries = existing art file names or webp data URIs. */
+export interface UpdateAvatarConfigInput {
+  name?: string;
+  accent?: string;
+  animations: AnimationClip[];
+  triggers: TriggerRule[];
+  defaultAnimationId?: string;
 }
 
 /** Whether the local mflux/FLUX-Kontext image-gen toolchain is usable. */

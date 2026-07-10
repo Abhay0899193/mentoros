@@ -32,6 +32,7 @@ function toRealistic(p: CustomFacePreset): RealisticPreset {
       blink: p.portrait.blink,
     },
     full: p.full ?? p.portrait.base,
+    config: p.config,
   };
 }
 

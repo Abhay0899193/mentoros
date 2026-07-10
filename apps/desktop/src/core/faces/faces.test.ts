@@ -8,12 +8,15 @@ import { computeCrop, ellipseFor } from "./crop.js";
 import { evaluateToolchain, type ToolchainProbe } from "./toolchain.js";
 import { FaceValidationError, validateCreateInput, type ImageProbe } from "./validate.js";
 import {
+  FaceForbiddenError,
   FaceStore,
+  serializePreset,
   slugifyFace,
   type FaceRepo,
   type JobRow,
   type PresetRow,
 } from "./store.js";
+import { synthesizeLegacyConfig, validateManualInput } from "./config.js";
 import { FaceAbortError, type FaceOps } from "./ops.js";
 import { runFaceJob } from "./runner.js";
 import { FaceService, type ActiveFaceSettings } from "./service.js";
@@ -231,7 +234,7 @@ test("slugifyFace + uniqueId dedupe against persisted presets", () => {
   assert.equal(slugifyFace("   "), "mentor");
   const store = new FaceStore(memRepo());
   assert.equal(store.uniqueId("Maya"), "face-maya");
-  store.insertPreset({ id: "face-maya", name: "Maya", accent: "#fff", hasFull: false, createdAt: "t" });
+  store.insertPreset({ id: "face-maya", name: "Maya", accent: "#fff", hasFull: false, createdAt: "t", configJson: null });
   assert.equal(store.uniqueId("Maya"), "face-maya-2");
   // built-in collision is avoided too.
   assert.equal(store.uniqueId("Aura").startsWith("face-aura"), true);
@@ -511,7 +514,7 @@ test("DELETE /faces/custom 403 for built-ins, 404 for unknown", async () => {
 
 test("DELETE /faces/custom resets active mentorFace and fires both events", async () => {
   const repo = memRepo();
-  repo.insertPreset({ id: "face-maya", name: "Maya", accent: "#fff", hasFull: false, createdAt: "t" });
+  repo.insertPreset({ id: "face-maya", name: "Maya", accent: "#fff", hasFull: false, createdAt: "t", configJson: null });
   const settings = fakeSettings("face-maya");
   const { app, events, dir } = await routeApp({ repo, settings });
   const res = await app.inject({ method: "DELETE", url: "/faces/custom/face-maya" });
@@ -538,6 +541,120 @@ test("GET /faces/art serves webp and guards traversal", async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/* --------------------- generic avatar config (v1) ------------------------- */
+
+const LEGACY_ROW: PresetRow = {
+  id: "face-maya",
+  name: "Maya",
+  accent: "#3366aa",
+  hasFull: true,
+  createdAt: "t0",
+  configJson: null,
+};
+
+test("synthesizeLegacyConfig builds the fixed blink/talk clips + randomInterval trigger", () => {
+  const cfg = synthesizeLegacyConfig(LEGACY_ROW);
+  assert.equal(cfg.schemaVersion, 1);
+  assert.equal(cfg.baseFrame, "portrait-base.webp");
+  assert.equal(cfg.fullBase, "full.webp");
+  assert.equal(cfg.createdAt, "t0");
+  assert.equal(cfg.updatedAt, "t0");
+
+  const blink = cfg.animations.find((c) => c.id === "blink")!;
+  assert.equal(blink.track, "eyes");
+  assert.equal(blink.driver, "time");
+  assert.equal(blink.durationMs, 130);
+  assert.equal(blink.loopMode, "once");
+  assert.deepEqual(blink.frames, ["portrait-blink.webp"]);
+
+  const talk = cfg.animations.find((c) => c.id === "talk")!;
+  assert.equal(talk.track, "mouth");
+  assert.equal(talk.driver, "envelope");
+  assert.equal(talk.loopMode, "loop");
+  assert.deepEqual(talk.frames, ["portrait-m1.webp", "portrait-m2.webp", "portrait-m3.webp"]);
+
+  assert.equal(cfg.triggers.length, 1);
+  const trig = cfg.triggers[0]!;
+  assert.equal(trig.kind, "randomInterval");
+  assert.equal(trig.id, "blink-auto");
+  assert.equal(trig.animationId, "blink");
+  assert.equal(trig.enabled, true);
+  if (trig.kind === "randomInterval") {
+    assert.equal(trig.minMs, 2400);
+    assert.equal(trig.maxMs, 5200);
+  }
+});
+
+test("serializePreset maps config art references to /faces/art/<id>/…", () => {
+  const preset = serializePreset(LEGACY_ROW);
+  assert.equal(preset.config.baseFrame, "/faces/art/face-maya/portrait-base.webp");
+  assert.equal(preset.config.fullBase, "/faces/art/face-maya/full.webp");
+  const talk = preset.config.animations.find((c) => c.id === "talk")!;
+  assert.deepEqual(talk.frames, [
+    "/faces/art/face-maya/portrait-m1.webp",
+    "/faces/art/face-maya/portrait-m2.webp",
+    "/faces/art/face-maya/portrait-m3.webp",
+  ]);
+  assert.equal(preset.portrait.base, "/faces/art/face-maya/portrait-base.webp");
+});
+
+/** Minimal webp data URI: only the RIFF/WEBP magic is checked. */
+function tinyWebp(magic = true): string {
+  const buf = Buffer.alloc(16);
+  buf.write(magic ? "RIFF" : "NOPE", 0, "ascii");
+  buf.write(magic ? "WEBP" : "XXXX", 8, "ascii");
+  return `data:image/webp;base64,${buf.toString("base64")}`;
+}
+
+test("validateManualInput accepts a minimal valid input and rejects non-webp frames", () => {
+  const clip = {
+    id: "wave",
+    name: "Wave",
+    category: "gesture",
+    appliesTo: "portrait",
+    renderKind: "sprite",
+    track: "main",
+    driver: "time",
+    loopMode: "once",
+    priority: 5,
+    frames: [tinyWebp()],
+  };
+  const good = { name: "Maya", accent: "#3366aa", baseFrame: tinyWebp(), animations: [clip], triggers: [] };
+  const ok = validateManualInput(good);
+  assert.equal(ok.name, "Maya");
+  assert.equal(ok.animations.length, 1);
+
+  // Wrong mime prefix on the base frame.
+  assert.throws(
+    () => validateManualInput({ ...good, baseFrame: "data:image/png;base64,AAAA" }),
+    FaceValidationError,
+  );
+  // Right prefix but bad RIFF/WEBP magic on a clip frame.
+  assert.throws(
+    () => validateManualInput({ ...good, animations: [{ ...clip, frames: [tinyWebp(false)] }] }),
+    FaceValidationError,
+  );
+});
+
+test("updateConfig on a built-in id throws FaceForbiddenError", () => {
+  const dir = tmpDir();
+  try {
+    const service = new FaceService({
+      dataDir: dir,
+      store: new FaceStore(memRepo()),
+      ops: recordingOps([]),
+      broadcast: () => {},
+      toolchainProbe: READY_PROBE,
+    });
+    assert.throws(
+      () => service.updateConfig("aura", { animations: [], triggers: [] }),
+      FaceForbiddenError,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 /* --------------------- settings accepts custom face ids ------------------- */
 
 test("SettingsStore accepts a custom mentorFace once the face lookup is wired", () => {
@@ -548,7 +665,7 @@ test("SettingsStore accepts a custom mentorFace once the face lookup is wired", 
   // Unknown custom id rejected before the preset exists.
   assert.throws(() => settings.patch({ mentorFace: "face-maya" }));
 
-  store.insertPreset({ id: "face-maya", name: "Maya", accent: "#fff", hasFull: false, createdAt: "t" });
+  store.insertPreset({ id: "face-maya", name: "Maya", accent: "#fff", hasFull: false, createdAt: "t", configJson: null });
   const merged = settings.patch({ mentorFace: "face-maya" });
   assert.equal(merged.mentorFace, "face-maya");
   assert.equal(settings.get().mentorFace, "face-maya", "custom id survives a re-read");

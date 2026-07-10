@@ -32,4 +32,9 @@ export const FRAME_FILES = {
 
 /** Only these ids/files may be served (path-traversal guard). */
 export const SAFE_PRESET_ID = /^face-[a-z0-9][a-z0-9-]*$/;
-export const SAFE_ART_FILE = /^(portrait-(base|m1|m2|m3|blink)|full)\.webp$/;
+/**
+ * Legacy sprite frames + optional full body + generic animation frames
+ * (`anim-<clipId>-<idx>.webp`). Bare filenames only — no directory separators.
+ */
+export const SAFE_ART_FILE =
+  /^(portrait-(base|m1|m2|m3|blink)|full|anim-[a-z0-9][a-z0-9-]*-\d+)\.webp$/;

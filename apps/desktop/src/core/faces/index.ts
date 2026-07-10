@@ -57,3 +57,9 @@ export { registerFaceRoutes, type FaceDeps } from "./routes.js";
 export { sipsProbe } from "./ops.js";
 export { FaceStore, type FaceLookup } from "./store.js";
 export type { ActiveFaceSettings } from "./service.js";
+export {
+  parseConfig,
+  synthesizeLegacyConfig,
+  validateConfigUpdate,
+  validateManualInput,
+} from "./config.js";
