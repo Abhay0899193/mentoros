@@ -2,7 +2,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { Settings, Moon, Sun, PanelLeft } from 'lucide-react';
 import { spring, dur } from '../../motion/springs';
 import { cn } from '../../lib/cn';
-import { useShell, MODULES, DESIGN_MODULE, type ModuleMeta } from '../../lib/store';
+import { useShell, MODULES, DESIGN_MODULE, STUDIO_MODULE, type ModuleMeta } from '../../lib/store';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Keycap } from '../../ui';
 
@@ -67,6 +67,7 @@ export function Rail() {
           <RailItem key={m.id} meta={m} expanded={railExpanded} />
         ))}
         <div className="mx-1 my-2 border-t border-line" />
+        <RailItem meta={STUDIO_MODULE} expanded={railExpanded} />
         <RailItem meta={DESIGN_MODULE} expanded={railExpanded} />
       </div>
 

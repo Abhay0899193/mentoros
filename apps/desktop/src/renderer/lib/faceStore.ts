@@ -3,9 +3,11 @@ import {
   coreClient,
   type CustomFacePreset,
   type CreateFacePresetInput,
+  type CreateManualFacePresetInput,
   type FaceJobStatus,
   type FacePresetId,
   type FaceToolchainStatus,
+  type UpdateAvatarConfigInput,
 } from './coreClient';
 import type { RealisticPreset } from '../orb/faces/realistic';
 import { toast } from '../ui';
@@ -47,6 +49,10 @@ interface FaceState {
   init: () => void;
   refreshToolchain: () => Promise<FaceToolchainStatus | null>;
   create: (input: CreateFacePresetInput) => Promise<boolean>;
+  /** Avatar Studio "Create from frames" — synchronous, no generation job. */
+  createManual: (input: CreateManualFacePresetInput) => Promise<CustomFacePreset | null>;
+  /** Avatar Studio editor save — replaces a custom preset's animation doc. */
+  saveConfig: (id: FacePresetId, input: UpdateAvatarConfigInput) => Promise<boolean>;
   cancelJob: () => Promise<void>;
   /** Clear a terminal (done/error/cancelled) job card. */
   dismissJob: () => void;
@@ -113,6 +119,45 @@ export const useFaces = create<FaceState>((set, get) => ({
       toast({
         tone: 'danger',
         title: 'Could not start generation',
+        description: err instanceof Error ? err.message : 'Unknown error.',
+      });
+      return false;
+    }
+  },
+
+  createManual: async (input) => {
+    set({ creating: true });
+    try {
+      const preset = await coreClient.createManualFacePreset(input);
+      // faces.changed also lands over WS — replace-by-id so neither path duplicates.
+      set((s) => ({
+        creating: false,
+        customPresets: [...s.customPresets.filter((p) => p.id !== preset.id), toRealistic(preset)],
+      }));
+      toast({ tone: 'success', title: 'Preset created', description: `${preset.name} joined your gallery.` });
+      return preset;
+    } catch (err) {
+      set({ creating: false });
+      toast({
+        tone: 'danger',
+        title: 'Could not create preset',
+        description: err instanceof Error ? err.message : 'Unknown error.',
+      });
+      return null;
+    }
+  },
+
+  saveConfig: async (id, input) => {
+    try {
+      const preset = await coreClient.updateAvatarConfig(id, input);
+      set((s) => ({
+        customPresets: s.customPresets.map((p) => (p.id === preset.id ? toRealistic(preset) : p)),
+      }));
+      return true;
+    } catch (err) {
+      toast({
+        tone: 'danger',
+        title: 'Could not save changes',
         description: err instanceof Error ? err.message : 'Unknown error.',
       });
       return false;

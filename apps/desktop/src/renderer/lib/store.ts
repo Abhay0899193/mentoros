@@ -11,6 +11,7 @@ import {
   FolderGit2,
   TrendingUp,
   Palette,
+  Clapperboard,
 } from 'lucide-react';
 
 export type ModuleId =
@@ -24,6 +25,7 @@ export type ModuleId =
   | 'codebase'
   | 'career'
   | 'design'
+  | 'studio'
   | 'settings';
 
 export interface ModuleMeta {
@@ -48,6 +50,9 @@ export const MODULES: ModuleMeta[] = [
 
 /** Dev-only rail entry while the design system is under construction. */
 export const DESIGN_MODULE: ModuleMeta = { id: 'design', label: 'Design', icon: Palette };
+
+/** Avatar Studio — create/animate mentor avatars (first-class, below the modules). */
+export const STUDIO_MODULE: ModuleMeta = { id: 'studio', label: 'Avatar Studio', icon: Clapperboard };
 
 interface ShellStore {
   active: ModuleId;

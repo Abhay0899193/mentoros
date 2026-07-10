@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../../lib/cn";
-import { useShell, MODULES, DESIGN_MODULE } from "../../lib/store";
+import { useShell, MODULES, DESIGN_MODULE, STUDIO_MODULE } from "../../lib/store";
 import { useTheme } from "../../theme/ThemeProvider";
 import { useInterview } from "../../lib/interviewStore";
 import { Overlay, Keycap } from "../../ui";
@@ -45,7 +45,7 @@ export function CommandPalette() {
 
   const actions = useMemo<Action[]>(
     () => [
-      ...[...MODULES, DESIGN_MODULE].map((m) => ({
+      ...[...MODULES, STUDIO_MODULE, DESIGN_MODULE].map((m) => ({
         id: `nav-${m.id}`,
         label: `Go to ${m.label}`,
         hint: m.shortcut ? `⌘${m.shortcut}` : undefined,

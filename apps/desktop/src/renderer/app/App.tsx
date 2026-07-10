@@ -11,6 +11,7 @@ import { LearningScreen } from "./screens/learning/LearningScreen";
 import { KnowledgeScreen } from "./screens/knowledge/KnowledgeScreen";
 import { InterviewScreen } from "./screens/interview/InterviewScreen";
 import { SettingsScreen } from "./screens/settings/SettingsScreen";
+import { AvatarStudioScreen } from "./screens/studio/AvatarStudioScreen";
 import { coreClient } from "../lib/coreClient";
 import { useShell, MODULES, DESIGN_MODULE } from "../lib/store";
 import { toast } from "../ui";
@@ -26,6 +27,7 @@ function ActiveScreen() {
   if (active === "knowledge") return <KnowledgeScreen />;
   if (active === "interview") return <InterviewScreen />;
   if (active === "settings") return <SettingsScreen />;
+  if (active === "studio") return <AvatarStudioScreen />;
   const meta = MODULES.find((m) => m.id === active) ?? DESIGN_MODULE;
   return <Placeholder meta={meta} />;
 }
