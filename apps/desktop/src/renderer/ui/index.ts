@@ -8,3 +8,4 @@ export { Overlay } from './Overlay';
 export { Toaster, toast, useToasts } from './Toast';
 export { Spinner } from './Spinner';
 export { CodeEditor } from './CodeEditor';
+export { RegionBox, clampRegion } from './RegionBox';

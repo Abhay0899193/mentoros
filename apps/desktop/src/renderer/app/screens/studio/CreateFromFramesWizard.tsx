@@ -1,12 +1,15 @@
-import { useMemo, useRef, useState } from 'react';
-import { Check, ImagePlus, X } from 'lucide-react';
-import { Overlay, Button } from '../../../ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ImagePlus, Wand2, X } from 'lucide-react';
+import { Overlay, Button, Switch, RegionBox } from '../../../ui';
 import { cn } from '../../../lib/cn';
 import { useFaces } from '../../../lib/faceStore';
-import type { AnimationClip, AvatarConfig, TriggerRule } from '../../../lib/coreClient';
+import type { AnimationClip, AvatarConfig, FaceRegion, TriggerRule } from '../../../lib/coreClient';
 import {
+  alignFrameToBase,
   cropToSquareWebp,
   decodeImageFile,
+  estimateShift,
+  loadDataUriImage,
   revokeDecoded,
   sampleAccent,
   tileId,
@@ -31,15 +34,12 @@ interface Tile {
 
 type Target = 'base' | 'talk' | 'blink';
 
-const STEPS = ['Frames', 'Assign', 'Preview'] as const;
+const STEPS = ['Frames', 'Assign', 'Align', 'Preview'] as const;
 
-function loadDataUri(uri: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('decode failed'));
-    img.src = uri;
-  });
+interface AlignedFrames {
+  /** Aligned webp data URI per talk tile id. */
+  talk: Record<string, string>;
+  blink?: string;
 }
 
 export function CreateFromFramesWizard({
@@ -62,6 +62,12 @@ export function CreateFromFramesWizard({
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [mouth, setMouth] = useState<FaceRegion | null>(null);
+  const [eyes, setEyes] = useState<FaceRegion | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<'mouth' | 'eyes'>('mouth');
+  const [autoAlign, setAutoAlign] = useState(true);
+  const [aligned, setAligned] = useState<AlignedFrames | null>(null);
+  const [aligning, setAligning] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const fullRef = useRef<HTMLInputElement>(null);
   const previewController = useRef<AnimationController | null>(null);
@@ -76,6 +82,10 @@ export function CreateFromFramesWizard({
     setFullUri(null);
     setName('');
     setError(null);
+    setMouth(null);
+    setEyes(null);
+    setAutoAlign(true);
+    setAligned(null);
   };
 
   const close = () => {
@@ -103,15 +113,83 @@ export function CreateFromFramesWizard({
     if (baseId === id) setBaseId(null);
     if (blinkId === id) setBlinkId(null);
     setTalkIds((prev) => prev.filter((t) => t !== id));
+    setAligned(null);
   };
 
   const assign = (id: string) => {
     if (target === 'base') setBaseId((prev) => (prev === id ? null : id));
     else if (target === 'blink') setBlinkId((prev) => (prev === id ? null : id));
     else setTalkIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+    setAligned(null);
   };
 
   const uriOf = (id: string | null) => tiles.find((t) => t.id === id)?.uri;
+  const baseUri = uriOf(baseId);
+
+  // Seed default mouth/eyes regions from the base frame's natural size.
+  const [baseDim, setBaseDim] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    setAligned(null);
+    if (!baseUri) {
+      setBaseDim(null);
+      setMouth(null);
+      setEyes(null);
+      return;
+    }
+    let stale = false;
+    void loadDataUriImage(baseUri).then((img) => {
+      if (stale) return;
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      setBaseDim({ w, h });
+      setMouth({ x: w * 0.38, y: h * 0.55, width: w * 0.24, height: h * 0.12 });
+      setEyes({ x: w * 0.28, y: h * 0.34, width: w * 0.44, height: h * 0.12 });
+    });
+    return () => {
+      stale = true;
+    };
+  }, [baseUri]);
+
+  /**
+   * Composite each talk frame's mouth (and the blink frame's eyes) onto the
+   * base through a feathered ellipse — the client-side mirror of the AI
+   * pipeline's anti-drift step, so hand-made presets stop jumping between
+   * layers. Optionally auto-corrects whole-frame drift first.
+   */
+  const runAlign = async () => {
+    if (!baseUri || !mouth) return;
+    setAligning(true);
+    setError(null);
+    try {
+      const baseImg = await loadDataUriImage(baseUri);
+      const exclude = eyes ? [mouth, eyes] : [mouth];
+      const talk: Record<string, string> = {};
+      for (const id of talkIds) {
+        const uri = uriOf(id);
+        if (!uri) continue;
+        const img = await loadDataUriImage(uri);
+        const shift = autoAlign ? estimateShift(baseImg, img, exclude) : { dx: 0, dy: 0 };
+        talk[id] = alignFrameToBase(baseImg, img, [mouth], shift);
+        await new Promise((r) => setTimeout(r, 0)); // keep the UI breathing
+      }
+      const next: AlignedFrames = { talk };
+      const blinkUri = uriOf(blinkId);
+      if (blinkUri && eyes) {
+        const img = await loadDataUriImage(blinkUri);
+        const shift = autoAlign ? estimateShift(baseImg, img, exclude) : { dx: 0, dy: 0 };
+        next.blink = alignFrameToBase(baseImg, img, [eyes], shift);
+      }
+      setAligned(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Alignment failed.');
+    } finally {
+      setAligning(false);
+    }
+  };
+
+  // Aligned frames (when computed) replace the raw tiles everywhere downstream.
+  const effTalkUri = (id: string) => aligned?.talk[id] ?? uriOf(id);
+  const effBlinkUri = () => (blinkId ? aligned?.blink ?? uriOf(blinkId) : undefined);
 
   /** In-memory config driving the live preview (identical to what we submit). */
   const draftConfig = useMemo<AvatarConfig | null>(() => {
@@ -125,14 +203,14 @@ export function CreateFromFramesWizard({
         appliesTo: 'portrait',
         renderKind: 'sprite',
         track: 'mouth',
-        frames: talkIds.map((id) => uriOf(id)!).filter(Boolean),
+        frames: talkIds.map((id) => effTalkUri(id)!).filter(Boolean),
         driver: 'envelope',
         loopMode: 'loop',
         priority: 20,
       },
     ];
     const triggers: TriggerRule[] = [];
-    const blink = uriOf(blinkId);
+    const blink = effBlinkUri();
     if (blink) {
       animations.push({
         id: 'blink',
@@ -164,7 +242,7 @@ export function CreateFromFramesWizard({
     if (fullUri) cfg.fullBase = fullUri;
     return cfg;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tiles, baseId, talkIds, blinkId, fullUri, name]);
+  }, [tiles, baseId, talkIds, blinkId, fullUri, name, aligned]);
 
   const create = async () => {
     if (!draftConfig) return;
@@ -175,7 +253,7 @@ export function CreateFromFramesWizard({
     setCreating(true);
     setError(null);
     try {
-      const baseImg = await loadDataUri(draftConfig.baseFrame);
+      const baseImg = await loadDataUriImage(draftConfig.baseFrame);
       const preset = await createManual({
         name: name.trim(),
         accent: sampleAccent(baseImg),
@@ -195,7 +273,7 @@ export function CreateFromFramesWizard({
     }
   };
 
-  const canNext = step === 0 ? tiles.length > 0 : step === 1 ? !!baseId && talkIds.length > 0 : false;
+  const canNext = step === 0 ? tiles.length > 0 : step === 1 ? !!baseId && talkIds.length > 0 : step === 2 ? !aligning : false;
 
   const badgeFor = (id: string): string | null => {
     if (baseId === id) return 'Base';
@@ -364,7 +442,132 @@ export function CreateFromFramesWizard({
           </div>
         )}
 
-        {step === 2 && draftConfig && (
+        {step === 2 && (
+          <div className="flex flex-col gap-3">
+            <p className="text-small text-muted">
+              Optional — paints each talk frame&apos;s <span className="text-body">mouth</span>
+              {blinkId ? (
+                <>
+                  {' '}
+                  (and the blink frame&apos;s <span className="text-body">eyes</span>)
+                </>
+              ) : null}{' '}
+              onto the base through a soft-edged window, so every frame is pixel-identical outside it and layer
+              swaps stop jumping. Skip if your frames already share exact framing.
+            </p>
+
+            {baseUri && baseDim && mouth && (
+              <div className="flex flex-wrap items-start justify-center gap-5">
+                <div
+                  className="relative select-none overflow-hidden rounded-lg hairline"
+                  style={{
+                    width: baseDim.w * Math.min(340 / baseDim.w, 340 / baseDim.h, 1),
+                    height: baseDim.h * Math.min(340 / baseDim.w, 340 / baseDim.h, 1),
+                  }}
+                >
+                  <img src={baseUri} alt="Base frame" draggable={false} className="h-full w-full" />
+                  {blinkId && eyes && (
+                    <RegionBox
+                      label="Eyes"
+                      region={eyes}
+                      scale={Math.min(340 / baseDim.w, 340 / baseDim.h, 1)}
+                      selected={selectedRegion === 'eyes'}
+                      onSelect={() => setSelectedRegion('eyes')}
+                      onChange={(r) => {
+                        setEyes(r);
+                        setAligned(null);
+                      }}
+                      imgW={baseDim.w}
+                      imgH={baseDim.h}
+                    />
+                  )}
+                  <RegionBox
+                    label="Mouth"
+                    region={mouth}
+                    scale={Math.min(340 / baseDim.w, 340 / baseDim.h, 1)}
+                    selected={selectedRegion === 'mouth'}
+                    onSelect={() => setSelectedRegion('mouth')}
+                    onChange={(r) => {
+                      setMouth(r);
+                      setAligned(null);
+                    }}
+                    imgW={baseDim.w}
+                    imgH={baseDim.h}
+                  />
+                </div>
+
+                <div className="flex min-w-[240px] flex-1 flex-col gap-3">
+                  <p className="text-small text-muted">
+                    Fit <span className="text-body">Mouth</span> snugly around the lips with a little margin
+                    {blinkId ? (
+                      <>
+                        ; <span className="text-body">Eyes</span> spans both eyes including the lids
+                      </>
+                    ) : null}
+                    . Drag to move, corner to resize — or arrow keys, Shift+arrows to resize.
+                  </p>
+                  <label className="flex items-center justify-between gap-3 rounded-[10px] bg-surface-2 p-2.5 hairline">
+                    <span className="text-small text-body">Auto-correct frame drift</span>
+                    <Switch
+                      checked={autoAlign}
+                      onChange={(v) => {
+                        setAutoAlign(v);
+                        setAligned(null);
+                      }}
+                      label="Auto-correct frame drift"
+                    />
+                  </label>
+                  <Button
+                    variant="primary"
+                    onClick={() => void runAlign()}
+                    loading={aligning}
+                    loadingLabel="Aligning…"
+                    disabled={!mouth}
+                  >
+                    <Wand2 size={14} strokeWidth={1.5} /> Align {talkIds.length + (blinkId ? 1 : 0)} frame
+                    {talkIds.length + (blinkId ? 1 : 0) === 1 ? '' : 's'}
+                  </Button>
+
+                  {aligned && (
+                    <div className="flex flex-col gap-2 rounded-[10px] bg-surface-2 p-2.5 hairline">
+                      <div className="flex items-center justify-between">
+                        <span className="text-small text-body">
+                          <Check size={12} strokeWidth={2} className="mr-1 inline-block text-[var(--iris)]" />
+                          Aligned — these replace the raw frames
+                        </span>
+                        <button onClick={() => setAligned(null)} className="text-small text-muted hover:text-body">
+                          Undo
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {talkIds.map((id, i) =>
+                          aligned.talk[id] ? (
+                            <div key={id} className="relative">
+                              <img src={aligned.talk[id]} alt={`Aligned talk ${i + 1}`} className="h-14 w-14 rounded-[6px] object-cover hairline" />
+                              <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 text-[9px] font-medium text-white">
+                                Talk {i + 1}
+                              </span>
+                            </div>
+                          ) : null,
+                        )}
+                        {aligned.blink && (
+                          <div className="relative">
+                            <img src={aligned.blink} alt="Aligned blink" className="h-14 w-14 rounded-[6px] object-cover hairline" />
+                            <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 text-[9px] font-medium text-white">
+                              Blink
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 3 && draftConfig && (
           <div className="flex flex-wrap items-start justify-center gap-6">
             <StudioPreview config={draftConfig} stylized={null} controllerRef={previewController} size={220} />
             <div className="flex min-w-[240px] flex-1 flex-col gap-3">
@@ -394,9 +597,9 @@ export function CreateFromFramesWizard({
           <Button variant="ghost" onClick={step === 0 ? close : () => setStep((s) => s - 1)}>
             {step === 0 ? 'Cancel' : 'Back'}
           </Button>
-          {step < 2 ? (
+          {step < 3 ? (
             <Button variant="primary" onClick={() => setStep((s) => s + 1)} disabled={!canNext}>
-              {step === 1 && !canNext ? 'Assign a base + talk frames' : 'Continue'}
+              {step === 1 && !canNext ? 'Assign a base + talk frames' : step === 2 && !aligned ? 'Skip align' : 'Continue'}
             </Button>
           ) : (
             <Button variant="primary" onClick={() => void create()} loading={creating} loadingLabel="Creating…">

@@ -5,6 +5,8 @@
  * client-side; core only ever sees finished webp frames.
  */
 
+import type { FaceRegion } from './coreClient';
+
 export interface DecodedImage {
   img: HTMLImageElement;
   width: number;
@@ -182,4 +184,138 @@ export function sliceGrid(img: HTMLImageElement, rows: number, cols: number, ins
 /** Data-URI-safe unique id for pool tiles. */
 export function tileId(): string {
   return `t${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/* ---------------------------- align to base ------------------------------ */
+
+/** Decode a data URI back into an HTMLImageElement (no object URL to revoke). */
+export function loadDataUriImage(uri: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not decode a frame.'));
+    img.src = uri;
+  });
+}
+
+/**
+ * Mirror of the core pipeline's anti-drift composite (ops.ts PIPELINE_PY):
+ * paste only the frame's region ellipses onto the base through a feathered
+ * mask, so every layer is pixel-identical to the base outside mouth/eyes and
+ * sprite swaps stop jumping. Regions are in the base's natural pixels;
+ * `shift` translates the frame (from estimateShift) before pasting. Feather
+ * matches PIL GaussianBlur(10) at the pipeline's 1024² scale (CSS blur radius
+ * is the Gaussian stddev, same convention as PIL).
+ */
+export function alignFrameToBase(
+  base: HTMLImageElement,
+  frame: HTMLImageElement,
+  regions: FaceRegion[],
+  shift: { dx: number; dy: number } = { dx: 0, dy: 0 },
+): string {
+  const w = base.naturalWidth;
+  const h = base.naturalHeight;
+
+  const [mask, maskCtx] = canvas2d(w, h);
+  maskCtx.fillStyle = '#fff';
+  for (const r of regions) {
+    maskCtx.beginPath();
+    maskCtx.ellipse(r.x + r.width / 2, r.y + r.height / 2, r.width / 2, r.height / 2, 0, 0, Math.PI * 2);
+    maskCtx.fill();
+  }
+  const [feathered, featheredCtx] = canvas2d(w, h);
+  featheredCtx.filter = `blur(${Math.max(2, Math.round((10 * Math.max(w, h)) / 1024))}px)`;
+  featheredCtx.drawImage(mask, 0, 0);
+
+  const [masked, maskedCtx] = canvas2d(w, h);
+  maskedCtx.drawImage(frame, shift.dx, shift.dy, w, h);
+  maskedCtx.globalCompositeOperation = 'destination-in';
+  maskedCtx.drawImage(feathered, 0, 0);
+
+  const [out, outCtx] = canvas2d(w, h);
+  outCtx.drawImage(base, 0, 0, w, h);
+  outCtx.drawImage(masked, 0, 0);
+  return encodeCanvasWebp(out);
+}
+
+function grayscale(img: HTMLImageElement, size: number): Float32Array {
+  const [, ctx] = canvas2d(size, size);
+  ctx.drawImage(img, 0, 0, size, size);
+  const { data } = ctx.getImageData(0, 0, size, size);
+  const g = new Float32Array(size * size);
+  for (let i = 0; i < g.length; i += 1) {
+    g[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
+  }
+  return g;
+}
+
+/** Mean absolute difference of frame shifted by (dx,dy) vs base, skipping excluded pixels. */
+function sad(base: Float32Array, frame: Float32Array, size: number, dx: number, dy: number, excluded: Uint8Array): number {
+  let sum = 0;
+  let n = 0;
+  const y0 = Math.max(0, -dy);
+  const y1 = Math.min(size, size - dy);
+  const x0 = Math.max(0, -dx);
+  const x1 = Math.min(size, size - dx);
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = y * size + x;
+      if (excluded[i]) continue;
+      sum += Math.abs(base[i] - frame[(y + dy) * size + (x + dx)]);
+      n += 1;
+    }
+  }
+  return n === 0 ? Infinity : sum / n;
+}
+
+/**
+ * Estimate the global translation that best maps `frame` onto `base`
+ * (whole-photo drift between hand-made frames). Regions that legitimately
+ * differ (mouth/eyes) are excluded from the match. Coarse-to-fine SAD search;
+ * returns natural-pixel {dx, dy} to feed alignFrameToBase, biased toward zero
+ * so identical frames never pick up a spurious shift.
+ */
+export function estimateShift(
+  base: HTMLImageElement,
+  frame: HTMLImageElement,
+  exclude: FaceRegion[],
+): { dx: number; dy: number } {
+  const natural = Math.max(base.naturalWidth, base.naturalHeight);
+
+  const search = (size: number, cx: number, cy: number, radius: number): { dx: number; dy: number } => {
+    const b = grayscale(base, size);
+    const f = grayscale(frame, size);
+    const excluded = new Uint8Array(size * size);
+    const s = size / base.naturalWidth;
+    for (const r of exclude) {
+      const rx0 = Math.max(0, Math.floor(r.x * s));
+      const ry0 = Math.max(0, Math.floor(r.y * s));
+      const rx1 = Math.min(size, Math.ceil((r.x + r.width) * s));
+      const ry1 = Math.min(size, Math.ceil((r.y + r.height) * s));
+      for (let y = ry0; y < ry1; y += 1) for (let x = rx0; x < rx1; x += 1) excluded[y * size + x] = 1;
+    }
+    let best = { dx: cx, dy: cy };
+    let bestCost = Infinity;
+    for (let dy = cy - radius; dy <= cy + radius; dy += 1) {
+      for (let dx = cx - radius; dx <= cx + radius; dx += 1) {
+        // tiny distance penalty: zero shift wins ties on already-aligned frames
+        const cost = sad(b, f, size, dx, dy, excluded) + 0.002 * Math.hypot(dx, dy);
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = { dx, dy };
+        }
+      }
+    }
+    return best;
+  };
+
+  const coarse = search(160, 0, 0, 8);
+  const fineSize = Math.min(512, natural);
+  const scaleUp = fineSize / 160;
+  const fine = search(fineSize, Math.round(coarse.dx * scaleUp), Math.round(coarse.dy * scaleUp), 3);
+
+  const toNatural = natural / fineSize;
+  // drawImage(frame, dx, dy) moves the frame; SAD found where the frame's
+  // content sits relative to the base, so the correction is the negation.
+  return { dx: Math.round(-fine.dx * toNatural), dy: Math.round(-fine.dy * toNatural) };
 }

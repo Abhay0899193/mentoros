@@ -29,6 +29,16 @@ GPU toolchain except the last section.
       (expect 3×3); steppers + click-to-exclude work; "Add 9 frames".
 - [ ] Assign: Base = a mouth-closed tile, Talk = 3 tiles closed→wide (order badges), Blink =
       the eyes-shut tile. Optional: add a full-body image.
+- [ ] **Align step (new):** Mouth box (and Eyes box, since a blink is assigned) sits over the
+      base — drag/resize to fit snugly (arrows move, Shift+arrows resize).
+- [ ] **Align N frames** → aligned strip appears (Talk 1…N + Blink thumbnails). Each aligned
+      frame should look like the BASE photo everywhere except the mouth (blink: except the
+      eyes) — hair/shoulders/background must not shift between them.
+- [ ] Preview step after aligning: **Speak** → lip-sync no longer "jumps" the whole picture
+      between frames (compare with a Skip-align run of the same tiles — the point of the fix).
+- [ ] Undo in the aligned strip reverts to raw frames; moving a box or toggling
+      "Auto-correct frame drift" clears stale results (button re-runs).
+- [ ] **Skip align** (footer) still works end-to-end — the step is optional.
 - [ ] Preview step: name it; **Speak** → lip-sync from your tiles; blink fires on its own.
 - [ ] Create → toast, preset appears under *Your presets* AND in Settings → Identity gallery.
 - [ ] Use it on the Voice screen; ask something — real TTS drives the mouth.
