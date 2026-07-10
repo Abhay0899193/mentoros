@@ -505,6 +505,81 @@ export interface InterviewScorecard {
   createdAt: string;
 }
 
+/* ---------------- Image Lab (text-to-image) ---------------- */
+
+/**
+ * One selectable text-to-image backend (GET /imagegen/models). `available`
+ * gates the picker; `detail` explains a not-yet-usable model (missing binary,
+ * absent key, first-run weights download). Local models shell out to mflux;
+ * hosted models call fal.ai with the stored key.
+ */
+export interface ImageGenModelInfo {
+  id: string;
+  label: string;
+  kind: 'local' | 'hosted';
+  desc: string;
+  /** Edit models (FLUX-Kontext) need a reference image supplied. */
+  requiresReference?: boolean;
+  defaultSteps: number;
+  maxSteps: number;
+  available: boolean;
+  /** Human reason when unavailable, or a heads-up ('weights download on first run'). */
+  detail?: string;
+}
+
+/**
+ * A single generation request. `randomizeSeed` (or an absent `seed`) makes core
+ * pick a uint32 itself, so `seedUsed` is always known and reproducible.
+ * `referenceDataUri` (a `data:image/...;base64,...` URI) is required only by
+ * edit models (requiresReference).
+ */
+export interface ImageGenRequest {
+  modelId: string;
+  prompt: string;
+  width: number;
+  height: number;
+  steps: number;
+  seed?: number;
+  randomizeSeed: boolean;
+  referenceDataUri?: string;
+}
+
+/** The finished artifact of a generation job (persisted in history). */
+export interface ImageGenJobResult {
+  historyId: string;
+  /** Absolute art URL (absolutized at the client boundary), ready for <img src>. */
+  url: string;
+  seedUsed: number;
+  elapsedMs: number;
+}
+
+/**
+ * Generation lifecycle. Single-flight (one job monopolizes the GPU / fal call).
+ * `progressText` streams the model's stdout lines; a cancelled job ends 'error'
+ * with error 'cancelled'.
+ */
+export interface ImageGenJobStatus {
+  id: string;
+  state: 'queued' | 'running' | 'done' | 'error';
+  progressText?: string;
+  error?: string;
+  result?: ImageGenJobResult;
+}
+
+/** One persisted generation (GET /imagegen/history, newest-first). */
+export interface ImageGenHistoryItem {
+  id: string;
+  modelId: string;
+  prompt: string;
+  width: number;
+  height: number;
+  steps: number;
+  seed: number;
+  /** Absolute art URL (absolutized at the client boundary). */
+  url: string;
+  createdAt: string; // ISO
+}
+
 /* ---------------- Voice (Stage 1c) ---------------- */
 
 export interface VoiceStatus {
@@ -1203,6 +1278,30 @@ export interface CoreClient {
   /** Replace a custom preset's animations/triggers. 403 built-ins, 404 unknown. */
   updateAvatarConfig(id: FacePresetId, input: UpdateAvatarConfigInput): Promise<CustomFacePreset>;
 
+  /* image lab (text-to-image) */
+  /** Selectable backends with live availability (bin/key/weights). */
+  imagegenModels(): Promise<ImageGenModelInfo[]>;
+  /**
+   * Validate + start a generation. 422 = bad input / unknown model, 503 = model
+   * unavailable (missing bin/key), 409 = a job is already running (single-flight
+   * — it monopolizes the GPU / fal budget). Poll {@link imagegenJob} for result.
+   */
+  imagegenGenerate(req: ImageGenRequest): Promise<{ jobId: string }>;
+  /** Job status (result URL absolute). Null when the id is unknown. */
+  imagegenJob(id: string): Promise<ImageGenJobStatus | null>;
+  /** Cancel a running job. */
+  imagegenCancel(id: string): Promise<void>;
+  /** Persisted generations, newest-first (art URLs absolute). */
+  imagegenHistory(): Promise<ImageGenHistoryItem[]>;
+  /** Remove a history row and its PNG. */
+  imagegenDeleteHistory(id: string): Promise<void>;
+  /** fal.ai key presence/state (raw key never returned). */
+  falKeyStatus(): Promise<{ keyState: ApiKeyState; keyMask?: string }>;
+  /** Store the fal.ai key (stored 'valid' when non-empty — no validation ping). */
+  setFalKey(apiKey: string): Promise<{ keyState: ApiKeyState; keyMask?: string }>;
+  /** Forget the stored fal.ai key; hosted models become unavailable immediately. */
+  clearFalKey(): Promise<void>;
+
   /* settings + voice options */
   getSettings(): Promise<AppSettings>;
   /** Partial update; returns the full merged settings. Fires `settings.changed`. */
@@ -1523,6 +1622,33 @@ export function createCoreClient(): CoreClient {
       })
         .then((r) => json<CustomFacePreset>(r))
         .then(absolutizeFacePreset),
+
+    imagegenModels: () => get<ImageGenModelInfo[]>('/imagegen/models'),
+    imagegenGenerate: (req) => post<{ jobId: string }>('/imagegen/generate', req),
+    imagegenJob: (id) =>
+      get<ImageGenJobStatus | null>(`/imagegen/jobs/${id}`).then((s) =>
+        s && s.result ? { ...s, result: { ...s.result, url: abs(s.result.url) } } : s,
+      ),
+    imagegenCancel: (id) => post<void>(`/imagegen/jobs/${id}/cancel`),
+    imagegenHistory: () =>
+      get<ImageGenHistoryItem[]>('/imagegen/history').then((items) =>
+        items.map((it) => ({ ...it, url: abs(it.url) })),
+      ),
+    imagegenDeleteHistory: (id) =>
+      fetch(`${baseUrl}/imagegen/history/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`core request failed: ${r.status}`);
+      }),
+    falKeyStatus: () => get<{ keyState: ApiKeyState; keyMask?: string }>('/imagegen/keys/fal'),
+    setFalKey: (apiKey) =>
+      fetch(`${baseUrl}/imagegen/keys/fal`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ apiKey }),
+      }).then((r) => json<{ keyState: ApiKeyState; keyMask?: string }>(r)),
+    clearFalKey: () =>
+      fetch(`${baseUrl}/imagegen/keys/fal`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`core request failed: ${r.status}`);
+      }),
 
     getSettings: () => get<AppSettings>('/settings'),
     updateSettings: (patch) => post<AppSettings>('/settings', patch),

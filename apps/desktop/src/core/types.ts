@@ -792,6 +792,82 @@ export interface SttModelInfo {
   active: boolean;
 }
 
+/* ------------------------------ Image Lab -------------------------------- */
+
+/**
+ * One selectable text-to-image backend (GET /imagegen/models). `available`
+ * gates the picker; `detail` explains a not-yet-usable model (missing binary,
+ * absent key, first-run weights download). Local models shell out to mflux
+ * under ~/mentoros-imagegen; hosted models call fal.ai with the stored key.
+ */
+export interface ImageGenModelInfo {
+  id: string;
+  label: string;
+  kind: "local" | "hosted";
+  /** One-line positioning copy for the picker. */
+  desc: string;
+  /** Edit models (FLUX-Kontext) need a reference image supplied. */
+  requiresReference?: boolean;
+  defaultSteps: number;
+  maxSteps: number;
+  available: boolean;
+  /** Human reason when unavailable, or a heads-up ('weights download on first run'). */
+  detail?: string;
+}
+
+/**
+ * A single generation request. `randomizeSeed` (or an absent `seed`) makes core
+ * pick a uint32 itself, so `seedUsed` is always known and reproducible.
+ * `referenceDataUri` (a `data:image/...;base64,...` URI) is required only by
+ * edit models (requiresReference).
+ */
+export interface ImageGenRequest {
+  modelId: string;
+  prompt: string;
+  width: number;
+  height: number;
+  steps: number;
+  seed?: number;
+  randomizeSeed: boolean;
+  referenceDataUri?: string;
+}
+
+/** The finished artifact of a generation job (persisted in history). */
+export interface ImageGenJobResult {
+  historyId: string;
+  /** Server-relative art URL (`/imagegen/art/<file>`); the client absolutizes it. */
+  url: string;
+  seedUsed: number;
+  elapsedMs: number;
+}
+
+/**
+ * Generation lifecycle. Single-flight (one job monopolizes the GPU / fal call).
+ * `progressText` streams the model's stdout lines; a cancelled job ends 'error'
+ * with error 'cancelled'.
+ */
+export interface ImageGenJobStatus {
+  id: string;
+  state: "queued" | "running" | "done" | "error";
+  progressText?: string;
+  error?: string;
+  result?: ImageGenJobResult;
+}
+
+/** One persisted generation (GET /imagegen/history, newest-first). */
+export interface ImageGenHistoryItem {
+  id: string;
+  modelId: string;
+  prompt: string;
+  width: number;
+  height: number;
+  steps: number;
+  seed: number;
+  /** Server-relative art URL; the client absolutizes it. */
+  url: string;
+  createdAt: string; // ISO
+}
+
 /** Payload shapes broadcast over the /events websocket. */
 export interface CoreEvents {
   "core.status": { state: "starting" | "ready" | "degraded"; detail?: string };

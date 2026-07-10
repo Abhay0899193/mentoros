@@ -24,6 +24,7 @@ import {
   type PersonaDraftOnce,
 } from "./personas/index.js";
 import { createFaceSystem, registerFaceRoutes, sipsProbe } from "./faces/index.js";
+import { createImageGenSystem, registerImageGenRoutes } from "./imagegen/index.js";
 import type { CoreEvents, ModelSurface, Persona } from "./types.js";
 
 /**
@@ -84,6 +85,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   const faces = createFaceSystem(dataDir, broadcast, settings.store);
   settings.store.setFaceLookup(faces.store);
   personas.store.setFaceLookup(faces.store);
+  const imagegen = createImageGenSystem(dataDir);
   const engine = new ChatEngine(
     store,
     broadcast,
@@ -102,6 +104,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   });
 
   app.addHook("onClose", async () => {
+    imagegen.close();
     faces.close();
     personas.close();
     interview.close();
@@ -250,6 +253,13 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     broadcast,
     probe: sipsProbe,
     getSettings: () => settings.store.get(),
+    dataDir,
+  });
+
+  /* ------------------------------- image lab ----------------------------- */
+  registerImageGenRoutes(app, {
+    service: imagegen.service,
+    falKeys: imagegen.keys,
     dataDir,
   });
 

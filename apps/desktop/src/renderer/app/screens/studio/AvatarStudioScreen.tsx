@@ -31,6 +31,7 @@ import { ClipEditor } from './ClipEditor';
 import { TriggerEditor } from './TriggerEditor';
 import { CreateFromFramesWizard } from './CreateFromFramesWizard';
 import { CreateFacePresetOverlay } from '../settings/CreateFacePresetOverlay';
+import { ImageLab } from './ImageLab';
 
 /**
  * Avatar Studio — the first-class home for creating and animating mentor
@@ -56,6 +57,45 @@ interface Draft {
   animations: AnimationClip[];
   triggers: TriggerRule[];
   defaultAnimationId?: string;
+}
+
+type StudioView = 'avatars' | 'imagelab';
+
+const STUDIO_VIEWS: { id: StudioView; label: string }[] = [
+  { id: 'avatars', label: 'Avatars' },
+  { id: 'imagelab', label: 'Image Lab' },
+];
+
+/** Monochrome, spring-animated view switch (same pill idiom as the settings SegmentedRow). */
+function StudioViewSwitch({ view, onChange }: { view: StudioView; onChange: (v: StudioView) => void }) {
+  return (
+    <div role="tablist" aria-label="Studio view" className="relative inline-flex w-fit shrink-0 rounded-full bg-surface-2 p-1 hairline">
+      {STUDIO_VIEWS.map((opt) => {
+        const active = view === opt.id;
+        return (
+          <button
+            key={opt.id}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(opt.id)}
+            className={cn(
+              'relative z-10 flex h-7 items-center justify-center rounded-full px-3.5 text-small font-medium',
+              active ? 'text-ink' : 'text-muted hover:text-body',
+            )}
+          >
+            {opt.label}
+            {active && (
+              <motion.span
+                layoutId="studio-view-pill"
+                transition={spring.smooth}
+                className="absolute inset-0 -z-10 rounded-full bg-surface-3 hairline-strong"
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Strip the served URL back to the bare art filename core stores. */
@@ -134,6 +174,7 @@ export function AvatarStudioScreen() {
     [customPresets],
   );
 
+  const [view, setView] = useState<StudioView>('avatars');
   const [selectedId, setSelectedId] = useState<FacePresetId | null>(null);
   const selected =
     entries.find((e) => e.id === selectedId) ??
@@ -253,7 +294,15 @@ export function AvatarStudioScreen() {
   const activeOnVoice = settings?.mentorFace === selected?.id && settings?.mentorIdentity === 'face';
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
+        <StudioViewSwitch view={view} onChange={setView} />
+      </div>
+
+      {view === 'imagelab' ? (
+        <ImageLab />
+      ) : (
+      <div className="flex min-h-0 flex-1">
       {/* ----------------------------- preset list ---------------------------- */}
       <aside className="flex w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface-1 p-3">
         <div className="mb-1 flex flex-col gap-1.5">
@@ -547,9 +596,10 @@ export function AvatarStudioScreen() {
           </div>
         )}
       </div>
-
+      </div>
+      )}
       {/* --------------------------- save bar (dirty) --------------------------- */}
-      {editable && dirty && (
+      {view === 'avatars' && editable && dirty && (
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
