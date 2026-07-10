@@ -193,6 +193,7 @@ export function AvatarStudioScreen() {
 
   const editable = !!selected?.custom;
   const jobLive = !!job && ['queued', 'generating', 'compositing'].includes(job.state);
+  const overlayOpen = wizardOpen || photoOpen || !!clipEditor || !!triggerEditor;
 
   const play = (clip: AnimationClip) => {
     controllerRef.current?.request(clip.id, { interrupt: true });
@@ -403,6 +404,7 @@ export function AvatarStudioScreen() {
               config={displayConfig}
               stylized={selected.kind === 'stylized' ? selected.stylized! : null}
               controllerRef={controllerRef}
+              frozen={overlayOpen}
             />
 
             <div className="flex min-w-[340px] flex-1 flex-col gap-5">

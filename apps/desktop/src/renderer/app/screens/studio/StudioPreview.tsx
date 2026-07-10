@@ -25,9 +25,12 @@ export interface StudioPreviewProps {
   stylized: FacePreset | null;
   controllerRef: React.MutableRefObject<AnimationController | null>;
   size?: number;
+  /** Freeze while a glass overlay covers this preview — an animating portrait
+   * under backdrop-blur re-composites every frame and the whole panel shimmers. */
+  frozen?: boolean;
 }
 
-export function StudioPreview({ config, stylized, controllerRef, size = 240 }: StudioPreviewProps) {
+export function StudioPreview({ config, stylized, controllerRef, size = 240, frozen = false }: StudioPreviewProps) {
   const [state, setState] = useState<OrbState>('idle');
   const [view, setView] = useState<FaceView>('cameo');
   const [speaking, setSpeaking] = useState(false);
@@ -68,6 +71,7 @@ export function StudioPreview({ config, stylized, controllerRef, size = 240 }: S
             levelRef={levelRef}
             size={size}
             view={hasFull ? view : 'cameo'}
+            frozen={frozen}
             reactive={false}
             controllerRef={controllerRef}
           />
@@ -79,6 +83,7 @@ export function StudioPreview({ config, stylized, controllerRef, size = 240 }: S
             state={effectiveState}
             levelRef={levelRef}
             size={size}
+            frozen={frozen}
             reactive={false}
             controllerRef={controllerRef}
           />
