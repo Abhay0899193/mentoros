@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { AppSettings, CoreEvents } from "../types.js";
@@ -128,6 +128,10 @@ export function registerFaceRoutes(app: FastifyInstance, deps: FaceDeps): void {
   });
 
   /* --------------------------- static art serving ------------------------- */
+  // no-cache + ETag (not max-age): preset ids reuse freed slugs and frame files
+  // are overwritten in place, so a time-based cache serves a deleted preset's
+  // frames at the recreated preset's URLs. Revalidation keeps the fast path
+  // (304 on localhost) without ever showing stale art.
   app.get<{ Params: { presetId: string; file: string } }>(
     "/faces/art/:presetId/:file",
     async (req, reply) => {
@@ -137,10 +141,11 @@ export function registerFaceRoutes(app: FastifyInstance, deps: FaceDeps): void {
       }
       const path = join(presetDir(deps.dataDir, presetId), file);
       if (!existsSync(path)) return reply.code(404).send({ error: "not found" });
-      return reply
-        .type("image/webp")
-        .header("cache-control", "public, max-age=3600")
-        .send(readFileSync(path));
+      const stat = statSync(path);
+      const etag = `"${stat.size.toString(16)}-${Math.trunc(stat.mtimeMs).toString(16)}"`;
+      reply.header("cache-control", "no-cache").header("etag", etag);
+      if (req.headers["if-none-match"] === etag) return reply.code(304).send();
+      return reply.type("image/webp").send(readFileSync(path));
     },
   );
 }

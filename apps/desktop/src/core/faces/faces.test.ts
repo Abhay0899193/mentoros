@@ -535,6 +535,26 @@ test("GET /faces/art serves webp and guards traversal", async () => {
   const ok = await app.inject({ method: "GET", url: "/faces/art/face-maya/portrait-base.webp" });
   assert.equal(ok.statusCode, 200);
   assert.equal(ok.headers["content-type"], "image/webp");
+  // revalidation, never max-age: preset ids reuse freed slugs, so time-based
+  // caching would serve a deleted preset's frames at the recreated URLs
+  assert.equal(ok.headers["cache-control"], "no-cache");
+  const etag = ok.headers.etag as string;
+  assert.ok(etag && etag.startsWith('"'));
+  const revalidated = await app.inject({
+    method: "GET",
+    url: "/faces/art/face-maya/portrait-base.webp",
+    headers: { "if-none-match": etag },
+  });
+  assert.equal(revalidated.statusCode, 304);
+  // overwriting the file must change the ETag so stale caches miss
+  writeFileSync(join(presetDir(dir, "face-maya"), "portrait-base.webp"), "WEBPDATA-v2");
+  const changed = await app.inject({
+    method: "GET",
+    url: "/faces/art/face-maya/portrait-base.webp",
+    headers: { "if-none-match": etag },
+  });
+  assert.equal(changed.statusCode, 200);
+  assert.notEqual(changed.headers.etag, etag);
   const traversal = await app.inject({ method: "GET", url: "/faces/art/face-maya/..%2f..%2fsecret" });
   assert.equal(traversal.statusCode, 404);
   await app.close();
