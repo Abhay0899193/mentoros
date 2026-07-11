@@ -36,6 +36,7 @@ import { GeneratePresetWizard } from './GeneratePresetWizard';
 import { GenerateExpressionDialog } from './GenerateExpressionDialog';
 import { CreateFacePresetOverlay } from '../settings/CreateFacePresetOverlay';
 import { ImageLab } from './ImageLab';
+import { VideoLab } from './VideoLab';
 
 /**
  * Avatar Studio — the first-class home for creating and animating mentor
@@ -63,11 +64,12 @@ interface Draft {
   defaultAnimationId?: string;
 }
 
-type StudioView = 'avatars' | 'imagelab';
+type StudioView = 'avatars' | 'imagelab' | 'videolab';
 
 const STUDIO_VIEWS: { id: StudioView; label: string }[] = [
   { id: 'avatars', label: 'Avatars' },
   { id: 'imagelab', label: 'Image Lab' },
+  { id: 'videolab', label: 'Video' },
 ];
 
 /** Monochrome, spring-animated view switch (same pill idiom as the settings SegmentedRow). */
@@ -307,6 +309,8 @@ export function AvatarStudioScreen() {
 
       {view === 'imagelab' ? (
         <ImageLab />
+      ) : view === 'videolab' ? (
+        <VideoLab />
       ) : (
       <div className="flex min-h-0 flex-1">
       {/* ----------------------------- preset list ---------------------------- */}
