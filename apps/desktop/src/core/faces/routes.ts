@@ -30,6 +30,8 @@ export interface FaceDeps {
   getSettings: () => AppSettings;
   /** Cross-busy guard: an Image Lab job also holds the GPU (§decision #4). */
   isImageGenBusy?: () => boolean;
+  /** Cross-busy guard: a Video Lab job also holds the GPU (§three-way busy). */
+  isVideoGenBusy?: () => boolean;
   dataDir: string;
 }
 
@@ -53,7 +55,7 @@ export function registerFaceRoutes(app: FastifyInstance, deps: FaceDeps): void {
     "/faces/custom/generate",
     { bodyLimit: GENERATE_BODY_LIMIT },
     async (req, reply) => {
-      if (service.isBusy() || deps.isImageGenBusy?.()) {
+      if (service.isBusy() || deps.isImageGenBusy?.() || deps.isVideoGenBusy?.()) {
         return reply.code(409).send({ error: "a generation is already running" });
       }
       const toolchain = service.generateToolchain();
@@ -78,7 +80,7 @@ export function registerFaceRoutes(app: FastifyInstance, deps: FaceDeps): void {
     "/faces/custom/:id/expressions",
     { bodyLimit: GENERATE_BODY_LIMIT },
     async (req, reply) => {
-      if (service.isBusy() || deps.isImageGenBusy?.()) {
+      if (service.isBusy() || deps.isImageGenBusy?.() || deps.isVideoGenBusy?.()) {
         return reply.code(409).send({ error: "a generation is already running" });
       }
       const toolchain = service.generateToolchain();
@@ -102,7 +104,7 @@ export function registerFaceRoutes(app: FastifyInstance, deps: FaceDeps): void {
   );
 
   app.post<{ Body: unknown }>("/faces/custom", async (req, reply) => {
-    if (service.isBusy()) {
+    if (service.isBusy() || deps.isVideoGenBusy?.()) {
       return reply.code(409).send({ error: "a preset is already generating" });
     }
     const toolchain = service.toolchain();

@@ -16,6 +16,8 @@ export interface ImageGenDeps {
   falKeys: FalKeyStore;
   /** Cross-busy guard: a faces job also holds the GPU (§decision #4). */
   isFacesBusy?: () => boolean;
+  /** Cross-busy guard: a Video Lab job also holds the GPU (§three-way busy). */
+  isVideoGenBusy?: () => boolean;
   dataDir: string;
 }
 
@@ -33,7 +35,7 @@ export function registerImageGenRoutes(app: FastifyInstance, deps: ImageGenDeps)
     "/imagegen/generate",
     { bodyLimit: GENERATE_BODY_LIMIT },
     async (req, reply) => {
-      if (service.isBusy() || deps.isFacesBusy?.()) {
+      if (service.isBusy() || deps.isFacesBusy?.() || deps.isVideoGenBusy?.()) {
         return reply.code(409).send({ error: "a generation is already running" });
       }
       const body = req.body as { modelId?: unknown } | null;

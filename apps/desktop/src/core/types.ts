@@ -949,6 +949,86 @@ export interface ImageGenHistoryItem {
   createdAt: string; // ISO
 }
 
+/* --------------------------- Video Lab (t2v/i2v) -------------------------- */
+
+/**
+ * One selectable text/image-to-video backend (GET /videogen/models). `available`
+ * gates the picker; `detail` explains a not-yet-usable model (missing binary,
+ * absent weights). The one live model (`ltx-local`) shells out to mlx-video
+ * under ~/mentoros-imagegen; `wan-local`/`ltx-fal` join the registry later.
+ */
+export interface VideoGenModelInfo {
+  id: string;
+  label: string;
+  kind: "local" | "hosted";
+  /** One-line positioning copy for the picker (includes measured speed). */
+  desc: string;
+  /** Whether this model can be conditioned on a source image (I2V). */
+  supportsImageInput: boolean;
+  defaultFrames: number;
+  defaultFps: number;
+  available: boolean;
+  /** Human reason when unavailable. */
+  detail?: string;
+}
+
+/**
+ * A single generation request. An absent `seed` (or `randomizeSeed`) makes core
+ * pick a uint32 itself, so `seedUsed` is always known and reproducible.
+ * `image` (a `data:image/...;base64,...` URI) is optional — present for I2V.
+ */
+export interface VideoGenRequest {
+  modelId: string;
+  prompt: string;
+  width: number;
+  height: number;
+  numFrames: number;
+  fps: number;
+  seed?: number;
+  randomizeSeed: boolean;
+  image?: string;
+}
+
+/** The finished artifact of a generation job (persisted in history). */
+export interface VideoGenJobResult {
+  historyId: string;
+  /** Server-relative art URL (`/videogen/art/<file>`); the client absolutizes it. */
+  url: string;
+  seedUsed: number;
+  elapsedMs: number;
+}
+
+/**
+ * Generation lifecycle. Single-flight (one job monopolizes the GPU). `progress`
+ * is a 0..1 fraction parsed from the two-stage mlx-video output; `detail`
+ * carries the current step line. A cancelled job ends 'cancelled'.
+ */
+export interface VideoGenJobStatus {
+  id: string;
+  state: "queued" | "running" | "done" | "error" | "cancelled";
+  progress?: number;
+  detail?: string;
+  error?: string;
+  result?: VideoGenJobResult;
+}
+
+/** One persisted generation (GET /videogen/history, newest-first). */
+export interface VideoGenHistoryItem {
+  id: string;
+  modelId: string;
+  prompt: string;
+  width: number;
+  height: number;
+  numFrames: number;
+  fps: number;
+  seed: number;
+  hasSourceImage: boolean;
+  durationMs: number;
+  /** Server-relative art URL; the client absolutizes it. */
+  url: string;
+  createdAt: string; // ISO
+}
+
 /** Payload shapes broadcast over the /events websocket. */
 export interface CoreEvents {
   "core.status": { state: "starting" | "ready" | "degraded"; detail?: string };
@@ -995,6 +1075,8 @@ export interface CoreEvents {
   "face.job": FaceJobStatus;
   /** Custom preset list changed (job finished / preset deleted). */
   "faces.changed": { presets: CustomFacePreset[] };
+  /** Video Lab generation progress (long job — drives the job card + progress bar). */
+  "videogen.job": VideoGenJobStatus;
   "voice.ptt": { pressed: boolean };
   /** A memory was created or merged — drives "Profile updated" moments. */
   "memory.saved": {

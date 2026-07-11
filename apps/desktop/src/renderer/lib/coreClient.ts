@@ -580,6 +580,83 @@ export interface ImageGenHistoryItem {
   createdAt: string; // ISO
 }
 
+/* ---------------- Video Lab (text/image-to-video) ---------------- */
+
+/**
+ * One selectable video backend (GET /videogen/models). `available` gates the
+ * picker; `detail` explains a not-yet-usable model (missing binary/weights).
+ * `supportsImageInput` marks the I2V-capable models. The one live model
+ * (`ltx-local`) shells out to mlx-video under ~/mentoros-imagegen.
+ */
+export interface VideoGenModelInfo {
+  id: string;
+  label: string;
+  kind: 'local' | 'hosted';
+  desc: string;
+  supportsImageInput: boolean;
+  defaultFrames: number;
+  defaultFps: number;
+  available: boolean;
+  detail?: string;
+}
+
+/**
+ * A single generation request. An absent `seed` (or `randomizeSeed`) makes core
+ * pick a uint32 itself, so `seedUsed` is always known. `image` (a
+ * `data:image/...;base64,...` URI) is optional — present for image-to-video.
+ */
+export interface VideoGenGenerateInput {
+  modelId: string;
+  prompt: string;
+  width: number;
+  height: number;
+  numFrames: number;
+  fps: number;
+  seed?: number;
+  randomizeSeed: boolean;
+  image?: string;
+}
+
+/** The finished artifact of a generation job (persisted in history). */
+export interface VideoGenJobResult {
+  historyId: string;
+  /** Absolute art URL (absolutized at the client boundary), ready for <video src>. */
+  url: string;
+  seedUsed: number;
+  elapsedMs: number;
+}
+
+/**
+ * Generation lifecycle. Single-flight (one job monopolizes the GPU). `progress`
+ * is a 0..1 fraction; `detail` carries the current step line. A cancelled job
+ * ends 'cancelled'. Progress arrives via the `videogen.job` event.
+ */
+export interface VideoGenJobStatus {
+  id: string;
+  state: 'queued' | 'running' | 'done' | 'error' | 'cancelled';
+  progress?: number;
+  detail?: string;
+  error?: string;
+  result?: VideoGenJobResult;
+}
+
+/** One persisted generation (GET /videogen/history, newest-first). */
+export interface VideoGenHistoryEntry {
+  id: string;
+  modelId: string;
+  prompt: string;
+  width: number;
+  height: number;
+  numFrames: number;
+  fps: number;
+  seed: number;
+  hasSourceImage: boolean;
+  durationMs: number;
+  /** Absolute art URL (absolutized at the client boundary). */
+  url: string;
+  createdAt: string; // ISO
+}
+
 /* ---------------- Voice (Stage 1c) ---------------- */
 
 export interface VoiceStatus {
@@ -1121,6 +1198,8 @@ export interface CoreEvents {
   'face.job': FaceJobStatus;
   /** Custom preset list changed (job finished / preset deleted). */
   'faces.changed': { presets: CustomFacePreset[] };
+  /** Video Lab generation progress (long job — drives the job card + progress bar). */
+  'videogen.job': VideoGenJobStatus;
   /** Global push-to-talk hotkey (from Electron main via core). */
   'voice.ptt': { pressed: boolean };
   /** A memory was created or merged — drives "Profile updated" moments. */
@@ -1392,6 +1471,24 @@ export interface CoreClient {
   imagegenHistory(): Promise<ImageGenHistoryItem[]>;
   /** Remove a history row and its PNG. */
   imagegenDeleteHistory(id: string): Promise<void>;
+
+  /* video lab (text/image-to-video) */
+  /** Selectable video backends with live availability (bin/weights). */
+  videogenModels(): Promise<VideoGenModelInfo[]>;
+  /**
+   * Validate + start a generation. 422 = bad input / unknown model, 503 = model
+   * unavailable, 409 = a job is already running (single-flight, cross-busy with
+   * Image Lab + faces — one GPU job at a time). Progress via `videogen.job`.
+   */
+  videogenGenerate(input: VideoGenGenerateInput): Promise<{ job: VideoGenJobStatus }>;
+  /** Job status (result URL absolute). Null when the id is unknown. */
+  videogenJob(id: string): Promise<VideoGenJobStatus | null>;
+  /** Cancel a running job. */
+  videogenCancelJob(id: string): Promise<void>;
+  /** Persisted generations, newest-first (art URLs absolute). */
+  videogenHistory(): Promise<VideoGenHistoryEntry[]>;
+  /** Remove a history row and its mp4. */
+  videogenDeleteHistory(id: string): Promise<void>;
   /** fal.ai key presence/state (raw key never returned). */
   falKeyStatus(): Promise<{ keyState: ApiKeyState; keyMask?: string }>;
   /** Store the fal.ai key (stored 'valid' when non-empty — no validation ping). */
@@ -1513,6 +1610,13 @@ export function createCoreClient(): CoreClient {
         if (msg.event === 'faces.changed') {
           const { presets } = msg.payload as CoreEvents['faces.changed'];
           emit('faces.changed', { presets: presets.map(absolutizeFacePreset) });
+        } else if (msg.event === 'videogen.job') {
+          // Absolutize the result art URL so consumers can drop it into <video src>.
+          const job = msg.payload as CoreEvents['videogen.job'];
+          emit(
+            'videogen.job',
+            job.result ? { ...job, result: { ...job.result, url: abs(job.result.url) } } : job,
+          );
         } else if (msg.event) {
           emit(msg.event, msg.payload);
         }
@@ -1737,6 +1841,22 @@ export function createCoreClient(): CoreClient {
       ),
     imagegenDeleteHistory: (id) =>
       fetch(`${baseUrl}/imagegen/history/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`core request failed: ${r.status}`);
+      }),
+
+    videogenModels: () => get<VideoGenModelInfo[]>('/videogen/models'),
+    videogenGenerate: (input) => post<{ job: VideoGenJobStatus }>('/videogen/generate', input),
+    videogenJob: (id) =>
+      get<VideoGenJobStatus | null>(`/videogen/jobs/${id}`).then((s) =>
+        s && s.result ? { ...s, result: { ...s.result, url: abs(s.result.url) } } : s,
+      ),
+    videogenCancelJob: (id) => post<void>(`/videogen/jobs/${id}/cancel`),
+    videogenHistory: () =>
+      get<VideoGenHistoryEntry[]>('/videogen/history').then((items) =>
+        items.map((it) => ({ ...it, url: abs(it.url) })),
+      ),
+    videogenDeleteHistory: (id) =>
+      fetch(`${baseUrl}/videogen/history/${id}`, { method: 'DELETE' }).then((r) => {
         if (!r.ok) throw new Error(`core request failed: ${r.status}`);
       }),
     falKeyStatus: () => get<{ keyState: ApiKeyState; keyMask?: string }>('/imagegen/keys/fal'),

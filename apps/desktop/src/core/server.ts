@@ -25,6 +25,7 @@ import {
 } from "./personas/index.js";
 import { createFaceSystem, registerFaceRoutes, sipsProbe } from "./faces/index.js";
 import { createImageGenSystem, registerImageGenRoutes } from "./imagegen/index.js";
+import { createVideoGenSystem, registerVideoGenRoutes } from "./videogen/index.js";
 import type { CoreEvents, ModelSurface, Persona } from "./types.js";
 
 /**
@@ -86,6 +87,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   settings.store.setFaceLookup(faces.store);
   personas.store.setFaceLookup(faces.store);
   const imagegen = createImageGenSystem(dataDir);
+  const videogen = createVideoGenSystem(dataDir, broadcast);
   // Preset Generator hands a chosen Image Lab base candidate to a faces job by id.
   faces.service.setHistoryResolver((id) => imagegen.service.historyImagePath(id));
   const engine = new ChatEngine(
@@ -106,6 +108,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   });
 
   app.addHook("onClose", async () => {
+    videogen.close();
     imagegen.close();
     faces.close();
     personas.close();
@@ -255,8 +258,10 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     broadcast,
     probe: sipsProbe,
     getSettings: () => settings.store.get(),
-    // Cross-busy: an Image Lab job holds the GPU → generate/expressions 409.
+    // Cross-busy: an Image Lab or Video Lab job holds the GPU → generate/photo/
+    // expressions 409.
     isImageGenBusy: () => imagegen.service.isBusy(),
+    isVideoGenBusy: () => videogen.service.isBusy(),
     dataDir,
   });
 
@@ -264,7 +269,17 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   registerImageGenRoutes(app, {
     service: imagegen.service,
     falKeys: imagegen.keys,
-    // Cross-busy: a faces job holds the GPU → /imagegen/generate 409.
+    // Cross-busy: a faces or Video Lab job holds the GPU → /imagegen/generate 409.
+    isFacesBusy: () => faces.service.isBusy(),
+    isVideoGenBusy: () => videogen.service.isBusy(),
+    dataDir,
+  });
+
+  /* ------------------------------- video lab ----------------------------- */
+  registerVideoGenRoutes(app, {
+    service: videogen.service,
+    // Cross-busy: an Image Lab or faces job holds the GPU → /videogen/generate 409.
+    isImageGenBusy: () => imagegen.service.isBusy(),
     isFacesBusy: () => faces.service.isBusy(),
     dataDir,
   });
