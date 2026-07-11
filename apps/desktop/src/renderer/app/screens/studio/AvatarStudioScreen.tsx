@@ -7,6 +7,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Sparkles,
   Trash2,
   Zap,
@@ -32,6 +33,7 @@ import { ClipEditor } from './ClipEditor';
 import { TriggerEditor } from './TriggerEditor';
 import { CreateFromFramesWizard } from './CreateFromFramesWizard';
 import { GeneratePresetWizard } from './GeneratePresetWizard';
+import { GenerateExpressionDialog } from './GenerateExpressionDialog';
 import { CreateFacePresetOverlay } from '../settings/CreateFacePresetOverlay';
 import { ImageLab } from './ImageLab';
 
@@ -233,11 +235,12 @@ export function AvatarStudioScreen() {
   const [photoOpen, setPhotoOpen] = useState(false);
   const [clipEditor, setClipEditor] = useState<{ clip: AnimationClip | null } | null>(null);
   const [triggerEditor, setTriggerEditor] = useState<{ rule: TriggerRule | null } | null>(null);
+  const [expressionDialog, setExpressionDialog] = useState<{ replaceClip: AnimationClip | null } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const editable = !!selected?.custom;
   const jobLive = !!job && ['queued', 'generating', 'compositing'].includes(job.state);
-  const overlayOpen = wizardOpen || generateOpen || photoOpen || !!clipEditor || !!triggerEditor;
+  const overlayOpen = wizardOpen || generateOpen || photoOpen || !!clipEditor || !!triggerEditor || !!expressionDialog;
 
   const play = (clip: AnimationClip) => {
     controllerRef.current?.request(clip.id, { interrupt: true });
@@ -470,9 +473,22 @@ export function AvatarStudioScreen() {
                     Clips ({draft?.animations.length ?? 0})
                   </h2>
                   {editable && (
-                    <Button size="sm" variant="ghost" icon={<Plus size={13} strokeWidth={1.5} />} onClick={() => setClipEditor({ clip: null })}>
-                      Add clip
-                    </Button>
+                    <div className="flex items-center gap-1.5">
+                      {selected?.custom && baseConfig && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={<Sparkles size={13} strokeWidth={1.5} />}
+                          onClick={() => setExpressionDialog({ replaceClip: null })}
+                          disabled={jobLive}
+                        >
+                          Generate expression
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" icon={<Plus size={13} strokeWidth={1.5} />} onClick={() => setClipEditor({ clip: null })}>
+                        Add clip
+                      </Button>
+                    </div>
                   )}
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -508,6 +524,16 @@ export function AvatarStudioScreen() {
                       )}
                       {editable && (
                         <>
+                          {clip.renderKind === 'sprite' && baseConfig?.generation?.expressions?.some((e) => e.clipId === clip.id) && (
+                            <button
+                              aria-label={`Regenerate ${clip.name}`}
+                              onClick={() => setExpressionDialog({ replaceClip: clip })}
+                              disabled={jobLive}
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-45"
+                            >
+                              <RefreshCw size={12} strokeWidth={1.5} />
+                            </button>
+                          )}
                           <button
                             aria-label={`Edit ${clip.name}`}
                             onClick={() => setClipEditor({ clip })}
@@ -634,6 +660,17 @@ export function AvatarStudioScreen() {
         onCreated={(id) => setSelectedId(id)}
       />
       <CreateFacePresetOverlay open={photoOpen} onClose={() => setPhotoOpen(false)} />
+      {expressionDialog && selected?.custom && baseConfig && (
+        <GenerateExpressionDialog
+          open
+          presetId={selected.id}
+          presetName={selected.name}
+          config={baseConfig}
+          baseFrameUrl={selected.thumb ?? baseConfig.baseFrame}
+          replaceClip={expressionDialog.replaceClip}
+          onClose={() => setExpressionDialog(null)}
+        />
+      )}
       {clipEditor && (
         <ClipEditor
           open

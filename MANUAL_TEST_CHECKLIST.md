@@ -76,6 +76,40 @@ GPU toolchain except the last section.
 - [ ] Fast fake e2e instead: quit the app, relaunch dev with `MENTOROS_FACES_FAKE=1` — the
       Kontext step is stubbed with tinted frames, whole job takes seconds.
 
+## 7 · Preset Generator — "Generate a preset" (text → full preset, GPU ~20–30 min)
+
+Fast fake e2e first (recommended): relaunch dev with `MENTOROS_FACES_FAKE=1` — the
+z-image-turbo step is stubbed with tinted frames, the whole batch takes seconds. Note the
+Describe step's candidate reroll still uses the REAL Image Lab backend (fake mode only
+stubs the faces job), so the reroll costs ~2 min per candidate either way.
+
+- [ ] Studio → **Generate a preset** (primary button). Describe: type a character, Generate
+      a candidate (~2 min, progress line + Cancel live), Reroll adds more; picking one
+      shows its seed badge; Continue disabled until picked.
+- [ ] Expressions: core 4 shown locked; 6 reactions default-on with editable prompts;
+      Add expression → name/prompt/region-select rows; "Custom region…" says it'll be
+      marked next step.
+- [ ] Regions: auto-detect ON by default (empty state explains); flipping the switch shows
+      draggable Mouth/Eyes/Face boxes over the picked candidate; custom-group expressions
+      always show their own box.
+- [ ] Generate: frame count + minutes estimate + seed shown; Generate → live progress card
+      (step text, n-of-m frames, aurora bar); **Continue in background** closes the wizard
+      and the studio sidebar job card takes over; Cancel keeps finished frames.
+- [ ] On done: preset auto-selected in the studio, appears in Settings→Identity gallery,
+      lip-sync + reactions play (Speak audition; think/smile fire in chat/voice).
+- [ ] While a generate job runs: Image Lab generate is blocked with a clear 409 message
+      (and vice versa: an Image Lab render blocks Generate/Reroll).
+- [ ] Preset page (custom preset): **Generate expression** in the Clips header → dialog
+      with catalog suggestions for reactions you skipped; submit renders ONE frame
+      (~2 min GPU) and the clip appears after the job.
+- [ ] A generated clip row shows a Regenerate button → same dialog prefilled; regenerating
+      replaces the frame in place (fresh seed), clip id/triggers unchanged.
+- [ ] Editor Save on a generated preset does NOT lose the ability to add expressions
+      (edit any clip, Save, then Generate expression still offers catalog suggestions —
+      the generation metadata survived the save).
+
 **Known/accepted:** envelope mouth has ~3s startup latency after speak() (Kokoro buffering,
 pre-existing); sheet tiles are square-cropped, so non-square cells lose their edges; grid
-auto-detect needs a plain background (manual steppers always available).
+auto-detect needs a plain background (manual steppers always available); photo-preset
+add-expression is gated on the z-image-turbo toolchain even though it edits via Kontext
+(single shared probe — flag if annoying).

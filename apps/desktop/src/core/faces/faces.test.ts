@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
@@ -962,6 +962,14 @@ test("startGenerate runs to done: preset persisted with generation meta", async 
     assert.ok(cfg.generation, "generation meta persisted");
     assert.equal(cfg.generation!.method, "z-turbo-t2i");
     assert.ok(cfg.animations.some((c) => c.id === "smile"));
+    // Done-GC: heavy intermediates dropped, base + provenance kept for resume checks.
+    const work = workDir(h.dir, status.presetId);
+    assert.ok(existsSync(join(work, "base.png")), "base survives GC");
+    assert.ok(existsSync(join(work, "source.json")), "signature survives GC");
+    assert.ok(
+      !readdirSync(work).some((f) => f.startsWith("gen-") || f.startsWith("comp-")),
+      "gen/comp intermediates GC'd after done",
+    );
   } finally {
     rmSync(h.dir, { recursive: true, force: true });
   }

@@ -97,26 +97,34 @@ Alternatives, when to prefer them:
 | --- | --- |
 | **Draw Things** (Mac app) | easiest GUI for the same local models; not scriptable enough for our batch pipeline |
 | **ComfyUI** | node-graph power tool (ControlNet, IPAdapter face-lock, upscalers); heavier setup, python env churn — overkill for a one-time 18-image pipeline |
-| **mflux's other models** (`z-image-turbo`, `Qwen-Image`, FLUX.2-klein) | newer/faster options in the same CLI — worth testing z-image-turbo for future presets (sub-10s generations) |
+| **mflux's other models** (`Qwen-Image`, FLUX.2-klein) | more options in the same CLI. **z-image-turbo was tested and adopted** — it now powers Image Lab and the Preset Generator (8 steps, ~2 min at 1024², and its same-seed t2i recipe replaced Kontext edits for text-born presets) |
 | **Cloud APIs** (BFL FLUX 1.1 Pro / Kontext Pro, fal.ai, Replicate, gpt-image-1) | clearly better quality + seconds-fast, ~$0.03–0.07/image, but online + paid — wrong default for a local-first app; could become an *optional* path once cloud keys are in Settings anyway |
 | **True talking-head ML** (LivePortrait, SadTalker et al.) | real lip-sync from audio, but heavy video models, GPU-hungry, not sensibly offline on this machine — this is exactly why we do sprite-stack lip-sync over stills |
 
-## In-app generation UI (planned)
+## In-app generation UI (shipped — Avatar Studio)
 
-Yes — already on the backlog (user decision 2026-07-07, see PROGRESS.md):
-a **"Create new preset"** flow in Settings → Identity:
+Two in-app surfaces now drive the toolchain (both fire-and-forget background
+jobs with WS progress, one at a time — faces and Image Lab jobs block each
+other since either spawns mflux at ~11GB peak):
 
-1. User describes the preset (or picks traits); once an Anthropic key is set,
-   a cloud model does prompt-assist (turns the description into the PROMPTS.md
-   character/outfit template).
-2. Core shells out to `mflux-generate` / `mflux-generate-kontext` (toolchain
-   at `~/mentoros-imagegen/` is kept permanently for this) and streams
-   progress events over the existing WS channel (same pattern as STT model
-   downloads).
-3. Composite + cwebp + drop into a per-user presets dir; the registry in
-   `orb/faces/realistic.ts` gains a loader for user presets beside the
-   built-ins.
+1. **Image Lab** (Avatar Studio → Image Lab pill) — free-form text-to-image
+   playground. Local backend = **Z-Image-Turbo** (pre-quantized
+   `filipstrand/Z-Image-Turbo-mflux-4bit`, ~6GB, 8 steps, ~2 min at 1024²),
+   plus hosted z-image-turbo via fal.ai and Kontext edit-from-photo. History
+   in SQLite, server-resolved seeds.
+2. **Preset Generator** (Avatar Studio → "Generate a preset") — the
+   productized Kiki recipe: every frame is z-image-turbo **text-to-image with
+   the same seed** (shared character clause + per-expression trailing clause),
+   then the anti-drift feathered-ellipse composite pastes only the changed
+   region (mouth/eyes/face — auto-detected by frame diff, or hand-marked)
+   onto the untouched base. Wizard: describe + reroll candidates → pick
+   expressions from the proven catalog (editable prompts, plus custom ones) →
+   regions → background job (~2 min/frame). Presets carry `generation`
+   metadata in their config, so single expressions can be added or
+   regenerated later from the preset page. Legacy photo presets add
+   expressions via Kontext edits instead.
 
-Realistic expectations: a full preset = 2 base renders (~3 min) + 4 Kontext
-edits (~40 min) on the current machine — so the UI must be fire-and-forget
-with progress, not a modal wait.
+The original Kiki-era scripts this recipe came from are preserved verbatim in
+`tools/faces/kiki/` (gen_kiki.sh, finalize_kiki.py, insert_kiki.sh,
+kiki_regions.json); the live implementation is `apps/desktop/src/core/faces/`
+(catalog.ts, ops.ts PIPELINE_PY, generateRunner.ts).

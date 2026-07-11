@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   coreClient,
+  type AddFaceExpressionInput,
   type CustomFacePreset,
   type CreateFacePresetInput,
   type CreateManualFacePresetInput,
@@ -52,6 +53,8 @@ interface FaceState {
   create: (input: CreateFacePresetInput) => Promise<boolean>;
   /** Preset Generator wizard — text-to-image batch job. Returns the started job. */
   generate: (input: GenerateFacePresetInput) => Promise<FaceJobStatus | null>;
+  /** Add/regenerate one expression on a custom preset. Returns the started job. */
+  addExpression: (id: FacePresetId, input: AddFaceExpressionInput) => Promise<FaceJobStatus | null>;
   /** Avatar Studio "Create from frames" — synchronous, no generation job. */
   createManual: (input: CreateManualFacePresetInput) => Promise<CustomFacePreset | null>;
   /** Avatar Studio editor save — replaces a custom preset's animation doc. */
@@ -132,6 +135,23 @@ export const useFaces = create<FaceState>((set, get) => ({
     set({ creating: true });
     try {
       const { job } = await coreClient.generateFacePreset(input);
+      set({ job, creating: false });
+      return job;
+    } catch (err) {
+      set({ creating: false });
+      toast({
+        tone: 'danger',
+        title: 'Could not start generation',
+        description: err instanceof Error ? err.message : 'Unknown error.',
+      });
+      return null;
+    }
+  },
+
+  addExpression: async (id, input) => {
+    set({ creating: true });
+    try {
+      const { job } = await coreClient.addFaceExpression(id, input);
       set({ job, creating: false });
       return job;
     } catch (err) {

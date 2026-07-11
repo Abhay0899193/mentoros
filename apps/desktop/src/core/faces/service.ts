@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
   AnimationClip,
@@ -478,6 +478,7 @@ export class FaceService {
       status.completedFrames = expressions.length;
       emit();
       this.deps.broadcast("faces.changed", { presets: this.deps.store.listCustom() });
+      this.gcWorkDir(status.presetId);
     } catch (err) {
       this.markFailure(status, err, signal);
       emit();
@@ -533,6 +534,7 @@ export class FaceService {
       status.completedFrames = 1;
       emit();
       this.deps.broadcast("faces.changed", { presets: this.deps.store.listCustom() });
+      this.gcWorkDir(id);
     } catch (err) {
       this.markFailure(status, err, signal);
       emit();
@@ -563,6 +565,23 @@ export class FaceService {
       status.state = "error";
       status.step = "Failed";
       status.error = err instanceof Error ? err.message : "generation failed";
+    }
+  }
+
+  /**
+   * After a job succeeds, drop the heavy intermediates (the gen- and comp-
+   * PNGs) — only the base + provenance stay, so cancel/error resumes keep
+   * working while a finished 20-frame run doesn't leave ~60MB behind.
+   */
+  private gcWorkDir(presetId: string): void {
+    const dir = workDir(this.deps.dataDir, presetId);
+    const keep = new Set(["base.png", "source.json", "accent.json"]);
+    try {
+      for (const entry of readdirSync(dir)) {
+        if (!keep.has(entry)) rmSync(join(dir, entry), { recursive: true, force: true });
+      }
+    } catch {
+      /* GC is best-effort — never fail a finished job over cleanup */
     }
   }
 
