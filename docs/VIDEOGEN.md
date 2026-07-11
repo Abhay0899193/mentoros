@@ -100,25 +100,74 @@ HF_HOME=~/mentoros-imagegen/hf-cache HF_HUB_DISABLE_XET=1 \
   higher resolutions/durations (768² stage-2 will be ~2.25× slower per step), Wan
   fallback (not needed — LTX fits with huge headroom).
 
+## ✅ Shipped — Video Lab in-app status (2026-07-11)
+
+The feature is built and committed (Stage 1 backend `70e5add`, Stage 2 UI `0d7e02b`).
+Manual test script: `MANUAL_TEST_CHECKLIST.md §8`.
+
+**Backend — `src/core/videogen/`** (`paths,toolchain,models,store,ops,validate,service,routes`):
+
+- **Availability probe**: `video-env/bin/mlx_video.generate_av` exec bit + LTX +
+  gemma snapshot dirs present in `~/mentoros-imagegen/hf-cache`. Missing → model
+  listed unavailable with an install `detail`, generate 503s.
+- **Registry**: `ltx-local` (LTX-2.3 22B q4 + gemma-3-12b-it-4bit) only for now;
+  `wan-local` / `ltx-fal` have reserved slots.
+- **Validation**: prompt ≤ 2000 chars; width/height snapped to ÷64, clamped 256–1024;
+  frames snapped to 1+8k, clamped 9–121; fps 8–30; seed uint32 (server-resolved when
+  omitted → `seedUsed`); optional I2V image = data URI → temp PNG → `--image`.
+- **Jobs**: single-flight (self 409) spawning the exact smoke CLI above (no `--steps`);
+  progress parsed from `STAGE:n:STEP` stderr lines (stage 1 maps to 0–0.7, stage 2 to
+  0.7–1.0) and broadcast as **`videogen.job` WS events** (numeric progress — richer
+  than imagegen's poll-only jobs; UI needs no poll loop). Cancel = SIGTERM → 2 s →
+  SIGKILL, `cancelled` is a first-class terminal state; partial mp4 deleted on
+  fail/cancel; done → row in sqlite `videogen_history`. In-flight jobs do NOT survive
+  an app restart (history does).
+- **Routes**: `GET /videogen/models`, `POST /videogen/generate` → `{job}`
+  (409 self+cross-busy / 503 toolchain / 422 invalid), `GET /videogen/jobs/:id`,
+  `POST /videogen/jobs/:id/cancel`, `GET /videogen/history`,
+  `DELETE /videogen/history/:id`, `GET /videogen/art/:file` with full **Range**
+  support (200/206/416, immutable cache — files are write-once) for `<video>` scrubbing.
+- **Cross-busy**: three-way 409s videogen ↔ imagegen ↔ faces (incl. the photo-preset
+  route) — each toolchain peaks >8 GB, only one may run. Wired in `core/server.ts`.
+- **Fake mode**: `MENTOROS_VIDEOGEN_FAKE=1` skips the GPU and writes a tiny real mp4 —
+  use for GPU-free e2e.
+- `coreClient.ts` mirror: `videogenModels/Generate/Job/Cancel/History/DeleteHistory`,
+  art URLs absolutized at the client boundary, `videogen.job` WS event typed.
+
+**UI — "Video" pill in Avatar Studio** (`screens/studio/VideoLab.tsx` +
+`lib/videoLabStore.ts`, WS-driven — no poll loop):
+
+- Model list with availability gate; prompt (⌘Enter submits); **Source image** section
+  for I2V — drop/click a photo, pick an Image Lab render from imagegen history, or a
+  preset base frame (built-in + custom presets), all converted to data URIs.
+- Duration chips 2/3/4/5 s (= 49/73/97/121 frames) + size chips 512², 512×768, 768×512
+  + free W/H steppers (step 64); live render-time estimate
+  (`87 s × frames/49 × area/512²`); seed row with randomize.
+- Live job card with a real numeric progress bar + stage detail + Cancel +
+  continue-in-background note; error/cancelled card with retry + dismiss.
+- Output pane: `<video controls loop>` + seed copy / reuse seed / reuse settings.
+- History grid: inline `<video preload="metadata">` thumbs, duration badge,
+  hover-delete with confirm.
+- Client-side cross-busy: Generate disabled with a reason line while a faces job or
+  Image Lab render is live (server 409s regardless).
+
 ## Feature plan (staged, mirrors Image Lab)
 
 **Stage 0 — toolchain smoke. ✅ DONE (results above). GO.**
 
-**Stage 1 — `core/videogen/`** cloned from `core/imagegen/` patterns: toolchain probe
-(binary + weights dirs), model registry (ltx-local primary; wan-local fallback;
-`ltx-fal` hosted later), single-flight background jobs w/ WS progress + cancel
-(kill child), server-resolved seed, sqlite `videogen_history`, routes
-`/videogen/{models,generate,jobs,art,history}` with mp4 streaming (Range header
-support for `<video>` scrubbing). **Cross-busy 409s three-way**: videogen ↔ imagegen ↔
-faces — every one of these peaks >10 GB in mflux/mlx-video, only one may run.
+**Stage 1 — `core/videogen/`. ✅ DONE (`70e5add`)** — cloned from `core/imagegen/`
+patterns: toolchain probe, model registry, single-flight background jobs w/ WS progress
++ cancel, server-resolved seed, sqlite `videogen_history`, routes
+`/videogen/{models,generate,jobs,art,history}` with Range-streamed mp4. Three-way
+cross-busy 409s videogen ↔ imagegen ↔ faces.
 
-**Stage 2 — UI: "Video" as a third Avatar Studio pill** (Avatars | Image Lab | Video).
-Form = prompt, optional source image (PhotoDrop + "use this render" from Image Lab
-history + "use preset base frame" from a face preset), duration/resolution presets
-sized to measured speed, seed row; job card with progress + cancel +
-continue-in-background; history grid with inline `<video>` playback + delete.
+**Stage 2 — UI: "Video" as a third Avatar Studio pill. ✅ DONE (`0d7e02b`)** —
+see the shipped section above.
 
-**Stage 3 — docs + checklist §8 + design pass.** Later/optional: hosted fal backend for
-seconds-fast clips; "animate this preset" one-click I2V from the preset detail page.
+**Stage 3 — docs + checklist §8. ✅ DONE (this doc + `MANUAL_TEST_CHECKLIST.md §8`).**
+Design pass rides the user's manual §8 run (no runtime verify per standing directive).
+Later/optional: hosted fal backend for seconds-fast clips; "animate this preset"
+one-click I2V from the preset detail page; wan-local fallback backend.
 
-Est. new disk: ~16–18 GB (LTX) or ~10 GB (Wan) on top of the existing ~25 GB hf-cache.
+Disk actually used: hf-cache 25 → 53 GB (LTX 22.8 GB + gemma 8.1 GB); volume at ~93 %,
+~30 GB free.

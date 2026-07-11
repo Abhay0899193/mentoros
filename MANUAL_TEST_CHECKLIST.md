@@ -2,7 +2,7 @@
 
 Built without a runtime-verifier pass this session (per your directive) — this is the script
 to shake it down by hand. Run `pnpm --filter @mentoros/desktop dev`. Nothing here needs the
-GPU toolchain except the last section.
+GPU toolchain except §6–§8 (each has a fake-mode shortcut).
 
 ## 1 · Regression — existing presets must look unchanged
 - [ ] Settings → Identity → Face → pick **Lena** (cameo). Voice screen: she blinks every few
@@ -107,6 +107,37 @@ stubs the faces job), so the reroll costs ~2 min per candidate either way.
 - [ ] Editor Save on a generated preset does NOT lose the ability to add expressions
       (edit any clip, Save, then Generate expression still offers catalog suggestions —
       the generation metadata survived the save).
+
+## 8 · Video Lab (GPU ~90 s per 2 s clip; fake mode = `MENTOROS_VIDEOGEN_FAKE=1`)
+
+Fake mode stubs only the GPU render (writes a tiny real mp4 in seconds) — everything
+else (validation, progress events, history, cross-busy) is the real path.
+
+- [ ] Studio header shows a third pill **Avatars | Image Lab | Video**; picking Video
+      swaps the content (existing Avatars/Image Lab untouched).
+- [ ] Model row: **LTX-2.3 (local)** listed. If the toolchain were missing it should show
+      a disabled row with install detail (skip unless you want to rename the binary).
+- [ ] **T2V**: type a prompt, leave Source image empty, 2 s / 512² → the estimate line
+      reads ~90 s. Generate (or ⌘Enter) → live job card with a REAL numeric progress bar
+      (percent + stage detail, stage 1 ≈ 0–70 %, stage 2 ≈ 70–100 %).
+- [ ] On done: output pane plays the clip (`<video>` controls, loops, has audio);
+      seed-copy / reuse-seed / reuse-settings buttons work.
+- [ ] **I2V × 3 sources**: (a) drop/click a photo into Source image; (b) "Image Lab
+      render" picker lists your imagegen history — pick one; (c) "Preset base frame"
+      picker lists built-in + custom face presets — pick one (e.g. Kiki). Each shows a
+      thumbnail + clear button; generated clip preserves the source's identity (GPU run).
+- [ ] Duration chips 2/3/4/5 s and size chips 512² / 512×768 / 768×512 update the
+      frames/size + estimate; free W/H steppers snap to 64.
+- [ ] **Cancel** mid-job → card flips to cancelled with retry + dismiss; no broken row
+      appears in history (partial mp4 is deleted).
+- [ ] Navigating away mid-job and back: job card still live (continue-in-background note).
+- [ ] **Cross-busy**: while a video job runs, Image Lab Generate and faces
+      Generate-a-preset are blocked (409 message); vice versa, a live Image Lab render or
+      face job disables Video Generate with a reason line.
+- [ ] History grid: finished clips render inline video thumbs with a duration badge;
+      scrubbing works (Range requests); hover-delete → inline confirm → row gone.
+- [ ] App restart mid-job: the in-flight job is lost (expected, by design) but history
+      is intact and plays.
 
 **Known/accepted:** envelope mouth has ~3s startup latency after speak() (Kokoro buffering,
 pre-existing); sheet tiles are square-cropped, so non-square cells lose their edges; grid
