@@ -1,8 +1,13 @@
 import type {
+  AddFaceExpressionInput,
   AnimationClip,
   AvatarConfig,
   ConversationEvent,
   CreateManualFacePresetInput,
+  ExpressionGroupOrCustom,
+  FaceRegion,
+  GenerateExpressionSpec,
+  GenerateFacePresetInput,
   PoseChannels,
   PoseKeyframe,
   TriggerRule,
@@ -10,6 +15,7 @@ import type {
 } from "../types.js";
 import { FaceValidationError } from "./validate.js";
 import { SAFE_ART_FILE } from "./paths.js";
+import { catalogEntry } from "./catalog.js";
 import type { PresetRow } from "./store.js";
 
 /**
@@ -215,7 +221,7 @@ function validateAnimations(
   frameCheck: (f: unknown, label: string) => void,
 ): AnimationClip[] {
   if (!Array.isArray(value)) throw new FaceValidationError("animations must be an array");
-  if (value.length > 24) throw new FaceValidationError("too many animations (max 24)");
+  if (value.length > 48) throw new FaceValidationError("too many animations (max 48)");
   const ids = new Set<string>();
   let totalFrames = 0;
   const clips: AnimationClip[] = [];
@@ -270,7 +276,7 @@ function validateAnimations(
     }
     clips.push(clip);
   }
-  if (totalFrames > 120) throw new FaceValidationError("too many frames (max 120 per preset)");
+  if (totalFrames > 240) throw new FaceValidationError("too many frames (max 240 per preset)");
   return clips;
 }
 
@@ -393,6 +399,155 @@ export function validateManualInput(body: unknown): CreateManualFacePresetInput 
   if (fullBase) input.fullBase = fullBase;
   if (defaultAnimationId) input.defaultAnimationId = defaultAnimationId;
   return input;
+}
+
+/* --------------------- Preset Generator (t2i) validation ------------------ */
+
+const CANVAS = 1024;
+const GROUP_OR_CUSTOM = ["mouth", "eyes", "face", "custom"] as const;
+const IMAGE_DATA_URI = /^data:image\/(webp|png|jpeg|jpg);base64,/;
+
+/** A composite window in 1024² space: inside the canvas, positive extent. */
+function requireRegion1024(value: unknown, label: string): FaceRegion {
+  if (!value || typeof value !== "object") throw new FaceValidationError(`${label} region is required`);
+  const r = value as Record<string, unknown>;
+  if (![r.x, r.y, r.width, r.height].every(isFiniteNumber)) {
+    throw new FaceValidationError(`${label} region must have numeric x, y, width, height`);
+  }
+  const region: FaceRegion = { x: r.x as number, y: r.y as number, width: r.width as number, height: r.height as number };
+  if (region.width <= 0 || region.height <= 0) {
+    throw new FaceValidationError(`${label} region must have positive width and height`);
+  }
+  if (region.x < 0 || region.y < 0 || region.x + region.width > CANVAS || region.y + region.height > CANVAS) {
+    throw new FaceValidationError(`${label} region must lie inside the 1024×1024 canvas`);
+  }
+  return region;
+}
+
+function requirePrompt(v: unknown, label: string): string {
+  return requireString(v, label, 1, 2000);
+}
+
+/** One catalog-key or custom expression spec (shared by generate + add). */
+function validateExpressionSpec(raw: unknown, label: string): GenerateExpressionSpec {
+  if (!raw || typeof raw !== "object") throw new FaceValidationError(`${label} must be an object`);
+  const o = raw as Record<string, unknown>;
+  if (o.key !== undefined && o.key !== null && o.key !== "") {
+    if (typeof o.key !== "string" || !catalogEntry(o.key)) {
+      throw new FaceValidationError(`${label} key is not a known expression`);
+    }
+    const spec: GenerateExpressionSpec = { key: o.key };
+    if (o.prompt !== undefined && o.prompt !== null && o.prompt !== "") spec.prompt = requirePrompt(o.prompt, `${label} prompt`);
+    return spec;
+  }
+  // Custom expression: needs an id slug, name, prompt, group (+ region when custom).
+  const id = requireSlug(o.id, `${label} id`);
+  const name = validateName(o.name);
+  const prompt = requirePrompt(o.prompt, `${label} prompt`);
+  const group = requireEnum(o.group, GROUP_OR_CUSTOM, `${label} group`) as ExpressionGroupOrCustom;
+  const spec: GenerateExpressionSpec = { id, name, prompt, group };
+  if (group === "custom") {
+    spec.region = requireRegion1024(o.region, `${label} region`);
+  } else if (o.region !== undefined && o.region !== null) {
+    spec.region = requireRegion1024(o.region, `${label} region`);
+  }
+  return spec;
+}
+
+/** Optional manual composite windows (each overrides auto-detect). */
+function validateRegionOverrides(v: unknown): GenerateFacePresetInput["regions"] {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "object") throw new FaceValidationError("regions must be an object");
+  const o = v as Record<string, unknown>;
+  const out: NonNullable<GenerateFacePresetInput["regions"]> = {};
+  for (const key of ["mouth", "eyes", "face"] as const) {
+    if (o[key] !== undefined && o[key] !== null) out[key] = requireRegion1024(o[key], `${key} override`);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** POST /faces/custom/generate — text-to-image preset generation. */
+export function validateGenerateInput(body: unknown): GenerateFacePresetInput {
+  if (!body || typeof body !== "object") throw new FaceValidationError("payload must be an object");
+  const o = body as Record<string, unknown>;
+  const name = validateName(o.name);
+  const characterPrompt = requirePrompt(o.characterPrompt, "characterPrompt");
+
+  if (!Array.isArray(o.expressions)) throw new FaceValidationError("expressions must be an array");
+  if (o.expressions.length > 20) throw new FaceValidationError("too many expressions (max 20)");
+  const expressions = o.expressions.map((e, i) => validateExpressionSpec(e, `expressions[${i}]`));
+  // Custom ids must be unique (they become clip ids).
+  const customIds = new Set<string>();
+  for (const e of expressions) {
+    if (e.id) {
+      if (customIds.has(e.id)) throw new FaceValidationError(`duplicate custom expression id: ${e.id}`);
+      customIds.add(e.id);
+    }
+  }
+
+  const input: GenerateFacePresetInput = { name, characterPrompt, expressions };
+  const regions = validateRegionOverrides(o.regions);
+  if (regions) input.regions = regions;
+
+  const hasHistory = typeof o.baseHistoryId === "string" && o.baseHistoryId.length > 0;
+  const hasDataUri = typeof o.baseDataUri === "string" && o.baseDataUri.length > 0;
+  if (hasHistory === hasDataUri) {
+    throw new FaceValidationError("provide exactly one of baseHistoryId or baseDataUri");
+  }
+  if (hasHistory) {
+    input.baseHistoryId = o.baseHistoryId as string;
+  } else {
+    if (!IMAGE_DATA_URI.test(o.baseDataUri as string)) {
+      throw new FaceValidationError("baseDataUri must be a png/webp/jpeg data URI");
+    }
+    input.baseDataUri = o.baseDataUri as string;
+  }
+  if (o.baseSeed !== undefined && o.baseSeed !== null) {
+    if (!isFiniteInt(o.baseSeed) || o.baseSeed < 0 || o.baseSeed > 0xffffffff) {
+      throw new FaceValidationError("baseSeed must be a uint32 (0..4294967295)");
+    }
+    input.baseSeed = o.baseSeed;
+  }
+  return input;
+}
+
+/** POST /faces/custom/:id/expressions — add or regenerate one expression. */
+export function validateAddExpressionInput(body: unknown): AddFaceExpressionInput {
+  if (!body || typeof body !== "object") throw new FaceValidationError("payload must be an object");
+  const o = body as Record<string, unknown>;
+  const spec = validateExpressionSpec(o, "expression");
+  const input: AddFaceExpressionInput = { ...spec };
+  if (o.replaceClipId !== undefined && o.replaceClipId !== null && o.replaceClipId !== "") {
+    input.replaceClipId = requireSlug(o.replaceClipId, "replaceClipId");
+  }
+  if (o.trigger !== undefined && o.trigger !== null) {
+    // The trigger targets the new clip; its id is resolved in the runner/service,
+    // so validate its shape against a single-clip set once the clip id is known.
+    input.trigger = validateSingleTrigger(o.trigger, spec, input.replaceClipId);
+  }
+  return input;
+}
+
+/** Validate a lone trigger whose animationId must point at this expression's clip. */
+function validateSingleTrigger(
+  raw: unknown,
+  spec: GenerateExpressionSpec,
+  replaceClipId: string | undefined,
+): TriggerRule {
+  const clipId = replaceClipId ?? clipIdForSpec(spec);
+  const triggers = validateTriggers([{ ...(raw as object), animationId: clipId }], new Set([clipId]));
+  return triggers[0]!;
+}
+
+/** The clip id an expression spec contributes to (catalog clip or custom slug). */
+export function clipIdForSpec(spec: GenerateExpressionSpec): string {
+  if (spec.key) {
+    const entry = catalogEntry(spec.key);
+    if (!entry) throw new FaceValidationError(`unknown expression key: ${spec.key}`);
+    return entry.clipId;
+  }
+  if (!spec.id) throw new FaceValidationError("expression needs a key or an id");
+  return spec.id;
 }
 
 /** PUT /faces/custom/:id/config — frames are art filenames OR webp data URIs. */

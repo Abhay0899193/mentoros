@@ -67,11 +67,14 @@ export interface PresetRow {
 }
 
 export type JobState = FaceJobStatus["state"];
+export type JobKind = FaceJobStatus["kind"];
 
 export interface JobRow {
   id: string;
   presetId: string;
   name: string;
+  /** Which pipeline produced the job; rows predating the column read as 'photo'. */
+  kind: JobKind;
   state: JobState;
   step: string;
   completedFrames: number;
@@ -143,13 +146,14 @@ export class SqliteFaceRepo implements FaceRepo {
     this.db
       .prepare(
         `INSERT INTO face_jobs
-           (id, preset_id, name, state, step, completed_frames, total_frames, error, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, preset_id, name, kind, state, step, completed_frames, total_frames, error, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.id,
         row.presetId,
         row.name,
+        row.kind,
         row.state,
         row.step,
         row.completedFrames,
@@ -165,6 +169,7 @@ export class SqliteFaceRepo implements FaceRepo {
     const map: Record<string, string> = {
       presetId: "preset_id",
       name: "name",
+      kind: "kind",
       state: "state",
       step: "step",
       completedFrames: "completed_frames",
@@ -235,6 +240,7 @@ interface RawJobRow {
   id: string;
   presetId: string;
   name: string;
+  kind: string | null;
   state: string;
   step: string;
   completedFrames: number;
@@ -243,16 +249,19 @@ interface RawJobRow {
   startedAt: string;
 }
 function jobSelect(tail: string): string {
-  return `SELECT id, preset_id AS presetId, name, state, step,
+  return `SELECT id, preset_id AS presetId, name, kind, state, step,
                  completed_frames AS completedFrames, total_frames AS totalFrames,
                  error, started_at AS startedAt
           FROM face_jobs ${tail}`;
 }
+const JOB_KINDS: JobKind[] = ["photo", "generate", "expression"];
 function toJobRow(r: RawJobRow): JobRow {
   return {
     id: r.id,
     presetId: r.presetId,
     name: r.name,
+    // Rows that predate the column (NULL/unknown) are legacy photo jobs.
+    kind: JOB_KINDS.includes(r.kind as JobKind) ? (r.kind as JobKind) : "photo",
     state: (LIVE_STATES.includes(r.state as JobState) ||
     ["done", "error", "cancelled"].includes(r.state)
       ? r.state
@@ -279,6 +288,7 @@ export function migrateFaces(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       preset_id TEXT NOT NULL,
       name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'photo',
       state TEXT NOT NULL,
       step TEXT NOT NULL,
       completed_frames INTEGER NOT NULL DEFAULT 0,
@@ -291,6 +301,11 @@ export function migrateFaces(db: Database.Database): void {
   const cols = db.prepare(`PRAGMA table_info(face_presets)`).all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "config_json")) {
     db.exec(`ALTER TABLE face_presets ADD COLUMN config_json TEXT`);
+  }
+  // In-place upgrade for DBs created before the Preset-Generator job kinds.
+  const jobCols = db.prepare(`PRAGMA table_info(face_jobs)`).all() as Array<{ name: string }>;
+  if (!jobCols.some((c) => c.name === "kind")) {
+    db.exec(`ALTER TABLE face_jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'photo'`);
   }
 }
 
@@ -367,6 +382,7 @@ export function jobRowToStatus(row: JobRow): FaceJobStatus {
     jobId: row.id,
     presetId: row.presetId,
     name: row.name,
+    kind: row.kind,
     state: row.state,
     step: row.step,
     completedFrames: row.completedFrames,

@@ -97,6 +97,18 @@ export class ImageGenService {
     return this.deps.repo.list().map(serializeHistory);
   }
 
+  /**
+   * Resolve a history id to its stored PNG path on disk (null when unknown or the
+   * file is gone). Consumed by the Preset Generator to hand a chosen base
+   * candidate to a faces job by id (no re-encode).
+   */
+  historyImagePath(id: string): string | null {
+    const row = this.deps.repo.get(id);
+    if (!row) return null;
+    const path = join(imagegenRoot(this.deps.dataDir), row.file);
+    return existsSync(path) ? path : null;
+  }
+
   /** Delete a history row + its PNG. False when the id is unknown. */
   deleteHistory(id: string): boolean {
     const row = this.deps.repo.get(id);

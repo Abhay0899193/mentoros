@@ -860,8 +860,89 @@ export interface AvatarConfig {
   triggers: TriggerRule[];
   /** Optional idle clip; absent = rest on the base frame. */
   defaultAnimationId?: string;
+  /** Present on presets built by the Preset Generator — drives add-expression. */
+  generation?: PresetGenerationMeta;
   createdAt: string;
   updatedAt: string;
+}
+
+/* --------------------- Preset Generator (text → preset) ------------------- */
+
+/** How a group's composite window was resolved. */
+export type RegionSource = 'auto' | 'manual' | 'default';
+export type ExpressionGroup = 'mouth' | 'eyes' | 'face';
+export type ExpressionGroupOrCustom = ExpressionGroup | 'custom';
+
+/**
+ * Provenance a generated preset carries in its `config.generation` so the user
+ * can add matching expressions later. Regions are in 1024² composite space.
+ */
+export interface PresetGenerationMeta {
+  method: 'z-turbo-t2i' | 'kontext-photo';
+  /** The shared character clause every t2i frame reuses (z-turbo-t2i only). */
+  characterPrompt?: string;
+  baseSeed: number;
+  regions: { mouth: FaceRegion; eyes: FaceRegion; face: FaceRegion };
+  regionSource: RegionSource;
+  expressions: Array<{
+    clipId: string;
+    prompt: string;
+    group: ExpressionGroupOrCustom;
+    region?: FaceRegion;
+    seed: number;
+  }>;
+}
+
+/** One expression the generator should produce (catalog key OR custom fields). */
+export interface GenerateExpressionSpec {
+  /** A catalog key (m1/m2/m3/blink/think/…). Omit for a custom expression. */
+  key?: string;
+  /** Custom expression id slug (required when `key` is absent). */
+  id?: string;
+  name?: string;
+  prompt?: string;
+  group?: ExpressionGroupOrCustom;
+  /** Composite window for a custom-group expression (1024² space). */
+  region?: FaceRegion;
+}
+
+/** POST /faces/custom/generate — text-to-image preset generation. */
+export interface GenerateFacePresetInput {
+  name: string;
+  characterPrompt: string;
+  /** 1–16 expressions; the core 4 (m1/m2/m3/blink) are always included. */
+  expressions: GenerateExpressionSpec[];
+  /** Optional manual composite windows (1024² space); each overrides auto-detect. */
+  regions?: { mouth?: FaceRegion; eyes?: FaceRegion; face?: FaceRegion };
+  /** Base candidate from Image Lab history … */
+  baseHistoryId?: string;
+  /** … or a decoded webp/png data URI (exactly one of the two). */
+  baseDataUri?: string;
+  baseSeed?: number;
+}
+
+/** POST /faces/custom/:id/expressions — add or regenerate one expression. */
+export interface AddFaceExpressionInput {
+  key?: string;
+  id?: string;
+  name?: string;
+  prompt?: string;
+  group?: ExpressionGroupOrCustom;
+  region?: FaceRegion;
+  /** Optional trigger to attach to the new clip. */
+  trigger?: TriggerRule;
+  /** Overwrite this clip's frames (regenerate) instead of appending a new clip. */
+  replaceClipId?: string;
+}
+
+/** One entry of GET /faces/catalog (proven prompts, internal templates hidden). */
+export interface FaceCatalogEntry {
+  key: string;
+  name: string;
+  group: ExpressionGroup;
+  /** Default text-to-image clause the wizard prefills. */
+  prompt: string;
+  required: boolean;
 }
 
 /**
@@ -928,6 +1009,8 @@ export interface FaceJobStatus {
   jobId: string;
   presetId: string;
   name: string;
+  /** Which pipeline produced this job (photo Kontext, t2i generate, add-expression). */
+  kind: 'photo' | 'generate' | 'expression';
   state: 'queued' | 'generating' | 'compositing' | 'done' | 'error' | 'cancelled';
   /** Human step ('Mouth frame 2 of 3', 'Compositing blink'). */
   step: string;
@@ -1264,6 +1347,20 @@ export interface CoreClient {
    * time — it monopolizes the GPU). Progress via `face.job`.
    */
   createFacePreset(input: CreateFacePresetInput): Promise<{ job: FaceJobStatus }>;
+  /**
+   * Generate a preset from text (z-image-turbo t2i). 422 = bad input, 503 =
+   * z-turbo toolchain missing, 409 = a faces OR Image Lab job is already running.
+   * Progress via `face.job` (kind 'generate').
+   */
+  generateFacePreset(input: GenerateFacePresetInput): Promise<{ job: FaceJobStatus }>;
+  /**
+   * Add or regenerate one expression on a custom preset (t2i for generated
+   * presets, Kontext for legacy photo presets). Same 422/503/409 gates; 404
+   * unknown, 403 built-in. Progress via `face.job` (kind 'expression').
+   */
+  addFaceExpression(id: FacePresetId, input: AddFaceExpressionInput): Promise<{ job: FaceJobStatus }>;
+  /** The proven expression catalog (prefilled prompts for the wizard). */
+  faceCatalog(): Promise<FaceCatalogEntry[]>;
   /** The in-flight (or most recent unresolved) job, for UI resume. Null when idle. */
   activeFaceJob(): Promise<FaceJobStatus | null>;
   /** Cancel a running job; partial frames are kept for skip-if-exists retry. */
@@ -1606,6 +1703,10 @@ export function createCoreClient(): CoreClient {
     listCustomFacePresets: () =>
       get<CustomFacePreset[]>('/faces/custom').then((presets) => presets.map(absolutizeFacePreset)),
     createFacePreset: (input) => post<{ job: FaceJobStatus }>('/faces/custom', input),
+    generateFacePreset: (input) => post<{ job: FaceJobStatus }>('/faces/custom/generate', input),
+    addFaceExpression: (id, input) =>
+      post<{ job: FaceJobStatus }>(`/faces/custom/${id}/expressions`, input),
+    faceCatalog: () => get<FaceCatalogEntry[]>('/faces/catalog'),
     activeFaceJob: () => get<FaceJobStatus | null>('/faces/jobs/active'),
     cancelFaceJob: (jobId) => post<void>(`/faces/jobs/${jobId}/cancel`),
     deleteFacePreset: (id) =>

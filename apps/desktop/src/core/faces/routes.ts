@@ -6,10 +6,18 @@ import { FaceService } from "./service.js";
 import { FaceBusyError, FaceForbiddenError, FaceNotFoundError } from "./store.js";
 import { presetDir, SAFE_ART_FILE, SAFE_PRESET_ID } from "./paths.js";
 import { FaceValidationError, validateCreateInput, type ImageProbe } from "./validate.js";
-import { validateConfigUpdate, validateManualInput } from "./config.js";
+import {
+  validateAddExpressionInput,
+  validateConfigUpdate,
+  validateGenerateInput,
+  validateManualInput,
+} from "./config.js";
+import { serializeCatalog } from "./catalog.js";
 
 /** Manual create / editor save carry base64 webp frames — allow a large body. */
 const MANUAL_BODY_LIMIT = 128 * 1024 * 1024;
+/** Generate carries an optional base candidate data URI — allow a large body. */
+const GENERATE_BODY_LIMIT = 64 * 1024 * 1024;
 
 type Broadcast = <E extends keyof CoreEvents>(event: E, payload: CoreEvents[E]) => void;
 
@@ -20,6 +28,8 @@ export interface FaceDeps {
   probe: ImageProbe;
   /** Current settings, for the settings.changed carried by a mentorFace reset. */
   getSettings: () => AppSettings;
+  /** Cross-busy guard: an Image Lab job also holds the GPU (§decision #4). */
+  isImageGenBusy?: () => boolean;
   dataDir: string;
 }
 
@@ -32,7 +42,64 @@ export function registerFaceRoutes(app: FastifyInstance, deps: FaceDeps): void {
 
   app.get("/faces/toolchain", async () => service.toolchain());
 
+  app.get("/faces/catalog", async () => serializeCatalog());
+
   app.get("/faces/custom", async () => service.listCustom());
+
+  /* ---------------------- Preset Generator (t2i) -------------------------- */
+  // Cross-busy: faces + Image Lab jobs each spawn mflux (~11 GB peak), so a
+  // running Image Lab job blocks generate/expressions (and vice versa).
+  app.post<{ Body: unknown }>(
+    "/faces/custom/generate",
+    { bodyLimit: GENERATE_BODY_LIMIT },
+    async (req, reply) => {
+      if (service.isBusy() || deps.isImageGenBusy?.()) {
+        return reply.code(409).send({ error: "a generation is already running" });
+      }
+      const toolchain = service.generateToolchain();
+      if (toolchain.state !== "ready") {
+        return reply
+          .code(503)
+          .send({ error: "image toolchain unavailable", detail: toolchain.detail ?? "toolchain missing" });
+      }
+      try {
+        const input = validateGenerateInput(req.body);
+        const job = service.startGenerate(input);
+        return { job };
+      } catch (err) {
+        if (err instanceof FaceValidationError) return reply.code(422).send({ error: err.message });
+        if (err instanceof FaceBusyError) return reply.code(409).send({ error: err.message });
+        throw err;
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    "/faces/custom/:id/expressions",
+    { bodyLimit: GENERATE_BODY_LIMIT },
+    async (req, reply) => {
+      if (service.isBusy() || deps.isImageGenBusy?.()) {
+        return reply.code(409).send({ error: "a generation is already running" });
+      }
+      const toolchain = service.generateToolchain();
+      if (toolchain.state !== "ready") {
+        return reply
+          .code(503)
+          .send({ error: "image toolchain unavailable", detail: toolchain.detail ?? "toolchain missing" });
+      }
+      try {
+        const input = validateAddExpressionInput(req.body);
+        const job = service.startAddExpression(req.params.id, input);
+        return { job };
+      } catch (err) {
+        if (err instanceof FaceValidationError) return reply.code(422).send({ error: err.message });
+        if (err instanceof FaceForbiddenError) return reply.code(403).send({ error: err.message });
+        if (err instanceof FaceNotFoundError) return reply.code(404).send({ error: err.message });
+        if (err instanceof FaceBusyError) return reply.code(409).send({ error: err.message });
+        throw err;
+      }
+    },
+  );
 
   app.post<{ Body: unknown }>("/faces/custom", async (req, reply) => {
     if (service.isBusy()) {

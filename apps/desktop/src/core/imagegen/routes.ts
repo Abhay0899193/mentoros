@@ -14,6 +14,8 @@ const GENERATE_BODY_LIMIT = 64 * 1024 * 1024;
 export interface ImageGenDeps {
   service: ImageGenService;
   falKeys: FalKeyStore;
+  /** Cross-busy guard: a faces job also holds the GPU (§decision #4). */
+  isFacesBusy?: () => boolean;
   dataDir: string;
 }
 
@@ -31,7 +33,7 @@ export function registerImageGenRoutes(app: FastifyInstance, deps: ImageGenDeps)
     "/imagegen/generate",
     { bodyLimit: GENERATE_BODY_LIMIT },
     async (req, reply) => {
-      if (service.isBusy()) {
+      if (service.isBusy() || deps.isFacesBusy?.()) {
         return reply.code(409).send({ error: "a generation is already running" });
       }
       const body = req.body as { modelId?: unknown } | null;

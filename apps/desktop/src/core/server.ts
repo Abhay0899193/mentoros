@@ -86,6 +86,8 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   settings.store.setFaceLookup(faces.store);
   personas.store.setFaceLookup(faces.store);
   const imagegen = createImageGenSystem(dataDir);
+  // Preset Generator hands a chosen Image Lab base candidate to a faces job by id.
+  faces.service.setHistoryResolver((id) => imagegen.service.historyImagePath(id));
   const engine = new ChatEngine(
     store,
     broadcast,
@@ -253,6 +255,8 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     broadcast,
     probe: sipsProbe,
     getSettings: () => settings.store.get(),
+    // Cross-busy: an Image Lab job holds the GPU → generate/expressions 409.
+    isImageGenBusy: () => imagegen.service.isBusy(),
     dataDir,
   });
 
@@ -260,6 +264,8 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   registerImageGenRoutes(app, {
     service: imagegen.service,
     falKeys: imagegen.keys,
+    // Cross-busy: a faces job holds the GPU → /imagegen/generate 409.
+    isFacesBusy: () => faces.service.isBusy(),
     dataDir,
   });
 

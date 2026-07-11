@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { FaceToolchainStatus } from "../types.js";
+import { Z_TURBO_BIN } from "../imagegen/toolchain.js";
 
 /**
  * Local image-gen toolchain probe (GET /faces/toolchain). The pipeline shells
@@ -43,6 +44,65 @@ function binOnPath(name: string, home: string): boolean {
   if (existsSync(join(home, ".local", "bin", name))) return true;
   const probe = spawnSync("which", [name], { stdio: ["ignore", "ignore", "ignore"] });
   return probe.status === 0;
+}
+
+/* --------------------- z-image-turbo (Preset Generator) ------------------- */
+
+const Z_TURBO_MODEL_DIR = "models--filipstrand--Z-Image-Turbo-mflux-4bit";
+
+/**
+ * Preset-Generator toolchain probe (POST /faces/custom/generate + expressions).
+ * Unlike the Kontext (photo) path this needs the z-image-turbo binary and its
+ * weights materialized — plus the shared cwebp/uv steps. Presence checks are
+ * injected so the ready/missing/detail logic is unit testable.
+ */
+export interface GenerateToolchainProbe {
+  hasZTurboBin(): boolean;
+  hasZTurboWeights(): boolean;
+  hasCwebp(): boolean;
+  hasUv(): boolean;
+}
+
+/** ready only when all present; else a human detail naming each gap. */
+export function evaluateGenerateToolchain(probe: GenerateToolchainProbe): FaceToolchainStatus {
+  const missing: string[] = [];
+  if (!probe.hasZTurboBin()) missing.push("mflux (mflux-generate-z-image-turbo) not installed");
+  if (!probe.hasZTurboWeights()) missing.push("Z-Image-Turbo weights absent from the HF cache");
+  if (!probe.hasCwebp()) missing.push("cwebp encoder not installed");
+  if (!probe.hasUv()) missing.push("uv not installed");
+  if (missing.length === 0) return { state: "ready" };
+  return { state: "missing", detail: missing.join("; ") };
+}
+
+/** A usable HF snapshot for `modelDir` under `hub` (≥1 materialized snapshot). */
+function hasSnapshot(hub: string, modelDir: string): boolean {
+  const snapshots = join(hub, modelDir, "snapshots");
+  if (!existsSync(snapshots)) return false;
+  try {
+    return readdirSync(snapshots).some((s) => {
+      try {
+        return readdirSync(join(snapshots, s)).length > 0;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** Production z-turbo probe. Weights are searched in our HF_HOME + the default cache. */
+export function defaultGenerateToolchainProbe(home: string = homedir()): GenerateToolchainProbe {
+  const hubs = [
+    join(home, "mentoros-imagegen", "hf-cache", "hub"),
+    join(home, ".cache", "huggingface", "hub"),
+  ];
+  return {
+    hasZTurboBin: () => binOnPath(Z_TURBO_BIN, home),
+    hasZTurboWeights: () => hubs.some((h) => hasSnapshot(h, Z_TURBO_MODEL_DIR)),
+    hasCwebp: () => binOnPath("cwebp", home),
+    hasUv: () => binOnPath("uv", home),
+  };
 }
 
 /** Production probe rooted at the user's home directory. */

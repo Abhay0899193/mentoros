@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import type { CoreEvents } from "../types.js";
 import { FaceStore, SqliteFaceRepo } from "./store.js";
 import { createRealFaceOps } from "./ops.js";
-import { defaultToolchainProbe } from "./toolchain.js";
+import { defaultGenerateToolchainProbe, defaultToolchainProbe } from "./toolchain.js";
 import { facesRoot } from "./paths.js";
 import { FaceService, type ActiveFaceSettings } from "./service.js";
 
@@ -41,6 +41,7 @@ export function createFaceSystem(
     ops,
     broadcast,
     toolchainProbe: defaultToolchainProbe(),
+    generateProbe: defaultGenerateToolchainProbe(),
     ...(settings ? { settings } : {}),
   });
 

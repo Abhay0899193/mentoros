@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
 import { computeCrop, ellipseFor } from "./crop.js";
-import { evaluateToolchain, type ToolchainProbe } from "./toolchain.js";
+import {
+  evaluateGenerateToolchain,
+  evaluateToolchain,
+  type GenerateToolchainProbe,
+  type ToolchainProbe,
+} from "./toolchain.js";
 import { FaceValidationError, validateCreateInput, type ImageProbe } from "./validate.js";
 import {
   FaceForbiddenError,
@@ -16,14 +21,35 @@ import {
   type JobRow,
   type PresetRow,
 } from "./store.js";
-import { synthesizeLegacyConfig, validateManualInput } from "./config.js";
-import { FaceAbortError, type FaceOps } from "./ops.js";
+import {
+  parseConfig,
+  synthesizeLegacyConfig,
+  validateAddExpressionInput,
+  validateGenerateInput,
+  validateManualInput,
+} from "./config.js";
+import { FaceAbortError, parseDetect, type FaceOps } from "./ops.js";
 import { runFaceJob } from "./runner.js";
+import { resolveGenerateExpressions, runGeneratePresetJob } from "./generateRunner.js";
+import { buildGeneratedConfig, serializeCatalog } from "./catalog.js";
 import { FaceService, type ActiveFaceSettings } from "./service.js";
 import { registerFaceRoutes } from "./routes.js";
 import { presetDir, workDir } from "./paths.js";
 import { SettingsStore, type SettingsKv } from "../settings/store.js";
-import type { AppSettings, CoreEvents, CreateFacePresetInput, FaceRegion } from "../types.js";
+import type {
+  AppSettings,
+  CoreEvents,
+  CreateFacePresetInput,
+  FaceRegion,
+  GenerateFacePresetInput,
+} from "../types.js";
+
+const READY_GEN_PROBE: GenerateToolchainProbe = {
+  hasZTurboBin: () => true,
+  hasZTurboWeights: () => true,
+  hasCwebp: () => true,
+  hasUv: () => true,
+};
 
 /* ------------------------------ test doubles ------------------------------ */
 
@@ -85,6 +111,10 @@ function memKv(): SettingsKv {
 
 /** Fake ops: write placeholder files at each output, record calls, honor abort. */
 function recordingOps(calls: string[], opts: { failOn?: string; hangEdits?: boolean } = {}): FaceOps {
+  const hang = (signal: AbortSignal): Promise<void> =>
+    new Promise<void>((_res, rej) => {
+      signal.addEventListener("abort", () => rej(new FaceAbortError()), { once: true });
+    });
   return {
     async prepBase(_p, _c, out) {
       calls.push("prep");
@@ -92,20 +122,36 @@ function recordingOps(calls: string[], opts: { failOn?: string; hangEdits?: bool
       return { accent: "#3366aa" };
     },
     async kontextEdit(_in, out, _prompt, _seed, signal) {
-      const key = /kontext-(\w+)\.png$/.exec(out)?.[1] ?? "?";
+      const key = /(?:kontext|gen|edit)-([a-z0-9-]+?)(?:-\d+)?\.png$/.exec(out)?.[1] ?? "?";
       if (signal.aborted) throw new FaceAbortError();
       if (opts.failOn === key) throw new Error(`boom ${key}`);
-      if (opts.hangEdits) {
-        await new Promise<void>((_res, rej) => {
-          signal.addEventListener("abort", () => rej(new FaceAbortError()), { once: true });
-        });
-      }
+      if (opts.hangEdits) await hang(signal);
       calls.push(`edit:${key}`);
+      writeFileSync(out, "png");
+    },
+    async zTurboGenerate(out, _prompt, _seed, _w, _h, signal) {
+      const key = /gen-([a-z0-9-]+)-\d+\.png$/.exec(out)?.[1] ?? "?";
+      if (signal.aborted) throw new FaceAbortError();
+      if (opts.failOn === key) throw new Error(`boom ${key}`);
+      if (opts.hangEdits) await hang(signal);
+      calls.push(`gen:${key}`);
+      writeFileSync(out, "png");
+    },
+    async normalizeBase(_src, out) {
+      calls.push("normbase");
       writeFileSync(out, "png");
     },
     async composite(_b, _e, _ell, out) {
       calls.push("composite");
       writeFileSync(out, "png");
+    },
+    async detectRegion(_b, _e, _zone, fallback) {
+      calls.push("detect");
+      return { region: fallback, source: "default" };
+    },
+    async accent(_img, _region) {
+      calls.push("accent");
+      return "#3366aa";
     },
     async fullBody(_f, out) {
       calls.push("full");
@@ -403,6 +449,7 @@ test("FaceService boot marks an interrupted (live) job as error", () => {
     id: "job-1",
     presetId: "face-maya",
     name: "Maya",
+    kind: "photo",
     state: "generating",
     step: "Mouth frame 2 of 3",
     completedFrames: 1,
@@ -436,10 +483,13 @@ function fakeSettings(mentorFace = "aura"): ActiveFaceSettings & { current: () =
 
 async function routeApp(over: {
   probe?: ToolchainProbe;
+  generateProbe?: GenerateToolchainProbe;
   imageProbe?: ImageProbe;
   ops?: FaceOps;
   settings?: ActiveFaceSettings;
   repo?: FaceRepo;
+  isImageGenBusy?: () => boolean;
+  resolveHistoryImage?: (id: string) => string | null;
   dir?: string;
 }) {
   const dir = over.dir ?? tmpDir();
@@ -453,6 +503,8 @@ async function routeApp(over: {
     ops: over.ops ?? recordingOps([], { hangEdits: true }),
     broadcast,
     toolchainProbe: over.probe ?? READY_PROBE,
+    generateProbe: over.generateProbe ?? READY_GEN_PROBE,
+    ...(over.resolveHistoryImage ? { resolveHistoryImage: over.resolveHistoryImage } : {}),
     ...(over.settings ? { settings: over.settings } : {}),
   });
   const app = Fastify();
@@ -461,6 +513,7 @@ async function routeApp(over: {
     broadcast,
     probe: over.imageProbe ?? okImageProbe,
     getSettings: () => ({ mentorFace: over.settings?.get().mentorFace ?? "aura" }) as AppSettings,
+    ...(over.isImageGenBusy ? { isImageGenBusy: over.isImageGenBusy } : {}),
     dataDir: dir,
   });
   await app.ready();
@@ -689,4 +742,347 @@ test("SettingsStore accepts a custom mentorFace once the face lookup is wired", 
   const merged = settings.patch({ mentorFace: "face-maya" });
   assert.equal(merged.mentorFace, "face-maya");
   assert.equal(settings.get().mentorFace, "face-maya", "custom id survives a re-read");
+});
+
+/* ===================== Preset Generator (t2i) ============================= */
+
+const READY_GEN_INPUT = (over: Partial<GenerateFacePresetInput> = {}): GenerateFacePresetInput => ({
+  name: "Zara",
+  characterPrompt: "Studio portrait photograph of Zara",
+  expressions: [{ key: "smile" }],
+  baseDataUri: "data:image/png;base64,AAAA",
+  ...over,
+});
+
+interface GenHarness {
+  service: FaceService;
+  store: FaceStore;
+  events: Array<{ event: keyof CoreEvents; payload: unknown }>;
+  waitFor: (jobId: string) => Promise<CoreEvents["face.job"]>;
+  dir: string;
+}
+
+function genHarness(opts: { ops?: FaceOps; repo?: FaceRepo } = {}): GenHarness {
+  const dir = tmpDir();
+  const events: Array<{ event: keyof CoreEvents; payload: unknown }> = [];
+  const terminals = new Map<string, (s: CoreEvents["face.job"]) => void>();
+  const broadcast = (<E extends keyof CoreEvents>(event: E, payload: CoreEvents[E]) => {
+    events.push({ event, payload });
+    if (event === "face.job") {
+      const s = payload as CoreEvents["face.job"];
+      if (["done", "error", "cancelled"].includes(s.state)) terminals.get(s.jobId)?.(s);
+    }
+  }) as <E extends keyof CoreEvents>(event: E, payload: CoreEvents[E]) => void;
+  const store = new FaceStore(opts.repo ?? memRepo());
+  const service = new FaceService({
+    dataDir: dir,
+    store,
+    ops: opts.ops ?? recordingOps([]),
+    broadcast,
+    toolchainProbe: READY_PROBE,
+    generateProbe: READY_GEN_PROBE,
+  });
+  const waitFor = (jobId: string): Promise<CoreEvents["face.job"]> =>
+    new Promise((resolve) => terminals.set(jobId, resolve));
+  return { service, store, events, waitFor, dir };
+}
+
+/* ------------------------------- toolchain -------------------------------- */
+
+test("evaluateGenerateToolchain ready only when all present, else names each gap", () => {
+  assert.deepEqual(evaluateGenerateToolchain(READY_GEN_PROBE), { state: "ready" });
+  const noBin = evaluateGenerateToolchain({ ...READY_GEN_PROBE, hasZTurboBin: () => false });
+  assert.match(noBin.detail!, /mflux/);
+  const noW = evaluateGenerateToolchain({ ...READY_GEN_PROBE, hasZTurboWeights: () => false });
+  assert.match(noW.detail!, /weights/);
+});
+
+/* --------------------------------- catalog -------------------------------- */
+
+test("serializeCatalog exposes 10 entries with the core four required", () => {
+  const cat = serializeCatalog();
+  assert.equal(cat.length, 10);
+  const required = cat.filter((e) => e.required).map((e) => e.key).sort();
+  assert.deepEqual(required, ["blink", "m1", "m2", "m3"]);
+  for (const e of cat) assert.ok(e.prompt.length > 0, `${e.key} has a prefill prompt`);
+});
+
+test("buildGeneratedConfig assembles blink+talk plus chosen emotions/customs", () => {
+  const config = buildGeneratedConfig({
+    presetId: "face-zara",
+    name: "Zara",
+    accent: "#334455",
+    now: "t0",
+    emotions: ["smile", "think"],
+    customs: [{ clipId: "wink", name: "Wink" }],
+    generation: {
+      method: "z-turbo-t2i",
+      characterPrompt: "c",
+      baseSeed: 7,
+      regions: {
+        mouth: { x: 1, y: 1, width: 1, height: 1 },
+        eyes: { x: 1, y: 1, width: 1, height: 1 },
+        face: { x: 1, y: 1, width: 1, height: 1 },
+      },
+      regionSource: "default",
+      expressions: [],
+    },
+  });
+  const ids = config.animations.map((c) => c.id).sort();
+  assert.deepEqual(ids, ["blink", "smile", "talk", "think", "wink"].sort());
+  assert.ok(config.generation, "generation meta embedded");
+  // The custom clip gets a synthesized manual trigger.
+  assert.ok(config.triggers.some((t) => t.animationId === "wink" && t.kind === "manual"));
+});
+
+/* -------------------------------- validators ------------------------------ */
+
+test("validateGenerateInput accepts a good payload and rejects the 422 matrix", () => {
+  const ok = validateGenerateInput(READY_GEN_INPUT());
+  assert.equal(ok.name, "Zara");
+  assert.equal(ok.expressions.length, 1);
+
+  const bad = (payload: unknown) =>
+    assert.throws(() => validateGenerateInput(payload), FaceValidationError);
+  bad({ ...READY_GEN_INPUT(), name: "" });
+  bad({ ...READY_GEN_INPUT(), characterPrompt: "" });
+  bad({ ...READY_GEN_INPUT(), expressions: [{ key: "nope" }] }); // unknown catalog key
+  bad({ ...READY_GEN_INPUT(), expressions: [{ id: "cst", name: "C", prompt: "p", group: "custom" }] }); // custom needs region
+  // both base sources / neither base source
+  bad({ ...READY_GEN_INPUT(), baseHistoryId: "h1" }); // dataUri + history both present
+  bad({ name: "Z", characterPrompt: "c", expressions: [] }); // no base at all
+  // region outside the 1024 canvas
+  bad({ ...READY_GEN_INPUT(), regions: { mouth: { x: 900, y: 0, width: 200, height: 50 } } });
+});
+
+test("validateAddExpressionInput handles catalog keys, customs, replace + trigger", () => {
+  assert.equal(validateAddExpressionInput({ key: "smile" }).key, "smile");
+  const custom = validateAddExpressionInput({
+    id: "wink",
+    name: "Wink",
+    prompt: "a quick wink",
+    group: "custom",
+    region: { x: 400, y: 300, width: 120, height: 90 },
+  });
+  assert.equal(custom.id, "wink");
+  const replace = validateAddExpressionInput({ key: "smile", replaceClipId: "smile" });
+  assert.equal(replace.replaceClipId, "smile");
+  const withTrigger = validateAddExpressionInput({
+    key: "think",
+    trigger: { id: "think-evt", animationId: "ignored", kind: "manual", enabled: true },
+  });
+  assert.equal(withTrigger.trigger!.animationId, "think", "trigger retargeted to the clip");
+
+  assert.throws(() => validateAddExpressionInput({}), FaceValidationError); // no key/id
+  assert.throws(
+    () => validateAddExpressionInput({ id: "c", name: "C", prompt: "p", group: "custom" }),
+    FaceValidationError,
+  ); // custom without region
+});
+
+/* --------------------------- detect JSON parsing -------------------------- */
+
+test("parseDetect reads an auto region, falls back on junk or bad shapes", () => {
+  const fb: FaceRegion = { x: 10, y: 20, width: 30, height: 40 };
+  const auto = parseDetect('drift corrected: dx=1 dy=0\n{"x":100,"y":110,"width":80,"height":60,"source":"auto"}', fb);
+  assert.deepEqual(auto, { region: { x: 100, y: 110, width: 80, height: 60 }, source: "auto" });
+  const fell = parseDetect('{"x":5,"y":5,"width":10,"height":10,"source":"default"}', fb);
+  assert.equal(fell.source, "default");
+  assert.deepEqual(parseDetect("nothing here", fb), { region: fb, source: "default" });
+  assert.deepEqual(parseDetect('{"x":1,"y":1,"width":0,"height":5}', fb), { region: fb, source: "default" });
+});
+
+/* ------------------------- resolve + runner (resume) ---------------------- */
+
+test("resolveGenerateExpressions always includes the core 4 then chosen extras", () => {
+  const list = resolveGenerateExpressions(READY_GEN_INPUT({ expressions: [{ key: "smile" }, { id: "wink", name: "Wink", prompt: "p", group: "custom", region: { x: 1, y: 1, width: 1, height: 1 } }] }), 42);
+  const keys = list.map((e) => e.key);
+  for (const core of ["m1", "m2", "m3", "blink"]) assert.ok(keys.includes(core));
+  assert.ok(keys.includes("smile"));
+  assert.ok(keys.includes("wink"));
+  assert.equal(list.length, 6);
+  assert.ok(list.every((e) => e.seed === 42), "every frame reuses the base seed");
+});
+
+test("runGeneratePresetJob skips staged frames (resume) and writes all art", async () => {
+  const dir = tmpDir();
+  try {
+    const art = presetDir(dir, "face-zara");
+    const work = workDir(dir, "face-zara");
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(work, { recursive: true });
+    writeFileSync(join(work, "base.png"), "png");
+    writeFileSync(join(work, "accent.json"), JSON.stringify({ accent: "#123456" }));
+    writeFileSync(join(work, "gen-m2-42.png"), "png");
+    const calls: string[] = [];
+    const expressions = resolveGenerateExpressions(READY_GEN_INPUT(), 42);
+    const res = await runGeneratePresetJob({
+      ops: recordingOps(calls),
+      presetId: "face-zara",
+      name: "Zara",
+      characterPrompt: "c",
+      baseSeed: 42,
+      baseImagePath: join(work, "base-src"),
+      expressions,
+      artDir: art,
+      workDir: work,
+      now: "t0",
+      signal: new AbortController().signal,
+      report: () => {},
+    });
+    assert.equal(res.accent, "#123456", "accent read from cache, base prep skipped");
+    assert.ok(!calls.includes("normbase"), "base prep skipped (base.png present)");
+    assert.ok(!calls.includes("accent"), "accent skipped (accent.json present)");
+    assert.ok(!calls.includes("gen:m2"), "m2 skipped (already generated)");
+    assert.ok(calls.includes("gen:blink") && calls.includes("gen:smile"));
+    assert.equal(res.config.generation!.method, "z-turbo-t2i");
+    assert.equal(res.config.generation!.expressions.length, expressions.length);
+    for (const f of ["portrait-base.webp", "portrait-m1.webp", "portrait-blink.webp", "anim-smile-0.webp"]) {
+      assert.ok(existsSync(join(art, f)), `${f} written`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/* ------------------------------ job lifecycle ----------------------------- */
+
+test("startGenerate runs to done: preset persisted with generation meta", async () => {
+  const h = genHarness();
+  try {
+    const status = h.service.startGenerate(READY_GEN_INPUT());
+    assert.equal(status.kind, "generate");
+    assert.equal(status.totalFrames, 5, "core 4 + smile");
+    const final = await h.waitFor(status.jobId);
+    assert.equal(final.state, "done");
+    assert.ok(!h.service.isBusy());
+    const presets = h.service.listCustom();
+    assert.equal(presets.length, 1);
+    const cfg = presets[0]!.config;
+    assert.ok(cfg.generation, "generation meta persisted");
+    assert.equal(cfg.generation!.method, "z-turbo-t2i");
+    assert.ok(cfg.animations.some((c) => c.id === "smile"));
+  } finally {
+    rmSync(h.dir, { recursive: true, force: true });
+  }
+});
+
+test("startGenerate cancel keeps the work dir for resume", async () => {
+  const h = genHarness({ ops: recordingOps([], { hangEdits: true }) });
+  try {
+    const status = h.service.startGenerate(READY_GEN_INPUT());
+    await new Promise((r) => setTimeout(r, 10));
+    h.service.cancel(status.jobId);
+    const final = await h.waitFor(status.jobId);
+    assert.equal(final.state, "cancelled");
+    assert.ok(!h.service.isBusy());
+    assert.ok(existsSync(join(workDir(h.dir, status.presetId), "base.png")), "partial work survives");
+  } finally {
+    rmSync(h.dir, { recursive: true, force: true });
+  }
+});
+
+test("startAddExpression appends a t2i clip and updateConfig preserves the meta", async () => {
+  const h = genHarness();
+  try {
+    const gen = h.service.startGenerate(READY_GEN_INPUT());
+    const done = await h.waitFor(gen.jobId);
+    const id = done.presetId;
+
+    const add = h.service.startAddExpression(id, { key: "think" });
+    assert.equal(add.kind, "expression");
+    const addDone = await h.waitFor(add.jobId);
+    assert.equal(addDone.state, "done");
+
+    const afterAdd = parseConfig(h.store.get(id)!);
+    assert.ok(afterAdd.animations.some((c) => c.id === "think"), "think clip appended");
+    assert.ok(afterAdd.generation!.expressions.some((e) => e.clipId === "think"), "meta entry appended");
+
+    // Editor save (frames-only) must carry the generation meta forward.
+    const saved = h.service.updateConfig(id, {
+      animations: afterAdd.animations,
+      triggers: afterAdd.triggers,
+    });
+    assert.ok(saved.config.generation, "generation meta survives the editor save");
+    assert.equal(parseConfig(h.store.get(id)!).generation!.method, "z-turbo-t2i");
+  } finally {
+    rmSync(h.dir, { recursive: true, force: true });
+  }
+});
+
+test("startAddExpression with replaceClipId regenerates a clip in place", async () => {
+  const h = genHarness();
+  try {
+    const gen = h.service.startGenerate(READY_GEN_INPUT());
+    const done = await h.waitFor(gen.jobId);
+    const id = done.presetId;
+    const before = parseConfig(h.store.get(id)!);
+    const smileBefore = before.generation!.expressions.find((e) => e.clipId === "smile")!;
+
+    const rip = h.service.startAddExpression(id, { key: "smile", replaceClipId: "smile" });
+    await h.waitFor(rip.jobId);
+
+    const after = parseConfig(h.store.get(id)!);
+    assert.equal(
+      after.animations.filter((c) => c.id === "smile").length,
+      1,
+      "no duplicate clip added on regenerate",
+    );
+    const smileAfter = after.generation!.expressions.find((e) => e.clipId === "smile")!;
+    assert.notEqual(smileAfter.seed, smileBefore.seed, "regenerated with a fresh seed");
+  } finally {
+    rmSync(h.dir, { recursive: true, force: true });
+  }
+});
+
+/* --------------------------------- routes --------------------------------- */
+
+test("GET /faces/catalog returns the 10 proven expressions", async () => {
+  const { app, dir } = await routeApp({});
+  const res = await app.inject({ method: "GET", url: "/faces/catalog" });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json().length, 10);
+  await app.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("POST /faces/custom/generate 503 when the z-turbo toolchain is missing", async () => {
+  const { app, dir } = await routeApp({ generateProbe: { ...READY_GEN_PROBE, hasZTurboWeights: () => false } });
+  const res = await app.inject({ method: "POST", url: "/faces/custom/generate", payload: READY_GEN_INPUT() });
+  assert.equal(res.statusCode, 503);
+  assert.match(res.json().detail, /weights/);
+  await app.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("POST /faces/custom/generate 422 on invalid input", async () => {
+  const { app, dir } = await routeApp({});
+  const res = await app.inject({
+    method: "POST",
+    url: "/faces/custom/generate",
+    payload: { ...READY_GEN_INPUT(), expressions: [{ key: "nope" }] },
+  });
+  assert.equal(res.statusCode, 422);
+  await app.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("POST /faces/custom/generate 409 while an Image Lab job holds the GPU (cross-busy)", async () => {
+  const { app, dir } = await routeApp({ isImageGenBusy: () => true });
+  const res = await app.inject({ method: "POST", url: "/faces/custom/generate", payload: READY_GEN_INPUT() });
+  assert.equal(res.statusCode, 409);
+  await app.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("POST /faces/custom/:id/expressions 404 for an unknown preset", async () => {
+  const { app, dir } = await routeApp({});
+  const res = await app.inject({
+    method: "POST",
+    url: "/faces/custom/face-nope/expressions",
+    payload: { key: "smile" },
+  });
+  assert.equal(res.statusCode, 404);
+  await app.close();
+  rmSync(dir, { recursive: true, force: true });
 });

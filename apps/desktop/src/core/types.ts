@@ -671,8 +671,87 @@ export interface AvatarConfig {
   animations: AnimationClip[];
   triggers: TriggerRule[];
   defaultAnimationId?: string;
+  /** Present on presets built by the Preset Generator — drives add-expression. */
+  generation?: PresetGenerationMeta;
   createdAt: string;
   updatedAt: string;
+}
+
+/** How a group's region was resolved (composite window). */
+export type RegionSource = "auto" | "manual" | "default";
+export type ExpressionGroup = "mouth" | "eyes" | "face";
+export type ExpressionGroupOrCustom = ExpressionGroup | "custom";
+
+/**
+ * Provenance a generated preset carries in its `config_json.generation` so the
+ * user can add matching expressions later. Regions are in 1024² composite space.
+ */
+export interface PresetGenerationMeta {
+  method: "z-turbo-t2i" | "kontext-photo";
+  /** The shared character clause every t2i frame reuses (z-turbo-t2i only). */
+  characterPrompt?: string;
+  baseSeed: number;
+  regions: { mouth: FaceRegion; eyes: FaceRegion; face: FaceRegion };
+  regionSource: RegionSource;
+  expressions: Array<{
+    clipId: string;
+    prompt: string;
+    group: ExpressionGroupOrCustom;
+    region?: FaceRegion;
+    seed: number;
+  }>;
+}
+
+/** One expression the generator should produce (catalog key OR custom fields). */
+export interface GenerateExpressionSpec {
+  /** A catalog key (m1/m2/m3/blink/think/…). Omit for a custom expression. */
+  key?: string;
+  /** Custom expression id slug (required when `key` is absent). */
+  id?: string;
+  name?: string;
+  prompt?: string;
+  group?: ExpressionGroupOrCustom;
+  /** Composite window for a custom-group expression (1024² space). */
+  region?: FaceRegion;
+}
+
+/** POST /faces/custom/generate — text-to-image preset generation. */
+export interface GenerateFacePresetInput {
+  name: string;
+  characterPrompt: string;
+  /** 1–16 expressions; the core 4 (m1/m2/m3/blink) are always included. */
+  expressions: GenerateExpressionSpec[];
+  /** Optional manual composite windows (1024² space); each overrides auto-detect. */
+  regions?: { mouth?: FaceRegion; eyes?: FaceRegion; face?: FaceRegion };
+  /** Base candidate from Image Lab history … */
+  baseHistoryId?: string;
+  /** … or a decoded webp/png data URI (exactly one of the two). */
+  baseDataUri?: string;
+  baseSeed?: number;
+}
+
+/** POST /faces/custom/:id/expressions — add or regenerate one expression. */
+export interface AddFaceExpressionInput {
+  key?: string;
+  id?: string;
+  name?: string;
+  prompt?: string;
+  group?: ExpressionGroupOrCustom;
+  region?: FaceRegion;
+  /** Optional trigger to attach to the new clip. */
+  trigger?: TriggerRule;
+  /** Overwrite this clip's frames (regenerate) instead of appending a new clip. */
+  replaceClipId?: string;
+}
+
+/** One entry of GET /faces/catalog (proven prompts, internal templates hidden). */
+export interface FaceCatalogEntry {
+  key: string;
+  name: string;
+  group: ExpressionGroup;
+  /** Default text-to-image clause the wizard prefills. */
+  prompt: string;
+  required: boolean;
 }
 
 /** Manual creation (Avatar Studio). Frames are webp data URIs, client-encoded. */
@@ -722,6 +801,8 @@ export interface FaceJobStatus {
   jobId: string;
   presetId: string;
   name: string;
+  /** Which pipeline produced this job (photo Kontext, t2i generate, add-expression). */
+  kind: "photo" | "generate" | "expression";
   state: "queued" | "generating" | "compositing" | "done" | "error" | "cancelled";
   /** Human step ('Mouth frame 2 of 3', 'Compositing blink'). */
   step: string;
