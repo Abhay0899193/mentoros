@@ -317,7 +317,17 @@ function HistoryThumb({
       )}
     >
       <button onClick={onSelect} aria-label={`View clip: ${item.prompt}`} className="absolute inset-0">
-        <video src={item.url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+        {/* LTX clips open on a black frame — nudge past it so the thumb isn't an empty tile */}
+        <video
+          src={item.url}
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={(e) => {
+            e.currentTarget.currentTime = Math.min(0.4, (e.currentTarget.duration || 1) / 2);
+          }}
+          className="h-full w-full object-cover"
+        />
         <span className="absolute bottom-1 left-1 rounded-[6px] bg-surface-1/85 px-1 py-0.5 text-[10px] text-muted hairline">
           {Math.round(item.numFrames / item.fps)} s
         </span>

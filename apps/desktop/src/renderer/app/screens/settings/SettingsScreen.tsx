@@ -4,6 +4,7 @@ import { AlertCircle } from 'lucide-react';
 import { useSettings } from '../../../lib/settingsStore';
 import { riseIn, staggerChildren, reduced } from '../../../motion/springs';
 import { Button } from '../../../ui';
+import { AppearanceSection } from './AppearanceSection';
 import { VoiceSection } from './VoiceSection';
 import { ModelsSection } from './ModelsSection';
 import { TranscriptionSection } from './TranscriptionSection';
@@ -69,6 +70,9 @@ export function SettingsScreen() {
           animate="visible"
           className="flex flex-col gap-5"
         >
+          <motion.div variants={reduced(reduce, riseIn)}>
+            <AppearanceSection />
+          </motion.div>
           <motion.div variants={reduced(reduce, riseIn)}>
             <VoiceSection />
           </motion.div>

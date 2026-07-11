@@ -58,6 +58,53 @@
   --overlay-shadow: 0 8px 30px rgba(18, 20, 26, 0.14);
 }
 
+/* ---- Accent themes (§3.0.2 stays intact: chrome is monochrome, the accent
+   only recolors the Orb/focal family — iris, aurora, focus ring). Selected in
+   Settings → Appearance; default (no attribute) is the signature Iris. ---- */
+:root[data-accent='ember'] {
+  --iris: #ff9a62;
+  --iris-dim: #e07a4a;
+  --aurora: linear-gradient(135deg, #f6716b 0%, #ffa65c 50%, #ffd166 100%);
+  --aurora-glow: 0 0 40px 0 rgba(255, 154, 98, 0.35);
+}
+:root[data-theme='light'][data-accent='ember'] {
+  --iris: #d96f3d;
+  --iris-dim: #b85a30;
+}
+
+:root[data-accent='jade'] {
+  --iris: #3ed6a4;
+  --iris-dim: #2fb389;
+  --aurora: linear-gradient(135deg, #34d6a0 0%, #45e0c8 50%, #6bd4ff 100%);
+  --aurora-glow: 0 0 40px 0 rgba(62, 214, 164, 0.35);
+}
+:root[data-theme='light'][data-accent='jade'] {
+  --iris: #1fa87c;
+  --iris-dim: #188a66;
+}
+
+:root[data-accent='rose'] {
+  --iris: #ff7bb1;
+  --iris-dim: #d66392;
+  --aurora: linear-gradient(135deg, #ff6b9d 0%, #c66bff 50%, #ff8f6b 100%);
+  --aurora-glow: 0 0 40px 0 rgba(255, 123, 177, 0.35);
+}
+:root[data-theme='light'][data-accent='rose'] {
+  --iris: #d6538d;
+  --iris-dim: #b8437a;
+}
+
+:root[data-accent='graphite'] {
+  --iris: #9aa2b1;
+  --iris-dim: #7c8494;
+  --aurora: linear-gradient(135deg, #8a90a0 0%, #c2c8d4 50%, #6a7180 100%);
+  --aurora-glow: 0 0 40px 0 rgba(154, 162, 177, 0.25);
+}
+:root[data-theme='light'][data-accent='graphite'] {
+  --iris: #6a7180;
+  --iris-dim: #565d6b;
+}
+
 /* ---- Tailwind v4 theme mapping (utilities pull the live vars) ---- */
 @theme inline {
   --color-canvas: var(--canvas);
