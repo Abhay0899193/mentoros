@@ -2,9 +2,9 @@
 
 > Researched 2026-07-11 (researcher agent, web-verified) for: "is there any text- and
 > image-to-video model we can run in-app on the M4, fast?" Disk at time of research:
-> ~69 GB free. **Verdict: yes — marginally, and only for async (non-real-time) use.**
-> Nothing local hits sub-minute clips on 24 GB; ~2–8 min per 3–5 s clip is the realistic
-> band, same fire-and-forget job shape as the Preset Generator.
+> ~69 GB free. **Verdict: yes — verified by smoke test (see Stage 0 results below):
+> ~80–90 s per 2 s 512² clip with audio, 8.7 GB peak RAM, both T2V and I2V.** Async
+> fire-and-forget job shape, same as the Preset Generator.
 
 ## Candidates surveyed (mid-2026)
 
@@ -51,23 +51,58 @@ feature (fal.ai/Replicate expose LTX/Wan/Kling in seconds for ~$0.05–0.30/clip
 already have the fal key plumbing from Image Lab, so a hosted video backend is a cheap
 add-on later.
 
-## ⚠️ Verify-before-build caveats
+## ✅ Stage 0 smoke results (2026-07-11, this machine) — GO
 
-Researcher findings are web-sourced and this area moves fast; the following MUST be
-confirmed by a real smoke test (Stage 0 below) before any app code is written:
+Both T2V and I2V verified end-to-end. **Dramatically better than the research
+estimates:** ~80–90 s per 2 s 512² clip (not 2 min+), peak RSS only **8.7 GB** (MLX
+mmaps weights — the feared ~20 GB peak never happens, so the app can stay open).
 
-1. Exact HF checkpoint ids (candidates named: `gajesh/LTX-2.3-mlx-fp16`,
-   `baa-ai/LTX-2.3-22B-RAM-24GB-MLX`, `Wan-AI/Wan2.1-T2V-1.3B`) — names may be stale.
-2. Exact `mlx_video` CLI module paths / flags (`mlx_video.ltx_2.generate` etc.).
-3. Real wall-clock + peak RSS on THIS machine with the app closed vs open.
-4. That LTX int4 I2V holds identity well enough to be useful on our preset frames.
+| Run | Wall clock | Peak RSS | Output | Quality |
+| --- | --- | --- | --- | --- |
+| T2V 512², 49 frames @ 24 fps + audio | **87.6 s** | 8.65 GB | 106 KB mp4 | Near-photoreal woman, natural smile+wave, prompt followed; first ~10 frames are a fade-in |
+| I2V same size, conditioned on Kiki base.png | **76.2 s** | 8.69 GB | mp4 | **Identity fully preserved** (face/hair/outfit/bg), wave+smile+blink motion added |
 
-## Feature plan (staged, mirrors Image Lab — not started, awaiting user go)
+Artifacts: clips + contact sheets at `~/Desktop/mentoros-screenshots/pvideogen/`;
+raw at `~/mentoros-imagegen/smoke/video/`; scripts at
+`~/mentoros-imagegen/logs/videogen_smoke_{t2v,i2v}.sh`.
 
-**Stage 0 — toolchain smoke (no app code).** `uv`-install mlx-video into
-`~/mentoros-imagegen/` (kept-forever toolchain dir), download the LTX int4 checkpoint,
-run one T2V and one I2V clip, record time/RAM/quality + exact commands into this doc
-(replace the caveats section). Go/no-go gate; fallback to Wan 1.3B if LTX doesn't fit.
+**Verified toolchain (corrections vs the research above):**
+
+- Venv: `~/mentoros-imagegen/video-env/` (Python 3.12, uv), package
+  `mlx-video-with-audio==0.1.36`.
+- Model: `notapalindrome/ltx23-mlx-av-q4` (22.8 GB, LTX-2.3 22B distilled, MLX q4
+  "split" format) — the researcher's `gajesh/…`/`baa-ai/…` repos exist but this one is
+  by the package author and is format-compatible.
+- Text encoder is NOT bundled: pass `--text-encoder-repo mlx-community/gemma-3-12b-it-4bit`
+  (8.1 GB) or generation dies at load ("resolved to an AV model config").
+- Entrypoint must be **`mlx_video.generate_av`** — plain `mlx_video.generate` only reads
+  the old monolithic layout (hardcodes `ltx-2-19b-distilled.safetensors`) and cannot
+  load split-format repos. `generate_av` also emits synchronized audio (bonus).
+- Constraints: width/height divisible by 64; `--num-frames` must be `1+8k` (49 ≈ 2 s);
+  `--steps` is IGNORED — distilled pipeline runs fixed two stages (8 steps at half-res
+  → 3 refine steps at full res; stage-2 step cost ~9.3 s at 512², scales with area).
+- Working command:
+
+```bash
+HF_HOME=~/mentoros-imagegen/hf-cache HF_HUB_DISABLE_XET=1 \
+~/mentoros-imagegen/video-env/bin/mlx_video.generate_av \
+  --prompt "…" \
+  [--image /path/to/base.png] \
+  --model-repo notapalindrome/ltx23-mlx-av-q4 \
+  --text-encoder-repo mlx-community/gemma-3-12b-it-4bit \
+  --width 512 --height 512 --num-frames 49 --fps 24 --seed 42 \
+  --output-path out.mp4
+```
+
+- Progress is parseable from stderr: `STAGE:1:STEP:n:8:Denoising` / `STAGE:2:STEP:n:3:…`
+  lines — feed these to the WS job progress.
+- Disk after downloads: hf-cache 25→53 GB, volume back at 93% (~30 GB free). Untested:
+  higher resolutions/durations (768² stage-2 will be ~2.25× slower per step), Wan
+  fallback (not needed — LTX fits with huge headroom).
+
+## Feature plan (staged, mirrors Image Lab)
+
+**Stage 0 — toolchain smoke. ✅ DONE (results above). GO.**
 
 **Stage 1 — `core/videogen/`** cloned from `core/imagegen/` patterns: toolchain probe
 (binary + weights dirs), model registry (ltx-local primary; wan-local fallback;
