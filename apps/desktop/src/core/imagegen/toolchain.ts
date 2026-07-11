@@ -12,7 +12,9 @@ import { join } from "node:path";
  */
 
 export const Z_TURBO_BIN = "mflux-generate-z-image-turbo";
-const Z_TURBO_MODEL_DIR = "models--Tongyi-MAI--Z-Image-Turbo";
+/** Pre-quantized 4-bit weights (~6 GB) from the mflux author — full bf16 is ~20 GB. */
+export const Z_TURBO_MODEL = "filipstrand/Z-Image-Turbo-mflux-4bit";
+const Z_TURBO_MODEL_DIR = "models--filipstrand--Z-Image-Turbo-mflux-4bit";
 
 export interface ImageGenToolchainProbe {
   /** mflux-generate-z-image-turbo resolvable (in ~/.local/bin or on PATH). */

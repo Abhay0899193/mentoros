@@ -102,7 +102,7 @@ function modelInfo(def: ImageGenModelDef, av: ImageGenAvailability): ImageGenMod
         info.detail = "mflux (mflux-generate-z-image-turbo) not installed";
       } else if (!av.probe.hasZTurboWeights()) {
         // Bin present: still usable — mflux pulls the weights on first run.
-        info.detail = "weights (~20 GB) download on first run";
+        info.detail = "weights (~6 GB) download on first run";
       }
       return info;
     }

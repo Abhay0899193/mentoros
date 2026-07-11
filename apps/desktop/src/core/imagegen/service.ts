@@ -9,7 +9,7 @@ import type {
   ImageGenRequest,
 } from "../types.js";
 import { KONTEXT_BIN, KONTEXT_MODEL, type ToolchainProbe } from "../faces/toolchain.js";
-import { Z_TURBO_BIN, type ImageGenToolchainProbe } from "./toolchain.js";
+import { Z_TURBO_BIN, Z_TURBO_MODEL, type ImageGenToolchainProbe } from "./toolchain.js";
 import {
   buildModelInfos,
   findModelDef,
@@ -245,12 +245,13 @@ export class ImageGenService {
     return {
       cmd: localBinOr(localBin, Z_TURBO_BIN),
       args: [
+        "--model", Z_TURBO_MODEL,
+        "--base-model", "z-image-turbo",
         "--prompt", req.prompt,
         "--width", String(req.width),
         "--height", String(req.height),
         "--steps", String(req.steps),
         "--seed", String(seed),
-        "-q", "8",
         "--output", outPng,
       ],
       env,
