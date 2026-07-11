@@ -7,6 +7,7 @@ import {
   type FaceJobStatus,
   type FacePresetId,
   type FaceToolchainStatus,
+  type GenerateFacePresetInput,
   type UpdateAvatarConfigInput,
 } from './coreClient';
 import type { RealisticPreset } from '../orb/faces/realistic';
@@ -49,6 +50,8 @@ interface FaceState {
   init: () => void;
   refreshToolchain: () => Promise<FaceToolchainStatus | null>;
   create: (input: CreateFacePresetInput) => Promise<boolean>;
+  /** Preset Generator wizard — text-to-image batch job. Returns the started job. */
+  generate: (input: GenerateFacePresetInput) => Promise<FaceJobStatus | null>;
   /** Avatar Studio "Create from frames" — synchronous, no generation job. */
   createManual: (input: CreateManualFacePresetInput) => Promise<CustomFacePreset | null>;
   /** Avatar Studio editor save — replaces a custom preset's animation doc. */
@@ -122,6 +125,23 @@ export const useFaces = create<FaceState>((set, get) => ({
         description: err instanceof Error ? err.message : 'Unknown error.',
       });
       return false;
+    }
+  },
+
+  generate: async (input) => {
+    set({ creating: true });
+    try {
+      const { job } = await coreClient.generateFacePreset(input);
+      set({ job, creating: false });
+      return job;
+    } catch (err) {
+      set({ creating: false });
+      toast({
+        tone: 'danger',
+        title: 'Could not start generation',
+        description: err instanceof Error ? err.message : 'Unknown error.',
+      });
+      return null;
     }
   },
 

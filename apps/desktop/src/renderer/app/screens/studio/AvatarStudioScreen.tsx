@@ -7,6 +7,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Sparkles,
   Trash2,
   Zap,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ import { StudioPreview } from './StudioPreview';
 import { ClipEditor } from './ClipEditor';
 import { TriggerEditor } from './TriggerEditor';
 import { CreateFromFramesWizard } from './CreateFromFramesWizard';
+import { GeneratePresetWizard } from './GeneratePresetWizard';
 import { CreateFacePresetOverlay } from '../settings/CreateFacePresetOverlay';
 import { ImageLab } from './ImageLab';
 
@@ -227,6 +229,7 @@ export function AvatarStudioScreen() {
 
   /* -------------------------------- overlays ------------------------------- */
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
   const [clipEditor, setClipEditor] = useState<{ clip: AnimationClip | null } | null>(null);
   const [triggerEditor, setTriggerEditor] = useState<{ rule: TriggerRule | null } | null>(null);
@@ -234,7 +237,7 @@ export function AvatarStudioScreen() {
 
   const editable = !!selected?.custom;
   const jobLive = !!job && ['queued', 'generating', 'compositing'].includes(job.state);
-  const overlayOpen = wizardOpen || photoOpen || !!clipEditor || !!triggerEditor;
+  const overlayOpen = wizardOpen || generateOpen || photoOpen || !!clipEditor || !!triggerEditor;
 
   const play = (clip: AnimationClip) => {
     controllerRef.current?.request(clip.id, { interrupt: true });
@@ -306,7 +309,10 @@ export function AvatarStudioScreen() {
       {/* ----------------------------- preset list ---------------------------- */}
       <aside className="flex w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface-1 p-3">
         <div className="mb-1 flex flex-col gap-1.5">
-          <Button size="sm" variant="primary" icon={<Film size={14} strokeWidth={1.5} />} onClick={() => setWizardOpen(true)}>
+          <Button size="sm" variant="primary" icon={<Sparkles size={14} strokeWidth={1.5} />} onClick={() => setGenerateOpen(true)}>
+            Generate a preset
+          </Button>
+          <Button size="sm" icon={<Film size={14} strokeWidth={1.5} />} onClick={() => setWizardOpen(true)}>
             Create from frames
           </Button>
           <Button size="sm" icon={<Camera size={14} strokeWidth={1.5} />} onClick={() => setPhotoOpen(true)} disabled={jobLive}>
@@ -620,6 +626,11 @@ export function AvatarStudioScreen() {
       <CreateFromFramesWizard
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
+        onCreated={(id) => setSelectedId(id)}
+      />
+      <GeneratePresetWizard
+        open={generateOpen}
+        onClose={() => setGenerateOpen(false)}
         onCreated={(id) => setSelectedId(id)}
       />
       <CreateFacePresetOverlay open={photoOpen} onClose={() => setPhotoOpen(false)} />
