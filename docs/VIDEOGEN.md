@@ -105,6 +105,14 @@ HF_HOME=~/mentoros-imagegen/hf-cache HF_HUB_DISABLE_XET=1 \
 The feature is built and committed (Stage 1 backend `70e5add`, Stage 2 UI `0d7e02b`).
 Manual test script: `MANUAL_TEST_CHECKLIST.md §8`.
 
+**2026-07-12 — Use as avatar clip:** the output pane's action row turns any render
+into a sprite motion clip on a custom preset (`VideoToClipDialog`): frames are
+sampled uniformly client-side (all / ½ / ¼ / custom; blob-URL `<video>` → canvas
+→ webp data URIs, LTX black-first-frame guard) and saved through the normal
+`PUT /faces/custom/:id/config`. The clip carries `durationMs` so any sample count
+keeps the video's wall-clock speed. Caps raised to 121 frames/clip (one full 5 s
+LTX video) and 512/preset. Manual script: `MANUAL_TEST_CHECKLIST.md §10`.
+
 **Backend — `src/core/videogen/`** (`paths,toolchain,models,store,ops,validate,service,routes`):
 
 - **Availability probe**: `video-env/bin/mlx_video.generate_av` exec bit + LTX +

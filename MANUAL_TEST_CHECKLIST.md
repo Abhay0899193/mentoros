@@ -139,6 +139,44 @@ else (validation, progress events, history, cross-busy) is the real path.
 - [ ] App restart mid-job: the in-flight job is lost (expected, by design) but history
       is intact and plays.
 
+## 9 · Phone / LAN access ("MentorOS Anywhere")
+- [ ] Settings → Connectivity: **Allow other devices** toggle OFF by default. Turn it ON →
+      a card appears with `http://<mac-ip>:4820/?token=…` URL(s) + copy button and the
+      "restart to apply" / HTTPS-for-mic copy.
+- [ ] Restart MentorOS (toggle applies at boot). Desktop app works exactly as before.
+- [ ] iPhone on the same Wi-Fi: open the copied URL in Safari → MentorOS loads
+      (dark theme, no CORS errors). Chat streams; sidebar/threads live-update (WS works).
+- [ ] Avatar Studio on the phone: presets render, clips play in the preview.
+- [ ] Open the URL **without** `?token=` in a private tab → plain 401/unauthorized (the
+      first visit set a cookie, so a normal tab keeps working — that's expected).
+- [ ] Wrong token (`?token=nope`) → 401.
+- [ ] Voice screen on plain HTTP: mic is expected to FAIL (Safari needs a secure context) —
+      everything else should still render.
+- [ ] **Tailscale (mic + anywhere)**: install Tailscale on Mac + iPhone (same tailnet),
+      run `tailscale serve --bg 4820` on the Mac, open `https://<mac-name>.<tailnet>.ts.net`
+      on the phone (works over LTE too). Voice loop: hold the mic button, speak → transcript
+      + spoken answer. No token needed on this path (tailnet is the auth; it proxies via
+      loopback).
+- [ ] Turn the toggle OFF + restart → the LAN URL stops connecting; desktop unaffected.
+
+## 10 · Video → avatar motion clip (Video Lab "Use as avatar clip…")
+- [ ] Video Lab: open one of Aria's movement renders (output pane or history) → action row
+      has **Use as avatar clip…** → dialog opens with the video's frame count shown.
+- [ ] Frame count control: **All (N)** / ½ / ¼ chips + free count; explainer says sampling
+      is uniform. Pick **All** on the portrait wave video → extraction progress runs →
+      clip lands on the chosen preset.
+- [ ] Preset page: the new clip plays **noticeably smoother** than the old 13-frame wave
+      (Aria keeps both — compare side by side) and lasts the same wall-clock time as the
+      video (~5 s for 121 frames).
+- [ ] Repeat with **½** and **25** on the full-body dance video, target view Full body →
+      plays in Full Body preview; duration unchanged, just choppier at lower counts.
+- [ ] Trigger option: add one as **manual** → fires from the preset page trigger buttons;
+      one with idle/random → fires on its own on the Voice screen.
+- [ ] Re-open the imported clip in the clip editor and save without touching fps →
+      playback speed unchanged (durationMs preserved).
+- [ ] Caps: try importing at a count that would push the preset past its frame budget →
+      designed validation message, not a crash.
+
 **Known/accepted:** envelope mouth has ~3s startup latency after speak() (Kokoro buffering,
 pre-existing); sheet tiles are square-cropped, so non-square cells lose their edges; grid
 auto-detect needs a plain background (manual steppers always available); photo-preset

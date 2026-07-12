@@ -262,8 +262,9 @@ function validateAnimations(
     if (o.tags !== undefined) clip.tags = requireStringArray(o.tags, "tags", 32);
     if (o.thumbnail !== undefined) clip.thumbnail = requireString(o.thumbnail, "thumbnail", 1, 256);
     if (clip.renderKind === "sprite") {
-      if (!Array.isArray(o.frames) || o.frames.length < 1 || o.frames.length > 64) {
-        throw new FaceValidationError(`sprite animation ${id} needs a frames array of 1-64 entries`);
+      // 121 = LTX's 5s/24fps max — a whole generated video imports as one clip.
+      if (!Array.isArray(o.frames) || o.frames.length < 1 || o.frames.length > 121) {
+        throw new FaceValidationError(`sprite animation ${id} needs a frames array of 1-121 entries`);
       }
       for (const f of o.frames) frameCheck(f, `animation ${id} frame`);
       totalFrames += o.frames.length;
@@ -276,7 +277,7 @@ function validateAnimations(
     }
     clips.push(clip);
   }
-  if (totalFrames > 240) throw new FaceValidationError("too many frames (max 240 per preset)");
+  if (totalFrames > 512) throw new FaceValidationError("too many frames (max 512 per preset)");
   return clips;
 }
 

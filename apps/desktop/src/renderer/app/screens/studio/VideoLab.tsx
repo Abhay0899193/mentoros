@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
+  Clapperboard,
   Copy,
   Film,
   ImagePlus,
@@ -12,6 +13,7 @@ import {
   Video,
   X,
 } from 'lucide-react';
+import { VideoToClipDialog } from './VideoToClipDialog';
 import { Button, Chip, Switch } from '../../../ui';
 import { cn } from '../../../lib/cn';
 import { useVideoLab, estimateSeconds } from '../../../lib/videoLabStore';
@@ -395,6 +397,7 @@ export function VideoLab() {
   const crossBusy = facesBusy || imagegenBusy;
 
   const [copied, setCopied] = useState(false);
+  const [clipDialogEntry, setClipDialogEntry] = useState<VideoGenHistoryEntry | null>(null);
 
   useEffect(() => {
     init();
@@ -663,8 +666,24 @@ export function VideoLab() {
               {liveResult && (
                 <span className="text-[12px] text-faint">{(liveResult.elapsedMs / 1000).toFixed(0)}s render</span>
               )}
+              {(() => {
+                // A finished live job is already in history (inserted on done) —
+                // resolve its row so the dialog gets frames/fps/size metadata.
+                const entry = viewingHistory ?? history.find((h) => h.url === liveResult?.url);
+                return entry ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto"
+                    icon={<Clapperboard size={13} strokeWidth={1.5} />}
+                    onClick={() => setClipDialogEntry(entry)}
+                  >
+                    Use as avatar clip…
+                  </Button>
+                ) : null;
+              })()}
               {viewingHistory && (
-                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => reuseSettings(viewingHistory)}>
+                <Button size="sm" variant="ghost" onClick={() => reuseSettings(viewingHistory)}>
                   Reuse settings
                 </Button>
               )}
@@ -699,6 +718,12 @@ export function VideoLab() {
           )}
         </section>
       </div>
+
+      <VideoToClipDialog
+        open={!!clipDialogEntry}
+        entry={clipDialogEntry}
+        onClose={() => setClipDialogEntry(null)}
+      />
     </div>
   );
 }

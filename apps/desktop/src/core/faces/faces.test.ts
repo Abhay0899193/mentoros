@@ -25,6 +25,7 @@ import {
   parseConfig,
   synthesizeLegacyConfig,
   validateAddExpressionInput,
+  validateConfigUpdate,
   validateGenerateInput,
   validateManualInput,
 } from "./config.js";
@@ -1093,4 +1094,42 @@ test("POST /faces/custom/:id/expressions 404 for an unknown preset", async () =>
   assert.equal(res.statusCode, 404);
   await app.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+/* ------------- config-update frame caps (video→clip import sizes) ------------- */
+
+function spriteClip(id: string, frameCount: number) {
+  return {
+    id,
+    name: id,
+    category: "gesture",
+    appliesTo: "portrait",
+    renderKind: "sprite",
+    track: "main",
+    driver: "time",
+    loopMode: "once",
+    priority: 30,
+    durationMs: 5000,
+    frames: Array.from({ length: frameCount }, (_, i) => `anim-${id}-${i}.webp`),
+  };
+}
+
+test("validateConfigUpdate accepts a 121-frame clip (whole LTX video)", () => {
+  const input = validateConfigUpdate({ animations: [spriteClip("wave", 121)], triggers: [] });
+  assert.equal(input.animations[0]!.frames!.length, 121);
+  assert.equal(input.animations[0]!.durationMs, 5000);
+});
+
+test("validateConfigUpdate rejects a clip past the 121-frame cap", () => {
+  assert.throws(
+    () => validateConfigUpdate({ animations: [spriteClip("wave", 122)], triggers: [] }),
+    /1-121/,
+  );
+});
+
+test("validateConfigUpdate rejects a preset past the 512-frame total", () => {
+  const clips = ["a", "b", "c", "d", "e"].map((id) => spriteClip(id, 121)); // 605 total
+  assert.throws(() => validateConfigUpdate({ animations: clips, triggers: [] }), /max 512/);
+  const four = ["a", "b", "c", "d"].map((id) => spriteClip(id, 121)); // 484 total
+  assert.equal(validateConfigUpdate({ animations: four, triggers: [] }).animations.length, 4);
 });

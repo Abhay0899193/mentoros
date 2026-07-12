@@ -110,6 +110,12 @@ export function ClipEditor({ open, clip, takenIds, baseFrame, fullBase, onSave, 
   const [driver, setDriver] = useState<'time' | 'envelope'>(clip?.driver ?? 'time');
   const [loopMode, setLoopMode] = useState<AnimationClip['loopMode']>(clip?.loopMode ?? 'once');
   const [fps, setFps] = useState(clip?.fps ?? 8);
+  /**
+   * Video-imported clips carry durationMs so their wall-clock speed stays
+   * exact (the controller prefers it over fps). Kept verbatim on save unless
+   * the user moves the speed slider — that hands timing back to fps.
+   */
+  const [durationMs, setDurationMs] = useState<number | undefined>(clip?.durationMs);
   const [priority, setPriority] = useState(clip?.priority ?? 30);
   const [frames, setFrames] = useState<string[]>(clip?.frames ?? []);
   const [showSlicer, setShowSlicer] = useState(false);
@@ -141,7 +147,7 @@ export function ClipEditor({ open, clip, takenIds, baseFrame, fullBase, onSave, 
       ),
     )
       .then((uris) => {
-        setFrames((prev) => [...prev, ...uris].slice(0, 64));
+        setFrames((prev) => [...prev, ...uris].slice(0, 121));
         setPreAlign(null);
       })
       .catch((e: Error) => setError(e.message));
@@ -223,7 +229,10 @@ export function ClipEditor({ open, clip, takenIds, baseFrame, fullBase, onSave, 
       loopMode,
       priority: Math.round(priority),
     };
-    if (driver === 'time') out.fps = fps;
+    if (driver === 'time') {
+      out.fps = fps;
+      if (durationMs !== undefined) out.durationMs = durationMs;
+    }
     onSave(out);
   };
 
@@ -285,13 +294,21 @@ export function ClipEditor({ open, clip, takenIds, baseFrame, fullBase, onSave, 
                 <input
                   type="range"
                   min={1}
-                  max={24}
+                  max={30}
                   value={fps}
-                  onChange={(e) => setFps(Number(e.target.value))}
+                  onChange={(e) => {
+                    setFps(Number(e.target.value));
+                    setDurationMs(undefined);
+                  }}
                   aria-label="Frames per second"
                   className="w-40 accent-[var(--iris)]"
                 />
                 <span className="text-small text-muted">{fps} fps</span>
+                {durationMs !== undefined && (
+                  <span className="text-small text-faint">
+                    keeps its real length ({(durationMs / 1000).toFixed(1)}s) — move the slider to re-time
+                  </span>
+                )}
               </div>
             </Row>
           </>
