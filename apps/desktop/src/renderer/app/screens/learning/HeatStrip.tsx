@@ -15,14 +15,19 @@ export function HeatStrip({ heat }: { heat: HeatCell[] }) {
     heat.length > 0 ? heat.slice(-84) : Array.from({ length: 84 }, () => null);
 
   return (
-    <div className="grid grid-flow-col grid-rows-7 gap-[3px]" aria-label="84-day activity heatmap">
-      {cells.map((cell, i) => (
-        <div
-          key={cell?.date ?? i}
-          title={cell ? `${cell.date} · ${cell.count} ${cell.count === 1 ? 'task' : 'tasks'}` : 'No activity yet'}
-          className={cn('size-2 rounded-[2px]', intensityClass(cell?.count ?? 0))}
-        />
-      ))}
+    <div className="max-w-full overflow-x-auto">
+      <div
+        className="grid w-fit grid-flow-col grid-rows-7 gap-[3px]"
+        aria-label="84-day activity heatmap"
+      >
+        {cells.map((cell, i) => (
+          <div
+            key={cell?.date ?? i}
+            title={cell ? `${cell.date} · ${cell.count} ${cell.count === 1 ? 'task' : 'tasks'}` : 'No activity yet'}
+            className={cn('size-2 shrink-0 rounded-[2px]', intensityClass(cell?.count ?? 0))}
+          />
+        ))}
+      </div>
     </div>
   );
 }

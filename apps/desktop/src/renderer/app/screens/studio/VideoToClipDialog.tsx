@@ -225,7 +225,7 @@ export function VideoToClipDialog({ open, entry, onClose }: VideoToClipDialogPro
 
             <div className="flex flex-col gap-1.5">
               <span className="text-label font-medium uppercase tracking-wide text-muted">Plays on</span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div role="radiogroup" aria-label="Plays on" className="flex gap-1 rounded-[10px] bg-surface-2 p-1 hairline">
                   {(['portrait', 'full'] as const).map((opt) => (
                     <button

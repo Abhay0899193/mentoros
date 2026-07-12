@@ -85,7 +85,7 @@ export function Scorecard() {
     <AnimatePresence>
       {open && scorecard && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 py-[6vh]"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 py-[6dvh]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -110,7 +110,7 @@ export function Scorecard() {
               variants={reduced(reduce, staggerChildren)}
               initial="hidden"
               animate="visible"
-              className="flex flex-col gap-6 p-8"
+              className="flex flex-col gap-6 p-4 sm:p-8"
             >
               <motion.header
                 variants={reduced(reduce, riseIn)}
@@ -132,7 +132,7 @@ export function Scorecard() {
 
               <motion.div
                 variants={reduced(reduce, riseIn)}
-                className="grid grid-cols-2 gap-3"
+                className="grid grid-cols-1 gap-3 sm:grid-cols-2"
               >
                 <Card padding="compact" className="border-danger/20">
                   <div className="flex items-center gap-2">
@@ -179,7 +179,7 @@ export function Scorecard() {
 
               <motion.div
                 variants={reduced(reduce, riseIn)}
-                className="grid grid-cols-2 gap-3"
+                className="grid grid-cols-1 gap-3 sm:grid-cols-2"
               >
                 <Card padding="compact" className="flex flex-col gap-2">
                   <h3 className="text-label font-medium tracking-[0.02em] text-muted uppercase">
@@ -274,7 +274,7 @@ export function Scorecard() {
 
               <motion.footer
                 variants={reduced(reduce, riseIn)}
-                className="flex justify-end gap-2 pt-2"
+                className="flex flex-wrap justify-end gap-2 pt-2"
               >
                 <Button variant="secondary" onClick={backToLauncher}>
                   Back to interviews

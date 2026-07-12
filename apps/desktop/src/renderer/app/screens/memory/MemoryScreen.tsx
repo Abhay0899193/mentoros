@@ -25,8 +25,8 @@ export function MemoryScreen() {
 
   return (
     <div className="relative flex h-full flex-col">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-4 px-6">
-        <div className="flex items-center rounded-[10px] bg-surface-2 hairline p-0.5">
+      <header className="flex h-auto shrink-0 flex-col items-stretch gap-2 px-6 py-3 md:h-14 md:flex-row md:items-center md:justify-between md:gap-4 md:py-0">
+        <div className="flex w-full items-center rounded-[10px] bg-surface-2 hairline p-0.5 md:w-fit">
           {(
             [
               { id: 'profile', label: 'Profile', icon: User },
@@ -37,7 +37,7 @@ export function MemoryScreen() {
               key={t.id}
               onClick={() => setView(t.id)}
               className={cn(
-                'flex h-7 items-center gap-1.5 rounded-[8px] px-3 text-small',
+                'tap-target flex h-7 flex-1 items-center justify-center gap-1.5 rounded-[8px] px-3 text-small md:flex-none md:justify-start',
                 view === t.id ? 'bg-surface-1 text-ink hairline' : 'text-muted hover:text-body',
               )}
             >
@@ -47,7 +47,7 @@ export function MemoryScreen() {
           ))}
         </div>
 
-        <div className="flex h-8 w-64 items-center gap-2 rounded-full bg-surface-2 hairline px-3">
+        <div className="flex h-8 w-full items-center gap-2 rounded-full bg-surface-2 hairline px-3 md:w-64">
           <Search size={13} strokeWidth={1.5} className="shrink-0 text-faint" />
           <input
             value={query}

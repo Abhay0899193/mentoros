@@ -303,7 +303,7 @@ export function AvatarStudioScreen() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
+      <div className="flex items-center gap-3 overflow-x-auto border-b border-line bg-surface-1 px-4 py-2.5">
         <StudioViewSwitch view={view} onChange={setView} />
       </div>
 
@@ -312,9 +312,9 @@ export function AvatarStudioScreen() {
       ) : view === 'videolab' ? (
         <VideoLab />
       ) : (
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       {/* ----------------------------- preset list ---------------------------- */}
-      <aside className="flex w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface-1 p-3">
+      <aside className="flex max-h-52 w-full shrink-0 flex-col gap-1 overflow-y-auto border-b border-line bg-surface-1 p-3 md:max-h-none md:w-60 md:border-b-0 md:border-r">
         <div className="mb-1 flex flex-col gap-1.5">
           <Button size="sm" variant="primary" icon={<Sparkles size={14} strokeWidth={1.5} />} onClick={() => setGenerateOpen(true)}>
             Generate a preset
@@ -409,7 +409,7 @@ export function AvatarStudioScreen() {
                 onChange={(e) => setDraft((d) => (d ? { ...d, name: e.target.value } : d))}
                 maxLength={60}
                 aria-label="Preset name"
-                className="w-64 rounded-[8px] bg-transparent text-h2 font-semibold text-ink outline-none hover:bg-surface-1 focus:bg-surface-1 focus:px-2"
+                className="w-full max-w-64 rounded-[8px] bg-transparent text-h2 font-semibold text-ink outline-none hover:bg-surface-1 focus:bg-surface-1 focus:px-2"
               />
             ) : (
               <h1 className="truncate text-h2 font-semibold text-ink">{selected?.name ?? 'Avatar Studio'}</h1>
@@ -469,7 +469,7 @@ export function AvatarStudioScreen() {
               frozen={overlayOpen}
             />
 
-            <div className="flex min-w-[340px] flex-1 flex-col gap-5">
+            <div className="flex min-w-0 flex-1 flex-col gap-5 md:min-w-[340px]">
               {/* ------------------------------ clips ----------------------------- */}
               <section className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
@@ -521,7 +521,7 @@ export function AvatarStudioScreen() {
                         <button
                           aria-label={`Play ${clip.name}`}
                           onClick={() => play(clip)}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-2 text-muted hairline hover:bg-surface-3 hover:text-ink"
+                          className="tap-target flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-2 text-muted hairline hover:bg-surface-3 hover:text-ink"
                         >
                           <Play size={12} strokeWidth={2} />
                         </button>
@@ -533,7 +533,7 @@ export function AvatarStudioScreen() {
                               aria-label={`Regenerate ${clip.name}`}
                               onClick={() => setExpressionDialog({ replaceClip: clip })}
                               disabled={jobLive}
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-45"
+                              className="tap-target flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-45"
                             >
                               <RefreshCw size={12} strokeWidth={1.5} />
                             </button>
@@ -541,14 +541,14 @@ export function AvatarStudioScreen() {
                           <button
                             aria-label={`Edit ${clip.name}`}
                             onClick={() => setClipEditor({ clip })}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink"
+                            className="tap-target flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink"
                           >
                             <Pencil size={12} strokeWidth={1.5} />
                           </button>
                           <button
                             aria-label={`Delete ${clip.name}`}
                             onClick={() => removeClip(clip.id)}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-[var(--danger)]"
+                            className="tap-target flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-[var(--danger)]"
                           >
                             <Trash2 size={12} strokeWidth={1.5} />
                           </button>
@@ -601,14 +601,14 @@ export function AvatarStudioScreen() {
                             <button
                               aria-label="Edit trigger"
                               onClick={() => setTriggerEditor({ rule })}
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink"
+                              className="tap-target flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink"
                             >
                               <Pencil size={12} strokeWidth={1.5} />
                             </button>
                             <button
                               aria-label="Delete trigger"
                               onClick={() => setDraft((d) => (d ? { ...d, triggers: d.triggers.filter((t) => t.id !== rule.id) } : d))}
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-[var(--danger)]"
+                              className="tap-target flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-[var(--danger)]"
                             >
                               <Trash2 size={12} strokeWidth={1.5} />
                             </button>
@@ -640,9 +640,9 @@ export function AvatarStudioScreen() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={spring.smooth}
-          className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full bg-surface-2 py-2 pl-4 pr-2 shadow-lg hairline-strong"
+          className="fixed bottom-24 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-surface-2 py-2 pl-3 pr-2 shadow-lg hairline-strong md:bottom-5 md:gap-3 md:pl-4"
         >
-          <span className="text-small text-body">Unsaved changes</span>
+          <span className="hidden text-small text-body sm:inline">Unsaved changes</span>
           <Button size="sm" variant="ghost" onClick={() => setDraft(baseConfig ? { name: baseConfig.name, animations: baseConfig.animations, triggers: baseConfig.triggers, defaultAnimationId: baseConfig.defaultAnimationId } : null)}>
             Discard
           </Button>

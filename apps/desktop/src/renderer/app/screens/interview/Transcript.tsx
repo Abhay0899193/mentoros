@@ -204,7 +204,7 @@ export function Transcript() {
             disabled={!canSend}
             aria-label="Send"
             className={cn(
-              "mb-0.5 rounded-[8px] p-1.5",
+              "tap-target mb-0.5 rounded-[8px] p-1.5",
               canSend
                 ? "bg-ink text-canvas hover:opacity-90"
                 : "bg-surface-3 text-faint",

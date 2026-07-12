@@ -24,6 +24,9 @@ export function Switch({ checked, onChange, disabled, label, id }: SwitchProps) 
       className={cn(
         'relative inline-flex h-6 w-10 shrink-0 cursor-default items-center rounded-full transition-colors duration-150',
         'disabled:pointer-events-none disabled:opacity-45',
+        // 24×40 is under the 44px touch floor, but the track's size IS the
+        // design — widen the hit area, not the switch.
+        'tap-hit',
         checked ? 'bg-iris/70' : 'bg-surface-3 hairline',
       )}
     >

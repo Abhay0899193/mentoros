@@ -15,6 +15,7 @@ import {
 import { cn } from "../../../lib/cn";
 import { spring, dur } from "../../../motion/springs";
 import { useInterview } from "../../../lib/interviewStore";
+import { useIsMobile } from "../../../lib/useBreakpoint";
 import type { InterviewProblem } from "../../../lib/coreClient";
 import { Button, Chip, CodeEditor } from "../../../ui";
 import { ReadingMarkdown } from "../knowledge/ReadingMarkdown";
@@ -78,7 +79,7 @@ function HintButton() {
       disabled={disabled}
       title={maxed ? "All 3 hints used" : `Request hint ${used + 1}/3`}
       className={cn(
-        "flex h-8 items-center gap-2 rounded-[10px] bg-surface-2 hairline px-3 text-small",
+        "tap-target flex h-8 items-center gap-2 rounded-[10px] bg-surface-2 hairline px-3 text-small",
         disabled
           ? "text-faint opacity-60"
           : "text-body hover:bg-surface-3 hover:text-ink",
@@ -106,6 +107,10 @@ function OverflowMenu() {
   const [confirming, setConfirming] = useState(false);
   const abandon = useInterview((s) => s.abandon);
   const phase = useInterview((s) => s.session?.phase);
+  // The toolbar's button row scrolls horizontally on a phone (below), which
+  // would clip an `absolute` popover anchored inside it — pin this one to
+  // the viewport there instead so it escapes that ancestor's overflow.
+  const isMobile = useIsMobile();
   if (phase === "abandoned" || phase === "scorecard") return null;
 
   function close() {
@@ -118,7 +123,7 @@ function OverflowMenu() {
       <button
         onClick={() => setOpen((o) => !o)}
         aria-label="More actions"
-        className="rounded-[8px] p-1.5 text-faint hover:bg-surface-2 hover:text-body"
+        className="tap-target rounded-[8px] p-1.5 text-faint hover:bg-surface-2 hover:text-body"
       >
         <MoreHorizontal size={16} strokeWidth={1.5} />
       </button>
@@ -131,12 +136,15 @@ function OverflowMenu() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, transition: { duration: dur.micro } }}
               transition={spring.smooth}
-              className="glass overlay-shadow absolute top-9 right-0 z-40 w-64 rounded-[14px] bg-surface-1/90 p-1.5"
+              className={cn(
+                "glass overlay-shadow z-40 w-64 max-w-[calc(100vw-2rem)] rounded-[14px] bg-surface-1/90 p-1.5",
+                isMobile ? "fixed top-16 right-3" : "absolute top-9 right-0",
+              )}
             >
               {!confirming ? (
                 <button
                   onClick={() => setConfirming(true)}
-                  className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-small text-danger hover:bg-danger/10"
+                  className="tap-target flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-small text-danger hover:bg-danger/10"
                 >
                   <LogOut size={14} strokeWidth={1.5} />
                   Abandon interview
@@ -149,7 +157,7 @@ function OverflowMenu() {
                   <div className="flex justify-end gap-2">
                     <button
                       onClick={close}
-                      className="rounded-[8px] px-2.5 py-1 text-small text-muted hover:bg-surface-2 hover:text-body"
+                      className="tap-target rounded-[8px] px-2.5 py-1 text-small text-muted hover:bg-surface-2 hover:text-body"
                     >
                       Cancel
                     </button>
@@ -158,7 +166,7 @@ function OverflowMenu() {
                         close();
                         void abandon();
                       }}
-                      className="rounded-[8px] bg-danger/10 px-2.5 py-1 text-small text-danger hover:bg-danger/15"
+                      className="tap-target rounded-[8px] bg-danger/10 px-2.5 py-1 text-small text-danger hover:bg-danger/15"
                     >
                       Abandon
                     </button>
@@ -191,8 +199,10 @@ function Toolbar({ locked }: { locked: boolean }) {
 
   return (
     <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line px-4">
-      <ElapsedTimer startedAt={session.startedAt} />
-      <div className="flex items-center gap-2">
+      <div className="shrink-0">
+        <ElapsedTimer startedAt={session.startedAt} />
+      </div>
+      <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
         {isOver && !!scorecard && (
           <Button
             size="sm"
@@ -308,6 +318,57 @@ function SessionErrorState() {
   );
 }
 
+type MobileTab = "problem" | "chat" | "code";
+
+const MOBILE_TABS: { id: MobileTab; label: string }[] = [
+  { id: "problem", label: "Problem" },
+  { id: "chat", label: "Interviewer" },
+  { id: "code", label: "Code" },
+];
+
+/** Phone-only segmented control — the split panes collapse to one at a time (docs/RESPONSIVE.md rule 3). */
+function MobileTabBar({
+  tab,
+  onChange,
+}: {
+  tab: MobileTab;
+  onChange: (t: MobileTab) => void;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <div
+      role="tablist"
+      aria-label="Interview view"
+      className="relative mx-3 my-2 flex shrink-0 gap-1 rounded-full bg-surface-2 p-1 hairline"
+    >
+      {MOBILE_TABS.map((o) => {
+        const active = tab === o.id;
+        return (
+          <button
+            key={o.id}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(o.id)}
+            className={cn(
+              "tap-target relative z-10 flex flex-1 items-center justify-center rounded-full px-2 text-small font-medium",
+              active ? "text-ink" : "text-muted hover:text-body",
+            )}
+          >
+            {o.label}
+            {active && (
+              <motion.span
+                layoutId="interview-mobile-tab-pill"
+                transition={reduce ? { duration: dur.micro } : spring.smooth}
+                className="absolute inset-0 -z-10 rounded-full bg-surface-3 hairline-strong"
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Coding interview session (plan.md §4.5): problem | transcript | editor | results. */
 export function InterviewSession() {
   const session = useInterview((s) => s.session);
@@ -320,6 +381,8 @@ export function InterviewSession() {
   const scorecard = useInterview((s) => s.scorecard);
   const scorecardLoading = useInterview((s) => s.scorecardLoading);
   const runTests = useInterview((s) => s.runTests);
+  const isMobile = useIsMobile();
+  const [mobileTab, setMobileTab] = useState<MobileTab>("problem");
 
   if (sessionLoading && !session) return <SessionSkeleton />;
   if (sessionError && !session) return <SessionErrorState />;
@@ -330,21 +393,55 @@ export function InterviewSession() {
     session.phase === "scorecard" ||
     session.phase === "abandoned";
 
+  // On a phone the problem | transcript | editor split can't survive
+  // side-by-side (docs/RESPONSIVE.md rule 3) — a segmented control swaps
+  // between the same three panes instead. All panes stay mounted (just
+  // hidden) so Monaco's editor instance and scroll positions survive tab
+  // switches. `md:` restores the exact desktop split below unchanged.
   return (
-    <div className="relative flex h-full">
-      <div className="flex h-full w-[40%] min-w-[320px] flex-col border-r border-line">
-        <div className="flex-[0_0_55%] overflow-y-auto p-6">
+    <div className="relative flex h-full flex-col md:flex-row">
+      {isMobile && <Toolbar locked={locked} />}
+      {isMobile && <MobileTabBar tab={mobileTab} onChange={setMobileTab} />}
+
+      <div
+        className={cn(
+          "flex h-full w-full flex-col border-line md:w-[40%] md:min-w-[320px] md:border-r",
+          isMobile && mobileTab === "code" && "hidden",
+        )}
+      >
+        <div
+          className={
+            isMobile
+              ? mobileTab === "problem"
+                ? "min-h-0 flex-1 overflow-y-auto p-4"
+                : "hidden"
+              : "flex-[0_0_55%] overflow-y-auto p-6"
+          }
+        >
           <ProblemHeader problem={problem} />
           <ReadingMarkdown text={problem.promptMd} />
         </div>
-        <div className="flex-[0_0_45%] min-h-0">
+        <div
+          className={
+            isMobile
+              ? mobileTab === "chat"
+                ? "flex min-h-0 flex-1 flex-col"
+                : "hidden"
+              : "flex-[0_0_45%] min-h-0"
+          }
+        >
           <Transcript />
         </div>
       </div>
 
-      <div className="flex h-full min-w-0 flex-1 flex-col">
-        <Toolbar locked={locked} />
-        <div className="relative min-h-0 flex-1">
+      <div
+        className={cn(
+          "flex h-full min-w-0 flex-1 flex-col",
+          isMobile && mobileTab !== "code" && "hidden",
+        )}
+      >
+        {!isMobile && <Toolbar locked={locked} />}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
           <CodeEditor
             value={code}
             onChange={setCode}

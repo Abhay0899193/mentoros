@@ -89,10 +89,10 @@ export function KnowledgeScreen() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <header className="flex h-14 shrink-0 items-center justify-between gap-4 px-6">
+      <header className="flex flex-col gap-2 px-4 py-3 md:h-14 md:shrink-0 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-0">
         <h1 className="shrink-0 whitespace-nowrap text-h2 text-ink">Knowledge base</h1>
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-          <div className="flex h-8 w-40 max-w-72 min-w-0 flex-1 items-center gap-2 rounded-full bg-surface-2 hairline px-3 focus-within:border-line-strong">
+        <div className="flex min-w-0 items-center gap-2 md:flex-1 md:justify-end">
+          <div className="flex h-8 w-full min-w-0 items-center gap-2 rounded-full bg-surface-2 hairline px-3 focus-within:border-line-strong md:w-40 md:max-w-72 md:flex-1">
             <Search size={13} strokeWidth={1.5} className="shrink-0 text-faint" />
             <input
               ref={searchRef}
@@ -120,8 +120,8 @@ export function KnowledgeScreen() {
       <div
         className={
           readingId
-            ? 'min-h-0 flex-1 overflow-hidden px-6 pb-6 @container'
-            : 'min-h-0 flex-1 overflow-y-auto px-6 pb-10 @container'
+            ? 'min-h-0 flex-1 overflow-hidden px-4 pb-6 @container md:px-6'
+            : 'min-h-0 flex-1 overflow-y-auto px-4 pb-10 @container md:px-6'
         }
       >
         {readingId ? <ReadingView /> : query.trim() !== '' ? <SearchView /> : <LibraryGrid />}

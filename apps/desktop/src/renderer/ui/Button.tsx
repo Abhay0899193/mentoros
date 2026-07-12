@@ -46,6 +46,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={cn(
         'inline-flex cursor-default items-center justify-center rounded-[10px] select-none',
         'disabled:pointer-events-none disabled:opacity-45',
+        // Mouse-sized (h-8/h-9) is under the 44px touch floor — grow on a finger.
+        'tap-target',
         variants[variant],
         sizes[size],
         className,

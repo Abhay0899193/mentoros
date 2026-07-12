@@ -162,10 +162,20 @@
   --text-mono--line-height: 1.5;
 }
 
+/* ---- Responsive variants (§3.0 must hold at every width) ----
+   Tailwind v4 already gates `hover:` behind (hover: hover), so hover-revealed
+   controls are UNREACHABLE on touch. `coarse:` re-reveals them; `fine:` is the
+   mouse-only escape hatch. Breakpoints stay the Tailwind defaults —
+   md (768px) is the phone/desktop shell boundary. */
+@custom-variant coarse (@media (pointer: coarse));
+@custom-variant fine (@media (pointer: fine));
+
 /* ---- Base ---- */
 @layer base {
   html {
     color-scheme: dark;
+    /* iOS rotates into a larger text size unless told not to */
+    -webkit-text-size-adjust: 100%;
   }
   :root[data-theme='light'] {
     color-scheme: light;
@@ -182,6 +192,27 @@
     text-rendering: optimizeLegibility;
     overflow: hidden; /* app shell owns scroll regions */
     user-select: none; /* desktop-app feel; content areas re-enable */
+    overscroll-behavior: none; /* no rubber-band / pull-to-refresh on the shell */
+    -webkit-tap-highlight-color: transparent; /* we draw our own press states */
+  }
+
+  /* Safari zooms the whole page when a focused field is under 16px — our
+     --text-small (13px) inputs would trigger it on every tap. Touch devices
+     get 16px fields; the visual scale is unchanged because the zoom is what
+     they were being scaled by. Mouse pointers keep the tighter desktop type. */
+  @media (pointer: coarse) {
+    input,
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+
+  /* Momentum scrolling inside the shell's scroll regions */
+  @media (pointer: coarse) {
+    * {
+      -webkit-overflow-scrolling: touch;
+    }
   }
 
   ::selection {
@@ -294,4 +325,61 @@
 }
 @utility no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* ---- Safe areas (notch, home indicator, rounded corners) ----
+   env() resolves to 0px everywhere it doesn't apply, so these are inert on
+   desktop/Electron and only cost anything on a real device. `viewport-fit=cover`
+   in index.html is what makes them non-zero. */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility pl-safe {
+  padding-left: env(safe-area-inset-left);
+}
+@utility pr-safe {
+  padding-right: env(safe-area-inset-right);
+}
+@utility px-safe {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+/* Additive forms — keep an existing pad and add the inset on top. */
+@utility pb-safe-plus-* {
+  padding-bottom: calc(--value(--spacing-*) + env(safe-area-inset-bottom));
+}
+@utility pt-safe-plus-* {
+  padding-top: calc(--value(--spacing-*) + env(safe-area-inset-top));
+}
+
+/* Touch targets: the platform floor is 44px. Chrome sized for a mouse
+   (h-8/h-9 buttons, icon taps) must not shrink below it on a finger. */
+@utility tap-target {
+  @media (pointer: coarse) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* For controls whose SIZE is the design — a switch track, a chip's × — growing
+   them to 44px would wreck them. Expand the hit area instead: an invisible
+   pseudo-element centred on the control, which costs no layout. Requires the
+   control to be `relative` and NOT inside an `overflow-hidden` ancestor that
+   would clip the extra area away (clipping kills hit-testing too). */
+@utility tap-hit {
+  @media (pointer: coarse) {
+    position: relative;
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      translate: -50% -50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+    }
+  }
 }

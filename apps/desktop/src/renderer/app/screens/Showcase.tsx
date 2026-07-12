@@ -50,7 +50,7 @@ export function Showcase() {
       variants={reduced(reduce, staggerChildren)}
       initial="hidden"
       animate="visible"
-      className="mx-auto flex max-w-4xl flex-col gap-16 px-10 py-16 select-text"
+      className="mx-auto flex max-w-4xl flex-col gap-10 px-5 py-8 select-text md:gap-16 md:px-10 md:py-16"
     >
       <motion.header variants={reduced(reduce, riseIn)} className="flex flex-col gap-2">
         <h1 className="text-display text-ink">Nocturne</h1>
@@ -61,13 +61,13 @@ export function Showcase() {
       </motion.header>
 
       <Section title="Surface ladder & inks">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Swatch name="canvas" cssVar="--canvas" text="--body" />
           <Swatch name="surface-1" cssVar="--surface-1" text="--body" />
           <Swatch name="surface-2" cssVar="--surface-2" text="--body" />
           <Swatch name="surface-3" cssVar="--surface-3" text="--body" />
         </div>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Swatch name="ink" cssVar="--ink" />
           <Swatch name="body" cssVar="--body" />
           <Swatch name="muted" cssVar="--muted" />
@@ -151,7 +151,7 @@ export function Showcase() {
       </Section>
 
       <Section title="Cards & panels">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Card interactive padding="compact">
             <h3 className="text-h3 text-ink">Today’s mission</h3>
             <p className="mt-1 text-small text-muted">{missions[3]}</p>

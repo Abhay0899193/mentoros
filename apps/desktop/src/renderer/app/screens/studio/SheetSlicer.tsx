@@ -193,7 +193,7 @@ export function SheetSlicer({ onSlice }: { onSlice: (tiles: string[]) => void })
           </div>
 
           {error && <p className="text-small text-[var(--danger)]">{error}</p>}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-small text-muted">Click tiles to exclude empties — order is left-to-right, top-to-bottom.</span>
             <Button size="sm" variant="primary" onClick={slice} loading={slicing} loadingLabel="Slicing…" disabled={keptCount === 0}>
               Add {keptCount} frame{keptCount === 1 ? '' : 's'}

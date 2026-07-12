@@ -37,7 +37,7 @@ export function SettingsScreen() {
   useEffect(() => init(), [init]);
 
   return (
-    <div className="mx-auto flex h-full max-w-2xl flex-col gap-6 overflow-y-auto px-6 py-8">
+    <div className="mx-auto flex h-full max-w-2xl flex-col gap-6 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
       <header>
         <h1 className="text-h2 text-ink">Settings</h1>
         <p className="mt-1 text-small text-muted">

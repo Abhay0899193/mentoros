@@ -16,7 +16,7 @@ export function AppearanceSection() {
   return (
     <Panel title="Appearance">
       <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-small text-ink">Color mode</p>
             <p className="text-label text-muted">Dark is the native look; light follows the same ladder.</p>
@@ -29,7 +29,7 @@ export function AppearanceSection() {
                 aria-checked={theme === id}
                 onClick={() => setTheme(id)}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-small transition-colors duration-150',
+                  'tap-target flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-small transition-colors duration-150',
                   theme === id ? 'bg-surface-1 text-ink hairline' : 'text-muted hover:text-body',
                 )}
               >
@@ -55,7 +55,7 @@ export function AppearanceSection() {
                   aria-checked={selected}
                   onClick={() => setAccent(a.id)}
                   className={cn(
-                    'flex items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-small transition-colors duration-150 hairline',
+                    'tap-target flex items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-small transition-colors duration-150 hairline',
                     selected ? 'bg-surface-2 text-ink ring-1 ring-iris/40' : 'bg-surface-1 text-muted hover:bg-surface-2 hover:text-body',
                   )}
                 >

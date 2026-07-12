@@ -46,7 +46,7 @@ function PersonaPicker() {
         aria-label="Switch persona"
         className="flex items-center gap-1.5 rounded-full py-0.5 pr-1 hover:opacity-80 disabled:opacity-50"
       >
-        <Chip tone={meta.tone} className="max-w-[200px]">
+        <Chip tone={meta.tone} className="max-w-[40vw] md:max-w-[200px]">
           <span className="truncate">{meta.label}</span>
         </Chip>
         <ChevronDown size={14} strokeWidth={1.5} className="text-faint" />
@@ -60,7 +60,7 @@ function PersonaPicker() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, transition: { duration: dur.micro } }}
               transition={spring.smooth}
-              className="glass overlay-shadow absolute top-9 left-0 z-40 max-h-80 w-72 overflow-y-auto rounded-[14px] bg-surface-1/90 p-1.5"
+              className="glass overlay-shadow absolute top-9 left-0 z-40 max-h-80 w-[min(18rem,calc(100vw-2rem))] overflow-y-auto rounded-[14px] bg-surface-1/90 p-1.5"
             >
               {items.map((p) => (
                 <li key={p.id}>
@@ -93,8 +93,14 @@ function ThreadsMenu() {
 
   return (
     <div className="relative">
-      <Button size="sm" variant="ghost" icon={<History size={14} strokeWidth={1.5} />} onClick={() => setOpen((o) => !o)}>
-        History
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-label="Conversation history"
+        icon={<History size={14} strokeWidth={1.5} />}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="hidden sm:inline">History</span>
       </Button>
       <AnimatePresence>
         {open && (
@@ -105,7 +111,7 @@ function ThreadsMenu() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, transition: { duration: dur.micro } }}
               transition={spring.smooth}
-              className="glass overlay-shadow absolute top-9 right-0 z-40 w-80 rounded-[14px] bg-surface-1/90 p-1.5"
+              className="glass overlay-shadow absolute top-9 right-0 z-40 w-[min(20rem,calc(100vw-2rem))] rounded-[14px] bg-surface-1/90 p-1.5"
             >
               {threads.length === 0 ? (
                 <p className="px-3 py-4 text-center text-small text-faint">
@@ -133,7 +139,7 @@ function ThreadsMenu() {
                       <button
                         aria-label={`Delete thread ${t.title}`}
                         onClick={() => void deleteThread(t.id)}
-                        className="mr-1 rounded-[6px] p-1.5 text-faint opacity-0 group-hover:opacity-100 hover:bg-surface-3 hover:text-danger"
+                        className="tap-target mr-1 flex items-center justify-center rounded-[6px] p-1.5 text-faint opacity-0 coarse:opacity-100 group-hover:opacity-100 hover:bg-surface-3 hover:text-danger"
                       >
                         <Trash2 size={14} strokeWidth={1.5} />
                       </button>
@@ -214,7 +220,7 @@ function SaveMemoryAction({ message }: { message: ChatMessage }) {
           tags: ['saved'],
         })
       }
-      className="rounded-[6px] p-1 text-faint opacity-0 transition-opacity group-hover/msg:opacity-100 hover:bg-surface-2 hover:text-body"
+      className="tap-target flex items-center justify-center rounded-[6px] p-1 text-faint opacity-0 transition-opacity coarse:opacity-60 group-hover/msg:opacity-100 hover:bg-surface-2 hover:text-body"
     >
       <Bookmark size={14} strokeWidth={1.5} />
     </button>
@@ -297,18 +303,21 @@ export function ChatScreen() {
     composerRef.current?.setDraft(`Explain this line: \`${line.trim()}\``);
 
   return (
-    <div className="mx-auto flex h-full max-w-[760px] flex-col px-6">
-      <header className="flex h-14 shrink-0 items-center justify-between">
+    <div className="mx-auto flex h-full max-w-[760px] flex-col px-4 md:px-6">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-2">
         <PersonaPicker />
-        <div className="flex items-center gap-1">
+        {/* The two labels collapse to their icons on a phone — the persona chip
+            is the one thing in this row that must stay readable. */}
+        <div className="flex shrink-0 items-center gap-1">
           <ThreadsMenu />
           <Button
             size="sm"
             variant="ghost"
+            aria-label="New chat"
             icon={<SquarePen size={14} strokeWidth={1.5} />}
             onClick={() => void selectThread(null)}
           >
-            New chat
+            <span className="hidden sm:inline">New chat</span>
           </Button>
         </div>
       </header>

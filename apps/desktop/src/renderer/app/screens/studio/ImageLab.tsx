@@ -185,7 +185,7 @@ function ReferenceDrop() {
                 e.stopPropagation();
                 setForm({ referenceDataUri: undefined });
               }}
-              className="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-surface-1/85 text-muted hairline hover:text-ink"
+              className="tap-target absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-surface-1/85 text-muted hairline hover:text-ink"
             >
               <X size={12} strokeWidth={1.5} />
             </span>
@@ -274,7 +274,7 @@ function HistoryThumb({
             e.stopPropagation();
             setConfirming(true);
           }}
-          className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface-1/85 text-muted opacity-0 transition-opacity hairline hover:text-danger group-hover:opacity-100"
+          className="tap-target absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface-1/85 text-muted opacity-0 coarse:opacity-100 transition-opacity hairline hover:text-danger group-hover:opacity-100"
         >
           <Trash2 size={11} strokeWidth={1.5} />
         </button>
@@ -332,9 +332,9 @@ export function ImageLab() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-wrap gap-6 overflow-y-auto px-6 py-5">
+    <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-5 md:flex-row md:flex-wrap">
       {/* --------------------------------- form --------------------------------- */}
-      <div className="flex w-[360px] shrink-0 flex-col gap-5">
+      <div className="flex w-full flex-col gap-5 md:w-[360px] md:shrink-0">
         <section className="flex flex-col gap-2">
           <h2 className="text-label font-medium uppercase tracking-wide text-muted">Model</h2>
           {!modelsLoaded ? (
@@ -481,7 +481,7 @@ export function ImageLab() {
       </div>
 
       {/* -------------------------------- output --------------------------------- */}
-      <div className="flex min-w-[320px] flex-1 flex-col gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4 md:min-w-[320px]">
         <section className="flex flex-col gap-2">
           <h2 className="text-label font-medium uppercase tracking-wide text-muted">Output</h2>
           <div className="flex aspect-square w-full max-w-[520px] items-center justify-center overflow-hidden rounded-[14px] bg-surface-1 hairline">

@@ -35,7 +35,7 @@ export function MemoryDrawer() {
           animate={reduce ? { opacity: 1 } : { x: 0, opacity: 1 }}
           exit={reduce ? { opacity: 0 } : { x: 40, opacity: 0, transition: { duration: dur.micro } }}
           transition={reduce ? { duration: dur.micro } : spring.smooth}
-          className="absolute top-0 right-0 bottom-0 z-20 flex w-96 flex-col border-l border-line bg-surface-1 overlay-shadow"
+          className="absolute top-0 right-0 bottom-0 z-20 flex w-full flex-col border-l border-line bg-surface-1 overlay-shadow md:w-96"
         >
           <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
             <span className="flex items-center gap-2">
@@ -44,7 +44,7 @@ export function MemoryDrawer() {
                 {typeLabel(record.type)} memory
               </span>
             </span>
-            <button aria-label="Close" onClick={() => select(null)} className="rounded-[6px] p-1 text-faint hover:bg-surface-2 hover:text-body">
+            <button aria-label="Close" onClick={() => select(null)} className="tap-target rounded-[6px] p-1 text-faint hover:bg-surface-2 hover:text-body">
               <X size={16} strokeWidth={1.5} />
             </button>
           </header>
@@ -78,8 +78,8 @@ export function MemoryDrawer() {
                     onClick={() => setType(t)}
                     className={
                       t === type
-                        ? 'rounded-full bg-surface-3 hairline-strong px-2.5 py-0.5 text-[12px] text-ink'
-                        : 'rounded-full bg-surface-2 hairline px-2.5 py-0.5 text-[12px] text-muted hover:text-body'
+                        ? 'tap-target rounded-full bg-surface-3 hairline-strong px-2.5 py-0.5 text-[12px] text-ink'
+                        : 'tap-target rounded-full bg-surface-2 hairline px-2.5 py-0.5 text-[12px] text-muted hover:text-body'
                     }
                   >
                     {typeLabel(t)}

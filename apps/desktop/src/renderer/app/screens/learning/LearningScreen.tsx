@@ -53,12 +53,15 @@ export function LearningScreen() {
       variants={reduced(reduce, staggerChildren)}
       initial="hidden"
       animate="visible"
-      className="mx-auto flex max-w-3xl flex-col gap-6 px-10 py-14"
+      className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 md:px-10 md:py-14"
     >
-      <motion.header variants={reduced(reduce, riseIn)} className="flex items-end justify-between gap-6">
+      <motion.header
+        variants={reduced(reduce, riseIn)}
+        className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6"
+      >
         <h1 className="text-h1 text-ink">Learning path</h1>
-        <div className="flex items-center gap-4">
-          <span className="font-mono text-small text-muted tabular">
+        <div className="flex max-w-full items-center gap-4">
+          <span className="shrink-0 font-mono text-small text-muted tabular">
             Level {summary?.level ?? 1} · {(summary?.xp ?? 0).toLocaleString()} XP
           </span>
           <HeatStrip heat={heat} />
@@ -107,7 +110,7 @@ export function LearningScreen() {
                       <div className="flex items-center gap-2">
                         <Chip className="w-fit shrink-0">Week {week.week}</Chip>
                         {week.focus && (
-                          <span className="truncate text-small text-muted">{week.focus}</span>
+                          <span className="min-w-0 flex-1 truncate text-small text-muted">{week.focus}</span>
                         )}
                       </div>
                       <div className="flex flex-col gap-0.5">

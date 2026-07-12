@@ -56,7 +56,9 @@ export function Toaster() {
   const reduce = useReducedMotion();
 
   return (
-    <div className="pointer-events-none fixed right-5 bottom-5 z-[60] flex w-90 flex-col gap-2">
+    /* On a phone a 360px card at right-5 would overhang the viewport and land
+       under the bottom tab bar — go full-bleed and sit above the tabs. */
+    <div className="pointer-events-none fixed inset-x-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-[60] flex flex-col gap-2 md:inset-x-auto md:right-5 md:bottom-5 md:w-90">
       <AnimatePresence>
         {toasts.map((t) => {
           const Icon = icons[t.tone];

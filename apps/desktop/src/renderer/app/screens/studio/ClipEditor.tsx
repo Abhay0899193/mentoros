@@ -12,6 +12,7 @@ import {
   revokeDecoded,
 } from '../../../lib/imageTiles';
 import { SheetSlicer } from './SheetSlicer';
+import { useIsMobile } from '../../../lib/useBreakpoint';
 
 /**
  * ClipEditor — create/edit one sprite clip of a custom preset. Frames accept
@@ -49,8 +50,8 @@ function slugify(name: string, taken: Set<string>): string {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="w-24 shrink-0 text-label font-medium uppercase tracking-wide text-muted">{label}</span>
+    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+      <span className="text-label font-medium uppercase tracking-wide text-muted sm:w-24 sm:shrink-0">{label}</span>
       {children}
     </div>
   );
@@ -103,6 +104,10 @@ export interface ClipEditorProps {
 
 export function ClipEditor({ open, clip, takenIds, baseFrame, fullBase, onSave, onClose }: ClipEditorProps) {
   const editing = !!clip;
+  const isMobile = useIsMobile();
+  // Align-preview fit box — the Overlay sheet has ~280px of content width on
+  // a 320px phone, so the desktop 300px box would force a horizontal scroll.
+  const alignBox = isMobile ? 240 : 300;
   const [name, setName] = useState(clip?.name ?? '');
   const [category, setCategory] = useState<string>(clip?.category ?? 'gesture');
   const [track, setTrack] = useState<string>(clip?.track ?? 'main');
@@ -336,7 +341,7 @@ export function ClipEditor({ open, clip, takenIds, baseFrame, fullBase, onSave, 
               <div key={`${i}-${src.slice(-16)}`} className="group relative">
                 <img src={src} alt={`Frame ${i + 1}`} className="h-16 w-16 rounded-[8px] object-cover hairline" />
                 <span className="absolute left-1 top-1 rounded-full bg-surface-1/85 px-1.5 text-[10px] font-medium text-body">{i + 1}</span>
-                <div className="absolute inset-x-0 bottom-0 flex justify-between rounded-b-[8px] bg-surface-1/85 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="absolute inset-x-0 bottom-0 flex justify-between rounded-b-[8px] bg-surface-1/85 opacity-0 coarse:opacity-100 transition-opacity group-hover:opacity-100">
                   <button aria-label={`Move frame ${i + 1} earlier`} onClick={() => move(i, -1)} className="p-0.5 text-muted hover:text-ink">
                     <ArrowLeft size={12} />
                   </button>
@@ -407,15 +412,15 @@ export function ClipEditor({ open, clip, takenIds, baseFrame, fullBase, onSave, 
                 <div
                   className="relative select-none overflow-hidden rounded-lg hairline"
                   style={{
-                    width: baseDim.w * Math.min(300 / baseDim.w, 300 / baseDim.h, 1),
-                    height: baseDim.h * Math.min(300 / baseDim.w, 300 / baseDim.h, 1),
+                    width: baseDim.w * Math.min(alignBox / baseDim.w, alignBox / baseDim.h, 1),
+                    height: baseDim.h * Math.min(alignBox / baseDim.w, alignBox / baseDim.h, 1),
                   }}
                 >
                   <img src={alignBase} alt="Preset base frame" draggable={false} className="h-full w-full" />
                   <RegionBox
                     label="Region"
                     region={region}
-                    scale={Math.min(300 / baseDim.w, 300 / baseDim.h, 1)}
+                    scale={Math.min(alignBox / baseDim.w, alignBox / baseDim.h, 1)}
                     selected
                     onSelect={() => {}}
                     onChange={(r) => {
@@ -426,7 +431,7 @@ export function ClipEditor({ open, clip, takenIds, baseFrame, fullBase, onSave, 
                     imgH={baseDim.h}
                   />
                 </div>
-                <div className="flex min-w-[220px] flex-1 flex-col gap-3">
+                <div className="flex min-w-0 flex-1 flex-col gap-3 md:min-w-[220px]">
                   <p className="text-small text-faint">Drag to move, corner to resize — or arrow keys, Shift+arrows to resize.</p>
                   <label className="flex items-center justify-between gap-3 rounded-[10px] bg-surface-1 p-2.5 hairline">
                     <span className="text-small text-body">Auto-correct frame drift</span>

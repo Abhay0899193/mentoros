@@ -81,19 +81,19 @@ export function ReadingView() {
 
   return (
     <div className="flex h-full flex-col pt-4">
-      <div className="mb-4 flex shrink-0 items-center gap-3">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
         <button
           onClick={closeReading}
-          className="flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-small text-muted hover:bg-surface-2 hover:text-ink"
+          className="tap-target flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-small text-muted hover:bg-surface-2 hover:text-ink"
         >
           <ArrowLeft size={14} strokeWidth={1.5} />
           Library
         </button>
         {content && (
           <>
-            <span className="text-faint">/</span>
+            <span className="hidden text-faint sm:inline">/</span>
             <KindGlyph kind={content.kind} size="sm" />
-            <h1 className="truncate text-h3 text-ink">{content.title}</h1>
+            <h1 className="min-w-0 flex-1 truncate text-h3 text-ink">{content.title}</h1>
             <Chip>{KIND_LABEL[content.kind]}</Chip>
             {content.kind === 'pdf' && (
               <Button
@@ -121,18 +121,18 @@ export function ReadingView() {
       ) : loading ? (
         <SkeletonLines />
       ) : (
-        <div className="flex min-h-0 flex-1 gap-6 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden md:flex-row md:gap-6">
           {content?.files && content.files.length > 0 && (
-            <nav className="w-56 shrink-0 overflow-y-auto border-r border-line pr-3">
-              <ul className="flex flex-col gap-0.5">
+            <nav className="shrink-0 overflow-x-auto border-b border-line pb-2 md:w-56 md:overflow-x-visible md:overflow-y-auto md:border-r md:border-b-0 md:pr-3 md:pb-0">
+              <ul className="flex gap-1 md:flex-col md:gap-0.5">
                 {content.files.map((f) => (
-                  <li key={f}>
+                  <li key={f} className="shrink-0 md:shrink">
                     <button
                       onClick={() => openReading(readingId, f)}
                       className={
                         f === readingFile
-                          ? 'block w-full truncate rounded-[8px] bg-surface-2 px-2.5 py-1.5 text-left text-small text-ink'
-                          : 'block w-full truncate rounded-[8px] px-2.5 py-1.5 text-left text-small text-muted hover:bg-surface-2 hover:text-body'
+                          ? 'tap-target block max-w-[220px] truncate rounded-[8px] bg-surface-2 px-2.5 py-1.5 text-left text-small text-ink md:w-full md:max-w-none'
+                          : 'tap-target block max-w-[220px] truncate rounded-[8px] px-2.5 py-1.5 text-left text-small text-muted hover:bg-surface-2 hover:text-body md:w-full md:max-w-none'
                       }
                     >
                       {f}

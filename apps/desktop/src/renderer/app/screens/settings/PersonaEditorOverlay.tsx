@@ -58,7 +58,7 @@ function StyleSegmented({ value, onChange }: { value: PersonaStyle; onChange: (v
             aria-checked={active}
             onClick={() => onChange(opt.id)}
             className={cn(
-              'relative z-10 flex h-7 flex-1 items-center justify-center rounded-full px-2 text-small font-medium',
+              'tap-target relative z-10 flex h-7 flex-1 items-center justify-center rounded-full px-2 text-small font-medium',
               active ? 'text-ink' : 'text-muted hover:text-body',
             )}
           >
@@ -102,7 +102,7 @@ function DomainsInput({ domains, onChange }: { domains: string[]; onChange: (d: 
                 type="button"
                 aria-label={`Remove ${d}`}
                 onClick={() => onChange(domains.filter((x) => x !== d))}
-                className="rounded-full text-faint hover:text-danger"
+                className="tap-hit rounded-full text-faint hover:text-danger"
               >
                 <X size={11} strokeWidth={2} />
               </button>
@@ -253,7 +253,7 @@ export function PersonaEditorOverlay({
   return (
     <Overlay open={open} onClose={requestClose} width={680} align="center" className="flex max-h-[85vh] w-full flex-col">
       {confirmDiscard && (
-        <div className="flex items-center justify-between gap-3 border-b border-line bg-surface-2 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface-2 px-5 py-3">
           <p className="text-small text-ink">Discard this persona? Your edits will be lost.</p>
           <div className="flex gap-2">
             <Button size="sm" variant="ghost" onClick={() => setConfirmDiscard(false)}>
@@ -311,7 +311,7 @@ export function PersonaEditorOverlay({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Name">
             <input
               ref={nameRef}
@@ -356,7 +356,7 @@ export function PersonaEditorOverlay({
           <span className="text-label font-medium tracking-[0.02em] text-faint uppercase">
             Appearance &amp; voice <span className="normal-case text-faint">— applied when this persona activates</span>
           </span>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-faint">Face</span>
               <select
@@ -387,7 +387,7 @@ export function PersonaEditorOverlay({
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-line px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3">
         {saveError ? <p className="max-w-sm text-[12px] text-danger">{saveError}</p> : <span />}
         <div className="flex gap-2">
           <Button variant="ghost" onClick={requestClose}>

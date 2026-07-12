@@ -127,7 +127,7 @@ function SessionRow({ session }: { session: InterviewSessionSummary }) {
         <p className="truncate text-small font-medium text-ink">
           {session.problemTitle}
         </p>
-        <div className="mt-1 flex items-center gap-1.5">
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <Chip>{session.pattern}</Chip>
           {inFlight && (
             <Chip tone="info">
@@ -235,7 +235,7 @@ export function InterviewLauncher() {
         variants={reduced(reduce, staggerChildren)}
         initial="hidden"
         animate="visible"
-        className="mx-auto flex h-full max-w-[900px] flex-col gap-8 overflow-y-auto px-6 py-8"
+        className="mx-auto flex h-full max-w-[900px] flex-col gap-8 overflow-y-auto px-4 py-8 md:px-6"
       >
         <motion.header variants={reduced(reduce, riseIn)}>
           <h1 className="text-h1 text-ink">Interview Platform</h1>
@@ -247,7 +247,7 @@ export function InterviewLauncher() {
 
         <motion.div
           variants={reduced(reduce, riseIn)}
-          className="grid grid-cols-2 gap-4"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2"
         >
           {CARDS.map((c) => (
             <LauncherCard key={c.type} meta={c} />

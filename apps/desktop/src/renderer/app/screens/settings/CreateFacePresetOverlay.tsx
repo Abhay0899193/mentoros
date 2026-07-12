@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Check, ImagePlus, RefreshCw, User, Wrench } from 'lucide-react';
 import { Overlay, Button, Spinner, RegionBox } from '../../../ui';
 import { useFaces } from '../../../lib/faceStore';
+import { useIsMobile } from '../../../lib/useBreakpoint';
 import { pathForFile } from '../../../lib/nativeBridge';
 import { spring } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
@@ -149,7 +150,7 @@ function PhotoDrop({
           <span className="text-small font-medium text-ink">{label}</span>
           {optional && <span className="text-label uppercase tracking-wide text-faint">Optional</span>}
           {picked && (
-            <button onClick={onClear} className="ml-auto text-small text-muted hover:text-body">
+            <button onClick={onClear} className="tap-target ml-auto text-small text-muted hover:text-body">
               Remove
             </button>
           )}
@@ -193,6 +194,7 @@ export function CreateFacePresetOverlay({ open, onClose }: { open: boolean; onCl
   const [mouth, setMouth] = useState<FaceRegion | null>(null);
   const [eyes, setEyes] = useState<FaceRegion | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<RegionKey>('mouth');
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!open) return;
@@ -232,13 +234,16 @@ export function CreateFacePresetOverlay({ open, onClose }: { open: boolean; onCl
   const jobLive = job && ['queued', 'generating', 'compositing'].includes(job.state);
   const photosReady = name.trim().length >= 1 && name.trim().length <= 60 && portrait.picked && !portrait.error && !full.error;
 
-  // Region-picker display maths: fit inside 560×420.
+  // Region-picker display maths: fit inside 560×420 (desktop) or the sheet's
+  // actual width on a phone, so the picker never forces the page to scroll.
   const display = useMemo(() => {
     const p = portrait.picked;
     if (!p) return null;
-    const scale = Math.min(560 / p.width, 420 / p.height, 1);
+    const maxW = isMobile ? Math.min(320, window.innerWidth - 80) : 560;
+    const maxH = isMobile ? 360 : 420;
+    const scale = Math.min(maxW / p.width, maxH / p.height, 1);
     return { scale, w: p.width * scale, h: p.height * scale };
-  }, [portrait.picked]);
+  }, [portrait.picked, isMobile]);
 
   const startGeneration = async () => {
     const p = portrait.picked;
@@ -263,7 +268,7 @@ export function CreateFacePresetOverlay({ open, onClose }: { open: boolean; onCl
   return (
     <Overlay open={open} onClose={requestClose} width={640} align="center">
       <div className="flex flex-col gap-4 p-5">
-        <div className="flex items-baseline justify-between">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <h2 className="text-h2 font-semibold text-ink">New face preset</h2>
           <span className="text-small text-muted">
             {step === 'photos' ? 'Step 1 of 3 — photos' : step === 'regions' ? 'Step 2 of 3 — mark mouth & eyes' : 'Step 3 of 3 — generate'}
@@ -411,7 +416,7 @@ export function CreateFacePresetOverlay({ open, onClose }: { open: boolean; onCl
         )}
 
         {toolchain?.state === 'ready' && !jobLive && !checkingTools && (
-          <div className="flex items-center justify-between border-t border-[var(--line)] pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4">
             {confirmDiscard ? (
               <div className="flex items-center gap-2.5">
                 <span className="text-small text-body">Discard this preset?</span>

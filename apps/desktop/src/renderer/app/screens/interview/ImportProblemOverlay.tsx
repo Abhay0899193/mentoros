@@ -19,6 +19,7 @@ import type {
 } from "../../../lib/coreClient";
 import { cn } from "../../../lib/cn";
 import { Overlay, Button, Spinner } from "../../../ui";
+import { useIsMobile } from "../../../lib/useBreakpoint";
 
 const PASTE_PLACEHOLDER = `Paste a problem statement — LeetCode-style or any format. e.g.:
 
@@ -129,7 +130,7 @@ function DifficultySegmented({
           aria-checked={value === o}
           onClick={() => onChange(o)}
           className={cn(
-            "rounded-full px-3 py-1 text-small font-medium capitalize outline-none",
+            "tap-target rounded-full px-3 py-1 text-small font-medium capitalize outline-none",
             "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--iris)]",
             value === o ? "bg-ink text-canvas" : "text-muted hover:text-body",
           )}
@@ -360,6 +361,7 @@ export function ImportProblemOverlay() {
   const saveDisabled =
     !validation?.ok || hasJsonErrors || importSaving || !title.trim();
   const showWorking = importGenerating && !cancelled;
+  const isMobile = useIsMobile();
 
   return (
     <Overlay
@@ -367,7 +369,7 @@ export function ImportProblemOverlay() {
       onClose={requestClose}
       width={step === "review" ? 960 : 640}
       align="center"
-      className="flex max-h-[85vh] w-full flex-col"
+      className={cn("flex w-full flex-col", !isMobile && "max-h-[85dvh]")}
     >
       {confirmDiscard && (
         <div className="flex items-center justify-between gap-3 border-b border-line bg-surface-2 px-5 py-3">
@@ -456,8 +458,8 @@ export function ImportProblemOverlay() {
             )}
           </div>
 
-          <div className="flex items-center justify-between border-t border-line px-5 py-3">
-            <span className="flex items-center gap-1.5 text-[11px] text-faint">
+          <div className="flex items-center justify-end gap-3 border-t border-line px-5 py-3 sm:justify-between">
+            <span className="hidden items-center gap-1.5 text-[11px] text-faint fine:flex">
               <kbd className="rounded-[6px] border border-line border-b-2 border-b-line-strong bg-surface-2 px-1 font-mono text-[11px] text-muted">
                 ⌘
               </kbd>
@@ -487,9 +489,9 @@ export function ImportProblemOverlay() {
             </p>
           </div>
 
-          <div className="flex min-h-0 flex-1">
-            <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-              <div className="grid grid-cols-2 gap-4">
+          <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+            <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-visible p-4 md:overflow-y-auto md:p-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Title">
                   <input
                     value={title}
@@ -593,7 +595,7 @@ export function ImportProblemOverlay() {
                           aria-selected={starterLang === l}
                           onClick={() => setStarterLang(l)}
                           className={cn(
-                            "rounded-full px-3 py-1 text-small font-medium capitalize outline-none",
+                            "tap-target rounded-full px-3 py-1 text-small font-medium capitalize outline-none",
                             "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--iris)]",
                             starterLang === l
                               ? "bg-ink text-canvas"
@@ -633,8 +635,8 @@ export function ImportProblemOverlay() {
                     Add test
                   </Button>
                 </div>
-                <div className="overflow-hidden rounded-[10px] hairline">
-                  <table className="w-full table-fixed border-collapse text-small">
+                <div className="overflow-x-auto overflow-y-hidden rounded-[10px] hairline">
+                  <table className="w-full min-w-[560px] table-fixed border-collapse text-small">
                     <thead>
                       <tr className="bg-surface-2 text-left text-label uppercase tracking-[0.02em] text-faint">
                         <th className="w-[18%] px-2 py-1.5 font-medium">
@@ -734,7 +736,7 @@ export function ImportProblemOverlay() {
                               type="button"
                               aria-label={`Remove ${t.name || "test"}`}
                               onClick={() => removeTest(t.id)}
-                              className="rounded-[6px] p-1.5 text-faint hover:bg-surface-3 hover:text-danger"
+                              className="tap-target rounded-[6px] p-1.5 text-faint hover:bg-surface-3 hover:text-danger"
                             >
                               <Trash2 size={13} strokeWidth={1.5} />
                             </button>
@@ -750,7 +752,7 @@ export function ImportProblemOverlay() {
                 <button
                   type="button"
                   onClick={() => setRefSolutionOpen((o) => !o)}
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-surface-2"
+                  className="tap-target flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-surface-2"
                 >
                   {refSolutionOpen ? (
                     <ChevronDown
@@ -788,7 +790,7 @@ export function ImportProblemOverlay() {
               </div>
             </div>
 
-            <div className="flex w-[300px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-line p-4">
+            <div className="flex w-full shrink-0 flex-col gap-3 overflow-y-visible border-t border-line p-4 md:w-[300px] md:overflow-y-auto md:border-t-0 md:border-l">
               <div className="flex items-center justify-between">
                 <h3 className="text-label font-medium uppercase tracking-[0.02em] text-muted">
                   Validation
@@ -903,7 +905,7 @@ export function ImportProblemOverlay() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between border-t border-line px-5 py-3">
+          <div className="sticky bottom-0 flex items-center justify-between border-t border-line bg-surface-1/95 px-5 py-3 md:static md:bg-transparent">
             <p className="text-[11px] text-faint">
               {tests.length} {tests.length === 1 ? "test" : "tests"}
             </p>

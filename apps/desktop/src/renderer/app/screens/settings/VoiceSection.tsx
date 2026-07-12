@@ -77,7 +77,7 @@ function VoiceRow({ voice }: { voice: TtsVoiceInfo }) {
       <button
         aria-label={isPlaying ? `Stop preview of ${voice.label}` : `Play preview of ${voice.label}`}
         onClick={togglePreview}
-        className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-3 hover:text-ink"
+        className="tap-target flex size-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-3 hover:text-ink"
       >
         {isLoading ? (
           <Spinner className="size-3.5 border-line-strong border-t-muted" />

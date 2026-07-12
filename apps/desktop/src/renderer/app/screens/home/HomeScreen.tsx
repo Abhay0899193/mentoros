@@ -30,6 +30,7 @@ function MissionPill({ item, onToggle }: { item: MissionItem; onToggle: (done: b
       title={item.reason}
       className={cn(
         'group relative flex min-w-0 flex-1 flex-col gap-1 overflow-hidden rounded-[14px] p-4 text-left',
+        'max-md:w-[200px] max-md:flex-none',
         item.done ? 'text-white' : 'bg-surface-1 hairline hover:bg-surface-2',
       )}
     >
@@ -84,7 +85,7 @@ function EveningCapture() {
           }
         }}
         placeholder="What did you learn today? One line — I’ll remember it."
-        className="flex-1 bg-transparent text-small text-ink outline-none placeholder:text-faint"
+        className="min-w-0 flex-1 bg-transparent text-small text-ink outline-none placeholder:text-faint"
       />
       <Button
         size="sm"
@@ -129,9 +130,12 @@ export function HomeScreen() {
       variants={reduced(reduce, staggerChildren)}
       initial="hidden"
       animate="visible"
-      className="mx-auto flex max-w-4xl flex-col gap-8 px-10 py-14"
+      className="mx-auto flex max-w-4xl flex-col gap-8 px-5 py-8 sm:px-10 sm:py-14"
     >
-      <motion.header variants={reduced(reduce, riseIn)} className="flex items-end justify-between">
+      <motion.header
+        variants={reduced(reduce, riseIn)}
+        className="flex flex-col items-start gap-3 sm:flex-row sm:items-end sm:justify-between"
+      >
         <div>
           <h1 className="text-display text-ink">
             {greeting()}, {name}.
@@ -157,7 +161,7 @@ export function HomeScreen() {
 
       {planMissing && (
         <motion.div variants={reduced(reduce, riseIn)}>
-          <Card padding="compact" className="flex items-center gap-3">
+          <Card padding="compact" className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
             <Download size={16} strokeWidth={1.5} className="shrink-0 text-muted" />
             <div className="flex-1">
               <p className="text-small font-medium text-ink">Bring in your 3-month challenge plan</p>
@@ -187,7 +191,7 @@ export function HomeScreen() {
           )}
         </div>
         {mission && mission.items.length > 0 ? (
-          <div className="flex gap-3">
+          <div className="flex gap-3 max-md:overflow-x-auto max-md:pb-1">
             {mission.items.map((item) => (
               <MissionPill
                 key={item.id}
@@ -211,7 +215,7 @@ export function HomeScreen() {
         </motion.div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <motion.div variants={reduced(reduce, riseIn)}>
           <Card interactive padding="compact" onClick={() => setActive('learning')} className="h-full">
             <div className="flex items-center justify-between">

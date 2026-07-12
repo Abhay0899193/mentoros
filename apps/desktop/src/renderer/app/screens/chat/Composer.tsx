@@ -1,6 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Mic, ArrowUp, Square } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import { useIsTouch } from '../../../lib/useBreakpoint';
 import { Keycap } from '../../../ui';
 
 export interface ComposerHandle {
@@ -21,6 +22,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 ) {
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const isTouch = useIsTouch();
 
   const submit = () => {
     const content = value.trim();
@@ -62,11 +64,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          // A phone keyboard has no Shift+Enter, so Enter-to-send would make a
+          // multi-line message impossible to type. On touch, Return is a
+          // newline and the send button is the only way to send.
+          if (e.key === 'Enter' && !e.shiftKey && !isTouch) {
             e.preventDefault();
             submit();
           }
         }}
+        enterKeyHint={isTouch ? 'enter' : 'send'}
         placeholder={disabled ? 'The local model is unavailable…' : 'Ask your mentor anything…'}
         aria-label="Message"
         className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-body text-ink outline-none placeholder:text-faint"
@@ -80,7 +86,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           aria-label="Voice input (arrives in Stage 1c)"
           title="Voice arrives in Stage 1c"
           disabled
-          className="rounded-[10px] p-2 text-faint opacity-50"
+          className="tap-target flex items-center justify-center rounded-[10px] p-2 text-faint opacity-50"
         >
           <Mic size={18} strokeWidth={1.5} />
         </button>
@@ -88,7 +94,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <button
             onClick={onStop}
             aria-label="Stop generating"
-            className="rounded-[10px] bg-surface-2 hairline p-2 text-ink hover:bg-surface-3"
+            className="tap-target flex items-center justify-center rounded-[10px] bg-surface-2 hairline p-2 text-ink hover:bg-surface-3"
           >
             <Square size={16} strokeWidth={1.5} />
           </button>
@@ -98,7 +104,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             disabled={disabled || value.trim() === ''}
             aria-label="Send"
             className={cn(
-              'rounded-[10px] p-2',
+              'tap-target flex items-center justify-center rounded-[10px] p-2',
               value.trim() !== '' && !disabled
                 ? 'bg-ink text-canvas hover:opacity-90'
                 : 'bg-surface-2 text-faint',

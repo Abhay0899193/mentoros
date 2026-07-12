@@ -8,6 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useInterview } from "../../../lib/interviewStore";
+import { useIsMobile } from "../../../lib/useBreakpoint";
 import type {
   InterviewLanguage,
   InterviewProblemMeta,
@@ -38,7 +39,7 @@ function LanguageToggle({
           aria-selected={value === o}
           onClick={() => onChange(o)}
           className={cn(
-            "rounded-full px-3 py-1 text-small font-medium capitalize",
+            "tap-target rounded-full px-3 py-1 text-small font-medium capitalize",
             value === o ? "bg-ink text-canvas" : "text-muted hover:text-body",
           )}
         >
@@ -151,7 +152,7 @@ function ProblemRow({
         <button
           aria-label={`Delete ${problem.title}`}
           onClick={() => setConfirming(true)}
-          className="absolute top-2.5 right-2.5 rounded-[6px] p-1 text-faint opacity-0 hover:bg-surface-3 hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
+          className="tap-target absolute top-2.5 right-2.5 rounded-[6px] p-1 text-faint opacity-0 coarse:opacity-100 hover:bg-surface-3 hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
         >
           <Trash2 size={13} strokeWidth={1.5} />
         </button>
@@ -236,6 +237,8 @@ export function ProblemPicker() {
     }
   };
 
+  const isMobile = useIsMobile();
+
   return (
     <>
       <Overlay
@@ -243,16 +246,16 @@ export function ProblemPicker() {
         onClose={closePicker}
         width={640}
         align="center"
-        className="flex max-h-[70vh] flex-col"
+        className={cn("flex flex-col", !isMobile && "max-h-[70dvh]")}
       >
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
+        <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div>
             <h2 className="text-h3 text-ink">Start a coding interview</h2>
             <p className="mt-0.5 text-small text-muted">
               Pick a problem — the recommended one targets a live weakness.
             </p>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <Button
               size="sm"
               variant="secondary"
@@ -325,8 +328,8 @@ export function ProblemPicker() {
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-line px-5 py-3">
-          <p className="text-[11px] text-faint">↑↓ navigate · ⏎ start</p>
+        <div className="flex items-center justify-end gap-3 border-t border-line px-5 py-3 sm:justify-between">
+          <p className="hidden text-[11px] text-faint fine:block">↑↓ navigate · ⏎ start</p>
           <Button
             variant="primary"
             loading={sessionLoading}

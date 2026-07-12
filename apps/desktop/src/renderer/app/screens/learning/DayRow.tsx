@@ -44,7 +44,7 @@ function TaskRow({ task, onToggle }: { task: LearningTask; onToggle: (done: bool
       <button
         type="button"
         onClick={() => onToggle(!task.done)}
-        className="group flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left hover:bg-surface-2"
+        className="tap-target group flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left hover:bg-surface-2"
       >
         {/* particle burst: Phase 7 polish */}
         <motion.span
@@ -90,7 +90,7 @@ export function DayRow({
         disabled={locked}
         onClick={onToggle}
         className={cn(
-          'flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left',
+          'tap-target flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left',
           'disabled:cursor-default disabled:opacity-45',
           !locked && 'hover:bg-surface-2',
           day.state === 'current' && 'bg-surface-1',

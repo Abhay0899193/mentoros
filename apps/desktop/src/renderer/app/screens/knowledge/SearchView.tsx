@@ -121,9 +121,13 @@ export function SearchView() {
           <KindGlyph kind={hit.kind} size="sm" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-small font-medium text-ink">{hit.sourceTitle}</span>
-              {hit.section && <span className="truncate text-[12px] text-faint">› {hit.section}</span>}
-              <Chip className="ml-auto shrink-0">{MATCH_LABEL[hit.matched]}</Chip>
+              <span className="min-w-0 flex-1 truncate text-small font-medium text-ink">{hit.sourceTitle}</span>
+              {hit.section && (
+                <span className="hidden max-w-[120px] shrink-0 truncate text-[12px] text-faint sm:inline">
+                  › {hit.section}
+                </span>
+              )}
+              <Chip className="shrink-0">{MATCH_LABEL[hit.matched]}</Chip>
             </div>
             <p className="mt-1 line-clamp-2 text-small leading-relaxed text-muted">
               {highlight(hit.snippet, query)}

@@ -40,7 +40,7 @@ export function SourceCard({ source }: { source: KbSource }) {
           <button
             aria-label={`Actions for ${source.title}`}
             onClick={() => setMenuOpen((o) => !o)}
-            className="rounded-[6px] p-1 text-faint opacity-0 group-hover:opacity-100 hover:bg-surface-3 hover:text-body focus-visible:opacity-100"
+            className="tap-target rounded-[6px] p-1 text-faint opacity-0 coarse:opacity-100 group-hover:opacity-100 hover:bg-surface-3 hover:text-body focus-visible:opacity-100"
           >
             <MoreHorizontal size={16} strokeWidth={1.5} />
           </button>
@@ -53,7 +53,7 @@ export function SourceCard({ source }: { source: KbSource }) {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, transition: { duration: dur.micro } }}
                   transition={spring.smooth}
-                  className="glass overlay-shadow absolute top-7 right-0 z-40 w-60 rounded-[14px] bg-surface-1/90 p-1.5"
+                  className="glass overlay-shadow absolute top-7 right-0 z-40 w-60 max-w-[calc(100vw-2rem)] rounded-[14px] bg-surface-1/90 p-1.5"
                 >
                   {!confirming ? (
                     <button
@@ -69,7 +69,7 @@ export function SourceCard({ source }: { source: KbSource }) {
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={closeMenu}
-                          className="rounded-[8px] px-2.5 py-1 text-small text-muted hover:bg-surface-2 hover:text-body"
+                          className="tap-target rounded-[8px] px-2.5 py-1 text-small text-muted hover:bg-surface-2 hover:text-body"
                         >
                           Cancel
                         </button>
@@ -78,7 +78,7 @@ export function SourceCard({ source }: { source: KbSource }) {
                             closeMenu();
                             void remove(source.id);
                           }}
-                          className="rounded-[8px] bg-danger/10 px-2.5 py-1 text-small text-danger hover:bg-danger/15"
+                          className="tap-target rounded-[8px] bg-danger/10 px-2.5 py-1 text-small text-danger hover:bg-danger/15"
                         >
                           Delete
                         </button>

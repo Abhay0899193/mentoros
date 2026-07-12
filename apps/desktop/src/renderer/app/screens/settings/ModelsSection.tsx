@@ -112,7 +112,7 @@ function ApiKeyRow({ disabled }: { disabled: boolean }) {
           <button
             onClick={() => void removeAnthropicKey()}
             disabled={disabled}
-            className="text-[12px] font-medium text-faint hover:text-body"
+            className="tap-target text-[12px] font-medium text-faint hover:text-body"
           >
             Remove
           </button>
@@ -200,7 +200,7 @@ function SurfacePicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
-          "flex h-8 max-w-56 items-center gap-1.5 rounded-[10px] bg-surface-2 hairline px-3 text-[12px] font-medium text-ink",
+          "tap-target flex h-8 max-w-56 items-center gap-1.5 rounded-[10px] bg-surface-2 hairline px-3 text-[12px] font-medium text-ink",
           "hover:bg-surface-3",
         )}
       >
@@ -221,7 +221,7 @@ function SurfacePicker({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, transition: { duration: dur.micro } }}
             transition={spring.smooth}
-            className="overlay-shadow hairline absolute top-full right-0 z-40 mt-2 w-80 rounded-[14px] bg-surface-2 p-2"
+            className="overlay-shadow hairline absolute top-full right-0 z-40 mt-2 w-80 rounded-[14px] bg-surface-2 p-2 max-md:fixed max-md:inset-x-4 max-md:top-[16vh] max-md:mt-0 max-md:w-auto max-md:max-h-[70vh] max-md:overflow-y-auto"
           >
             <div className="flex flex-col gap-0.5">
               <h4 className="flex items-center gap-1.5 px-2 pt-1 pb-1 text-label font-medium tracking-[0.02em] text-faint uppercase">
@@ -249,7 +249,7 @@ function SurfacePicker({
                         choose({ provider: "ollama", model: m.model })
                       }
                       className={cn(
-                        "flex items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-[12px] hover:bg-surface-3",
+                        "tap-target flex items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-[12px] hover:bg-surface-3",
                         selected && "bg-surface-3",
                       )}
                     >
@@ -299,7 +299,7 @@ function SurfacePicker({
                         choose({ provider: "anthropic", model: m.model })
                       }
                       className={cn(
-                        "flex flex-col gap-0.5 rounded-[8px] px-2 py-1.5 text-left text-[12px] hover:bg-surface-3",
+                        "tap-target flex flex-col gap-0.5 rounded-[8px] px-2 py-1.5 text-left text-[12px] hover:bg-surface-3",
                         selected && "bg-surface-3",
                       )}
                     >

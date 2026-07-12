@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Download, Keyboard, MicOff } from 'lucide-react';
+import { Download, Keyboard, Mic, MicOff } from 'lucide-react';
 import { spring, dur } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
 import { useVoice, micLevelRef, ttsLevelRef } from '../../../lib/voiceStore';
 import { useChat } from '../../../lib/chatStore';
 import { useShell } from '../../../lib/store';
+import { useIsTouch, useIsMobile } from '../../../lib/useBreakpoint';
 import { MentorAvatar } from '../../../orb/MentorAvatar';
 import type { OrbState } from '../../../orb/orbState';
 import { Button, Card, Chip, Keycap } from '../../../ui';
@@ -17,6 +18,12 @@ const stateLabel: Record<OrbState, string> = {
   speaking: 'Speaking — talk over me to interrupt',
 };
 
+/** Same copy, minus the key that doesn't exist on a phone. */
+const touchStateLabel: Record<OrbState, string> = {
+  ...stateLabel,
+  idle: 'Hold the mic and ask me anything',
+};
+
 function InstallCard() {
   const { status, install, startInstall, refreshStatus } = useVoice();
   if (!status || (status.stt === 'ready' && status.tts === 'ready')) return null;
@@ -26,8 +33,8 @@ function InstallCard() {
       : null;
 
   return (
-    <Card padding="compact" className="w-[420px]">
-      <div className="flex items-start gap-3">
+    <Card padding="compact" className="w-full max-w-[420px]">
+      <div className="flex flex-col items-start gap-3 sm:flex-row">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-warning/10">
           <MicOff size={16} strokeWidth={1.5} className="text-warning" />
         </span>
@@ -77,6 +84,8 @@ export function VoiceScreen() {
   const chatInit = useChat((s) => s.init);
   const setActive = useShell((s) => s.setActive);
   const reduce = useReducedMotion();
+  const isTouch = useIsTouch();
+  const isMobile = useIsMobile();
   const [spaceHeld, setSpaceHeld] = useState(false);
   const heldRef = useRef(false);
 
@@ -130,8 +139,25 @@ export function VoiceScreen() {
 
   const transcript = interim || finalTranscript;
 
+  // Press-and-hold on the button itself. Pointer events (not mouse/touch) so
+  // one handler covers finger and stylus; `cancel` matters because iOS steals
+  // the pointer if the gesture turns into a scroll — without it the mic would
+  // stay open forever.
+  const holdStart = () => {
+    if (heldRef.current) return;
+    heldRef.current = true;
+    setSpaceHeld(true);
+    void pttDown();
+  };
+  const holdEnd = () => {
+    if (!heldRef.current) return;
+    heldRef.current = false;
+    setSpaceHeld(false);
+    pttUp();
+  };
+
   return (
-    <div className="relative flex h-full flex-col items-center justify-center gap-8 overflow-hidden">
+    <div className="relative flex h-full flex-col items-center justify-center gap-6 overflow-hidden px-4 py-4 md:gap-8">
       {/* deep-space vignette */}
       <div
         aria-hidden
@@ -139,17 +165,24 @@ export function VoiceScreen() {
         style={{ background: 'radial-gradient(ellipse at 50% 42%, transparent 30%, var(--canvas) 85%)' }}
       />
 
-      <div className="z-10 flex flex-col items-center gap-6">
-        <MentorAvatar state={orb} levelRef={levelRef} size={340} onTap={interrupt} />
+      <div className="z-10 flex min-h-0 w-full flex-col items-center gap-4 md:gap-6">
+        {/* The orb is the screen — but it must leave room for the transcript and
+            the hold-to-talk control inside a phone's viewport. */}
+        <MentorAvatar
+          state={orb}
+          levelRef={levelRef}
+          size={isMobile ? 220 : 340}
+          onTap={interrupt}
+        />
 
         <motion.p
           key={orb}
           initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
           animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
           transition={reduce ? { duration: dur.micro } : spring.gentle}
-          className="text-small text-muted"
+          className="text-center text-small text-muted"
         >
-          {stateLabel[orb]}
+          {(isTouch ? touchStateLabel : stateLabel)[orb]}
         </motion.p>
 
         {/* Live transcript: soft while interim, solid when final (§4.3) */}
@@ -162,7 +195,7 @@ export function VoiceScreen() {
               exit={{ opacity: 0, transition: { duration: dur.micro } }}
               transition={reduce ? { duration: dur.micro } : spring.gentle}
               className={cn(
-                'max-w-xl text-center text-h3 leading-relaxed',
+                'max-w-xl overflow-y-auto text-center text-body leading-relaxed md:text-h3',
                 interim ? 'text-muted' : 'text-ink',
               )}
             >
@@ -191,23 +224,51 @@ export function VoiceScreen() {
         <InstallCard />
       </div>
 
-      {/* Controls strip */}
-      <div className="z-10 flex items-center gap-5 text-[12px] text-faint">
-        <span className="flex items-center gap-1.5">
-          <Keycap pressed={spaceHeld}>Space</Keycap> hold to talk
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Keycap>⌥</Keycap>
-          <Keycap>Space</Keycap> toggle from anywhere
-        </span>
-        <Chip>Wake word — later</Chip>
-        <button
-          onClick={() => setActive('chat')}
-          className="flex items-center gap-1.5 rounded-[8px] px-2 py-1 hover:bg-surface-2 hover:text-body"
-        >
-          <Keyboard size={13} strokeWidth={1.5} /> Type instead
-        </button>
-      </div>
+      {/* Controls strip. On touch the keycap hints describe keys that don't
+          exist — push-to-talk becomes a real button, or Voice is unusable. */}
+      {isTouch ? (
+        <div className="z-10 flex shrink-0 flex-col items-center gap-3">
+          <button
+            aria-label="Hold to talk"
+            onPointerDown={holdStart}
+            onPointerUp={holdEnd}
+            onPointerCancel={holdEnd}
+            onPointerLeave={holdEnd}
+            onContextMenu={(e) => e.preventDefault()}
+            className={cn(
+              'flex size-20 touch-none items-center justify-center rounded-full transition-colors select-none',
+              spaceHeld
+                ? 'aurora-bg aurora-glow text-canvas'
+                : 'bg-surface-2 text-ink hairline active:bg-surface-3',
+            )}
+          >
+            <Mic size={30} strokeWidth={1.5} />
+          </button>
+          <button
+            onClick={() => setActive('chat')}
+            className="tap-target flex items-center gap-1.5 rounded-[8px] px-3 py-1 text-[12px] text-faint"
+          >
+            <Keyboard size={13} strokeWidth={1.5} /> Type instead
+          </button>
+        </div>
+      ) : (
+        <div className="z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-faint">
+          <span className="flex items-center gap-1.5">
+            <Keycap pressed={spaceHeld}>Space</Keycap> hold to talk
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Keycap>⌥</Keycap>
+            <Keycap>Space</Keycap> toggle from anywhere
+          </span>
+          <Chip>Wake word — later</Chip>
+          <button
+            onClick={() => setActive('chat')}
+            className="flex items-center gap-1.5 rounded-[8px] px-2 py-1 hover:bg-surface-2 hover:text-body"
+          >
+            <Keyboard size={13} strokeWidth={1.5} /> Type instead
+          </button>
+        </div>
+      )}
     </div>
   );
 }

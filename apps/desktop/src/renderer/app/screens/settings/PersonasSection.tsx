@@ -99,14 +99,14 @@ function PersonaRow({
             <button
               aria-label={`Edit ${record.name}`}
               onClick={onEdit}
-              className="rounded-[6px] p-1.5 text-faint opacity-0 hover:bg-surface-3 hover:text-body focus-visible:opacity-100 group-hover:opacity-100"
+              className="tap-target rounded-[6px] p-1.5 text-faint opacity-0 coarse:opacity-100 hover:bg-surface-3 hover:text-body focus-visible:opacity-100 group-hover:opacity-100"
             >
               <Pencil size={13} strokeWidth={1.5} />
             </button>
             <button
               aria-label={`Delete ${record.name}`}
               onClick={() => setConfirming(true)}
-              className="rounded-[6px] p-1.5 text-faint opacity-0 hover:bg-surface-3 hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
+              className="tap-target rounded-[6px] p-1.5 text-faint opacity-0 coarse:opacity-100 hover:bg-surface-3 hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
             >
               <Trash2 size={13} strokeWidth={1.5} />
             </button>

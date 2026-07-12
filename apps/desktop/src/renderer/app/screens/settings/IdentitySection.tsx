@@ -78,7 +78,7 @@ function SegmentedRow<T extends string>({
               aria-checked={active}
               onClick={() => onChange(opt.id)}
               className={cn(
-                'relative z-10 flex h-7 items-center justify-center rounded-full px-3.5 text-small font-medium',
+                'tap-target relative z-10 flex h-7 items-center justify-center rounded-full px-3.5 text-small font-medium',
                 active ? 'text-ink' : 'text-muted hover:text-body',
               )}
             >
@@ -160,7 +160,7 @@ export function IdentitySection() {
                 aria-checked={active}
                 onClick={() => void setMentorLook({ mentorIdentity: opt.id })}
                 className={cn(
-                  'relative z-10 flex h-8 w-24 items-center justify-center gap-1.5 rounded-full text-small font-medium',
+                  'tap-target relative z-10 flex h-8 w-24 items-center justify-center gap-1.5 rounded-full text-small font-medium',
                   active ? 'text-ink' : 'text-muted hover:text-body',
                 )}
               >
@@ -183,10 +183,10 @@ export function IdentitySection() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={spring.gentle}
-            className="flex flex-wrap items-start gap-6"
+            className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-start md:gap-6"
           >
             {/* live preview of the current look */}
-            <div className="flex w-[220px] shrink-0 flex-col items-center gap-3">
+            <div className="flex w-[220px] shrink-0 flex-col items-center gap-3 self-center md:self-auto">
               {selectedRealistic ? (
                 <SpritePortrait
                   key={`${selectedRealistic.id}-${view}`}
@@ -223,7 +223,7 @@ export function IdentitySection() {
               </div>
             </div>
 
-            <div className="flex min-w-[320px] flex-1 flex-col gap-4">
+            <div className="flex w-full min-w-0 flex-1 flex-col gap-4 md:min-w-[320px]">
               {/* preset gallery — stylized art, then the realistic stills */}
               <div className="flex flex-col gap-1.5">
                 <span className="text-label font-medium uppercase tracking-wide text-muted">
@@ -329,7 +329,7 @@ export function IdentitySection() {
                 {jobLive && (
                   <p className="text-small text-muted">
                     Generating “{job?.name}”… — track it in the{' '}
-                    <button onClick={() => openStudio('studio')} className="text-body underline underline-offset-2 hover:text-ink">
+                    <button onClick={() => openStudio('studio')} className="tap-target text-body underline underline-offset-2 hover:text-ink">
                       Avatar Studio
                     </button>
                     .

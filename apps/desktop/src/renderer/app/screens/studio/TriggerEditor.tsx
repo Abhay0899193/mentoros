@@ -46,8 +46,8 @@ function ruleId(taken: Set<string>): string {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="w-24 shrink-0 text-label font-medium uppercase tracking-wide text-muted">{label}</span>
+    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+      <span className="text-label font-medium uppercase tracking-wide text-muted sm:w-24 sm:shrink-0">{label}</span>
       {children}
     </div>
   );
@@ -234,7 +234,7 @@ export function TriggerEditor({ open, rule, clips, takenIds, onSave, onClose }: 
 
         {kind === 'randomInterval' && (
           <Field label="Between">
-            <div className="flex items-center gap-2 text-small text-muted">
+            <div className="flex flex-wrap items-center gap-2 text-small text-muted">
               <input type="number" min={0.5} step={0.1} value={minS} onChange={(e) => setMinS(Number(e.target.value))} aria-label="Minimum seconds" className={cn(inputCls, 'w-20')} />
               and
               <input type="number" min={0.5} step={0.1} value={maxS} onChange={(e) => setMaxS(Number(e.target.value))} aria-label="Maximum seconds" className={cn(inputCls, 'w-20')} />
@@ -245,7 +245,7 @@ export function TriggerEditor({ open, rule, clips, takenIds, onSave, onClose }: 
 
         {kind === 'timer' && (
           <Field label="Every">
-            <div className="flex items-center gap-2 text-small text-muted">
+            <div className="flex flex-wrap items-center gap-2 text-small text-muted">
               <input type="number" min={1} value={intervalS} onChange={(e) => setIntervalS(Number(e.target.value))} aria-label="Interval seconds" className={cn(inputCls, 'w-20')} />
               seconds
             </div>
@@ -254,7 +254,7 @@ export function TriggerEditor({ open, rule, clips, takenIds, onSave, onClose }: 
 
         {kind === 'everyNMessages' && (
           <Field label="Every">
-            <div className="flex items-center gap-2 text-small text-muted">
+            <div className="flex flex-wrap items-center gap-2 text-small text-muted">
               <input type="number" min={1} max={100} value={n} onChange={(e) => setN(Number(e.target.value))} aria-label="Message count" className={cn(inputCls, 'w-20')} />
               messages I send
             </div>

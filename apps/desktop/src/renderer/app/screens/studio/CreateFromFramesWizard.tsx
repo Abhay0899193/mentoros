@@ -18,6 +18,7 @@ import {
 import { SheetSlicer } from './SheetSlicer';
 import { StudioPreview } from './StudioPreview';
 import type { AnimationController } from '../../../orb/animation/controller';
+import { useIsMobile } from '../../../lib/useBreakpoint';
 
 /**
  * CreateFromFramesWizard — build a preset from images you already have
@@ -52,6 +53,10 @@ export function CreateFromFramesWizard({
   onCreated: (presetId: string) => void;
 }) {
   const createManual = useFaces((s) => s.createManual);
+  const isMobile = useIsMobile();
+  // Region-picker fit box — the Overlay sheet has ~280px of content width on
+  // a 320px phone, so the desktop 340px box would force a horizontal scroll.
+  const previewBox = isMobile ? 250 : 340;
   const [step, setStep] = useState(0);
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [target, setTarget] = useState<Target>('base');
@@ -286,14 +291,14 @@ export function CreateFromFramesWizard({
   return (
     <Overlay open={open} onClose={close} width={760} align="top">
       <div className="flex max-h-[84vh] flex-col gap-4 overflow-y-auto p-5">
-        <header className="flex items-center justify-between">
+        <header className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-h3 font-semibold text-ink">Create from frames</h2>
             <p className="mt-0.5 text-small text-muted">
               Bring your own images — a sprite sheet or individual frames. All frames should share the same framing so overlays line up.
             </p>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {STEPS.map((s, i) => (
               <span
                 key={s}
@@ -334,7 +339,7 @@ export function CreateFromFramesWizard({
                   <button
                     aria-label={`Remove frame ${i + 1}`}
                     onClick={() => removeTile(t.id)}
-                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface-3 text-muted opacity-0 transition-opacity hairline hover:text-ink group-hover:opacity-100"
+                    className="tap-target absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface-3 text-muted opacity-0 coarse:opacity-100 transition-opacity hairline hover:text-ink group-hover:opacity-100"
                   >
                     <X size={11} strokeWidth={2} />
                   </button>
@@ -461,8 +466,8 @@ export function CreateFromFramesWizard({
                 <div
                   className="relative select-none overflow-hidden rounded-lg hairline"
                   style={{
-                    width: baseDim.w * Math.min(340 / baseDim.w, 340 / baseDim.h, 1),
-                    height: baseDim.h * Math.min(340 / baseDim.w, 340 / baseDim.h, 1),
+                    width: baseDim.w * Math.min(previewBox / baseDim.w, previewBox / baseDim.h, 1),
+                    height: baseDim.h * Math.min(previewBox / baseDim.w, previewBox / baseDim.h, 1),
                   }}
                 >
                   <img src={baseUri} alt="Base frame" draggable={false} className="h-full w-full" />
@@ -470,7 +475,7 @@ export function CreateFromFramesWizard({
                     <RegionBox
                       label="Eyes"
                       region={eyes}
-                      scale={Math.min(340 / baseDim.w, 340 / baseDim.h, 1)}
+                      scale={Math.min(previewBox / baseDim.w, previewBox / baseDim.h, 1)}
                       selected={selectedRegion === 'eyes'}
                       onSelect={() => setSelectedRegion('eyes')}
                       onChange={(r) => {
@@ -484,7 +489,7 @@ export function CreateFromFramesWizard({
                   <RegionBox
                     label="Mouth"
                     region={mouth}
-                    scale={Math.min(340 / baseDim.w, 340 / baseDim.h, 1)}
+                    scale={Math.min(previewBox / baseDim.w, previewBox / baseDim.h, 1)}
                     selected={selectedRegion === 'mouth'}
                     onSelect={() => setSelectedRegion('mouth')}
                     onChange={(r) => {
@@ -496,7 +501,7 @@ export function CreateFromFramesWizard({
                   />
                 </div>
 
-                <div className="flex min-w-[240px] flex-1 flex-col gap-3">
+                <div className="flex min-w-0 flex-1 flex-col gap-3 md:min-w-[240px]">
                   <p className="text-small text-muted">
                     Fit <span className="text-body">Mouth</span> snugly around the lips with a little margin
                     {blinkId ? (
@@ -570,7 +575,7 @@ export function CreateFromFramesWizard({
         {step === 3 && draftConfig && (
           <div className="flex flex-wrap items-start justify-center gap-6">
             <StudioPreview config={draftConfig} stylized={null} controllerRef={previewController} size={220} />
-            <div className="flex min-w-[240px] flex-1 flex-col gap-3">
+            <div className="flex min-w-0 flex-1 flex-col gap-3 md:min-w-[240px]">
               <label className="flex flex-col gap-1.5">
                 <span className="text-label font-medium uppercase tracking-wide text-muted">Preset name</span>
                 <input

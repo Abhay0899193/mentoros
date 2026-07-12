@@ -15,6 +15,7 @@ import type {
   FaceRegion,
 } from '../../../lib/coreClient';
 import { useFaces } from '../../../lib/faceStore';
+import { useIsMobile } from '../../../lib/useBreakpoint';
 
 /**
  * GenerateExpressionDialog — add one new expression to a generated/custom
@@ -26,7 +27,8 @@ import { useFaces } from '../../../lib/faceStore';
  */
 
 const CANVAS = 1024;
-const PREVIEW = 340;
+const PREVIEW_DESKTOP = 340;
+const PREVIEW_MOBILE = 250;
 
 /** Mirrors core DEFAULT_REGIONS_1024's face window — seed for a fresh custom region. */
 const SEED_REGION: FaceRegion = { x: 382, y: 197, width: 284, height: 350 };
@@ -71,6 +73,8 @@ export function GenerateExpressionDialog({
   const startAddExpression = useFaces((s) => s.addExpression);
   const job = useFaces((s) => s.job);
   const cancelJob = useFaces((s) => s.cancelJob);
+  const isMobile = useIsMobile();
+  const PREVIEW = isMobile ? PREVIEW_MOBILE : PREVIEW_DESKTOP;
 
   const regenerate = !!replaceClip;
   const method = config.generation?.method ?? 'kontext-photo';
@@ -305,7 +309,7 @@ export function GenerateExpressionDialog({
                     imgH={CANVAS}
                   />
                 </div>
-                <p className="min-w-[180px] flex-1 text-small text-muted">
+                <p className="min-w-0 flex-1 text-small text-muted md:min-w-[180px]">
                   Mark exactly what this expression changes — only what&apos;s inside the box gets pasted onto the base.
                 </p>
               </div>

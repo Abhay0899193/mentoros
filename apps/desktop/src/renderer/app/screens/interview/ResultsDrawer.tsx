@@ -20,7 +20,7 @@ function TestRow({ result }: { result: EvalTestResult }) {
       <button
         onClick={() => hasDetail && setOpen((o) => !o)}
         className={cn(
-          "flex w-full items-center gap-2.5 px-3 py-2 text-left",
+          "tap-target flex w-full items-center gap-2.5 px-3 py-2 text-left",
           hasDetail && "hover:bg-surface-2",
         )}
       >
@@ -108,7 +108,7 @@ export function ResultsDrawer({ result }: { result: EvalResult | null }) {
     >
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left hover:bg-surface-2"
+        className="tap-target flex w-full items-center gap-2.5 px-4 py-2.5 text-left hover:bg-surface-2"
       >
         {result.compileError ? (
           <AlertTriangle

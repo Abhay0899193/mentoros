@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { Overlay, Button, Switch, RegionBox } from '../../../ui';
 import { cn } from '../../../lib/cn';
 import { spring } from '../../../motion/springs';
+import { useIsMobile } from '../../../lib/useBreakpoint';
 import { coreClient } from '../../../lib/coreClient';
 import type {
   ExpressionGroupOrCustom,
@@ -26,7 +27,12 @@ import { useFaces } from '../../../lib/faceStore';
 
 const MODEL_ID = 'z-image-turbo-local';
 const CANVAS = 1024;
-const PREVIEW = 340;
+/** Region-picker canvas — the Overlay sheet has ~280px of content width on a
+ * 320px phone (w-full, p-5), so a fixed 340px square would force a horizontal
+ * scroll. Shrunk (not fluid) on mobile so `scale` stays a stable constant the
+ * RegionBox drag math can rely on. */
+const PREVIEW_DESKTOP = 340;
+const PREVIEW_MOBILE = 250;
 
 /** Mirrors core DEFAULT_REGIONS_1024 (kiki_regions.json) — manual-mode seeds. */
 const SEED_REGIONS: { mouth: FaceRegion; eyes: FaceRegion; face: FaceRegion } = {
@@ -92,6 +98,8 @@ export function GeneratePresetWizard({
   const startGenerate = useFaces((s) => s.generate);
   const job = useFaces((s) => s.job);
   const cancelJob = useFaces((s) => s.cancelJob);
+  const isMobile = useIsMobile();
+  const PREVIEW = isMobile ? PREVIEW_MOBILE : PREVIEW_DESKTOP;
 
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -318,7 +326,7 @@ export function GeneratePresetWizard({
   return (
     <Overlay open={open} onClose={close} width={760} align="top">
       <div className="flex max-h-[84vh] flex-col gap-4 overflow-y-auto p-5">
-        <header className="flex items-center justify-between">
+        <header className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-h3 font-semibold text-ink">Generate a preset</h2>
             <p className="mt-0.5 text-small text-muted">
@@ -326,7 +334,7 @@ export function GeneratePresetWizard({
               composited onto the base, so she stays herself.
             </p>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {STEPS.map((s, i) => (
               <span
                 key={s}
@@ -506,14 +514,14 @@ export function GeneratePresetWizard({
                 <div className="flex flex-col gap-1.5">
                   {customs.map((c, i) => (
                     <div key={c.uid} className="flex flex-col gap-2 rounded-[10px] bg-surface-1 p-3 hairline">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <input
                           value={c.name}
                           onChange={(e) => patchCustom(c.uid, { name: e.target.value })}
                           placeholder="Name (Wink, Eye-roll…)"
                           maxLength={40}
                           aria-label={`Expression ${i + 1} name`}
-                          className="h-8 w-44 rounded-[8px] bg-surface-2 px-2.5 text-small text-ink outline-none hairline placeholder:text-faint focus:hairline-strong"
+                          className="h-8 w-full rounded-[8px] bg-surface-2 px-2.5 text-small text-ink outline-none hairline placeholder:text-faint focus:hairline-strong sm:w-44"
                         />
                         <select
                           value={c.group}
@@ -620,7 +628,7 @@ export function GeneratePresetWizard({
                     />
                   ))}
                 </div>
-                <div className="flex min-w-[220px] flex-1 flex-col gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-2 md:min-w-[220px]">
                   <p className="text-small text-muted">
                     {manualRegions
                       ? 'Fit Mouth snugly around the lips, Eyes across both eyes including the lids, and Face over everything that moves in a reaction.'
@@ -645,7 +653,7 @@ export function GeneratePresetWizard({
         {step === 3 && picked && (
           <div className="flex flex-wrap items-start gap-6">
             <img src={picked.url} alt="Chosen base" className="h-40 w-40 rounded-[12px] object-cover hairline" />
-            <div className="flex min-w-[280px] flex-1 flex-col gap-3">
+            <div className="flex min-w-0 flex-1 flex-col gap-3 md:min-w-[280px]">
               {!myJob && (
                 <>
                   <label className="flex flex-col gap-1.5">

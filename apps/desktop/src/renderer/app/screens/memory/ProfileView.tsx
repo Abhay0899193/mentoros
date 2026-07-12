@@ -15,7 +15,7 @@ function RecordRow({ record, onOpen }: { record: MemoryRecord; onOpen: (id: stri
   return (
     <button
       onClick={() => onOpen(record.id)}
-      className="group flex w-full items-start gap-2.5 rounded-[10px] px-2 py-1.5 text-left hover:bg-surface-2"
+      className="tap-target group flex w-full items-start gap-2.5 rounded-[10px] px-2 py-1.5 text-left hover:bg-surface-2"
     >
       <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: TYPE_COLOR[record.type] }} />
       <span className="min-w-0 flex-1">
@@ -52,7 +52,7 @@ export function ProfileView() {
       {/* Import card — the bridge to Abhay's real data */}
       <motion.div variants={reduced(reduce, riseIn)}>
         <Card padding="compact" className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-h3 text-ink">Import your real data</h3>
               <p className="text-small text-muted">
@@ -92,7 +92,7 @@ export function ProfileView() {
         </motion.div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <motion.div variants={reduced(reduce, riseIn)}>
               <Card padding="compact" className="h-full">
                 <h3 className="mb-2 text-label font-medium tracking-[0.02em] text-faint uppercase">Goals</h3>
@@ -117,7 +117,7 @@ export function ProfileView() {
                       <li key={m.recordId}>
                         <button
                           onClick={() => select(m.recordId)}
-                          className="flex w-full items-baseline gap-2 rounded-[8px] px-2 py-1 text-left hover:bg-surface-2"
+                          className="tap-target flex w-full items-baseline gap-2 rounded-[8px] px-2 py-1 text-left hover:bg-surface-2"
                         >
                           <span className="min-w-0 flex-1 truncate text-small text-ink">{m.title}</span>
                           <span className="shrink-0 font-mono text-mono text-danger tabular">×{m.count}</span>

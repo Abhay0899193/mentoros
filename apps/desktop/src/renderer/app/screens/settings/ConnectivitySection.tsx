@@ -110,7 +110,7 @@ export function ConnectivitySection() {
                 </Button>
               </div>
             ) : !info ? (
-              <div className="h-8 w-72 animate-pulse rounded-[8px] bg-surface-2" />
+              <div className="h-8 w-full max-w-72 animate-pulse rounded-[8px] bg-surface-2" />
             ) : info.urls.length === 0 ? (
               <p className="text-[12px] text-muted">
                 No Wi-Fi address found — is this Mac connected to a network?
@@ -125,7 +125,7 @@ export function ConnectivitySection() {
                     <button
                       onClick={() => copyUrl(url)}
                       aria-label="Copy URL"
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-faint hover:bg-surface-2 hover:text-body"
+                      className="tap-target flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-faint hover:bg-surface-2 hover:text-body"
                     >
                       {copiedUrl === url ? (
                         <Check size={14} strokeWidth={1.5} className="text-success" />

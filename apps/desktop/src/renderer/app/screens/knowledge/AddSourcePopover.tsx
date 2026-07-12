@@ -58,7 +58,7 @@ export function AddSourcePopover() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, transition: { duration: dur.micro } }}
             transition={spring.smooth}
-            className="glass overlay-shadow absolute top-full right-0 z-40 mt-2 w-80 rounded-[14px] bg-surface-1/90 p-4"
+            className="glass overlay-shadow absolute top-full right-0 z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-[14px] bg-surface-1/90 p-4"
           >
             <h3 className="text-h3 text-ink">Add a source</h3>
             <p className="mt-0.5 text-small text-muted">

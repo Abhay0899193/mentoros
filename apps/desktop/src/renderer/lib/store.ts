@@ -54,24 +54,36 @@ export const DESIGN_MODULE: ModuleMeta = { id: 'design', label: 'Design', icon: 
 /** Avatar Studio — create/animate mentor avatars (first-class, below the modules). */
 export const STUDIO_MODULE: ModuleMeta = { id: 'studio', label: 'Avatar Studio', icon: Clapperboard };
 
+/** Phone tab bar: the three hero destinations; everything else lives in "More". */
+export const PRIMARY_TAB_IDS: ModuleId[] = ['home', 'chat', 'voice'];
+
 interface ShellStore {
   active: ModuleId;
   railExpanded: boolean;
   paletteOpen: boolean;
   contextPanelOpen: boolean;
+  /** Phone-only: the "More" destination sheet. */
+  moreSheetOpen: boolean;
   setActive: (m: ModuleId) => void;
   toggleRail: () => void;
   setPaletteOpen: (open: boolean) => void;
   toggleContextPanel: () => void;
+  setContextPanelOpen: (open: boolean) => void;
+  setMoreSheetOpen: (open: boolean) => void;
 }
 
 export const useShell = create<ShellStore>((set) => ({
   active: 'design',
   railExpanded: false,
   paletteOpen: false,
-  contextPanelOpen: true,
-  setActive: (m) => set({ active: m, paletteOpen: false }),
+  // The panel is a third column on a wide screen but a drawer on a narrow one;
+  // starting it open on a phone would greet the user with a drawer.
+  contextPanelOpen: typeof window === 'undefined' || window.innerWidth >= 1024,
+  moreSheetOpen: false,
+  setActive: (m) => set({ active: m, paletteOpen: false, moreSheetOpen: false }),
   toggleRail: () => set((s) => ({ railExpanded: !s.railExpanded })),
   setPaletteOpen: (open) => set({ paletteOpen: open }),
   toggleContextPanel: () => set((s) => ({ contextPanelOpen: !s.contextPanelOpen })),
+  setContextPanelOpen: (open) => set({ contextPanelOpen: open }),
+  setMoreSheetOpen: (open) => set({ moreSheetOpen: open }),
 }));
