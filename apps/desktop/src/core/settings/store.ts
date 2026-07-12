@@ -65,6 +65,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   faceView: "cameo",
   activePersona: "staff-engineer",
   cloudEnabled: false,
+  lanAccess: false,
   models: {
     chat: { ...LOCAL_DEFAULT_CHOICE },
     voice: { ...LOCAL_DEFAULT_CHOICE },
@@ -92,6 +93,7 @@ const ALLOWED_KEYS = new Set<keyof AppSettings>([
   "faceView",
   "activePersona",
   "cloudEnabled",
+  "lanAccess",
   "models",
 ]);
 
@@ -201,6 +203,7 @@ export class SettingsStore {
       else if (key === "activePersona" && value.trim().length > 0)
         settings.activePersona = value;
       else if (key === "cloudEnabled") settings.cloudEnabled = value === "true";
+      else if (key === "lanAccess") settings.lanAccess = value === "true";
       else if (key.startsWith("models.")) {
         const surface = key.slice("models.".length);
         if (!SURFACE_SET.has(surface)) continue;
@@ -301,6 +304,11 @@ export class SettingsStore {
       } else if (key === "cloudEnabled") {
         if (typeof value !== "boolean") {
           throw new SettingsValidationError(`cloudEnabled must be a boolean`);
+        }
+        entries.push([key, value ? "true" : "false"]);
+      } else if (key === "lanAccess") {
+        if (typeof value !== "boolean") {
+          throw new SettingsValidationError(`lanAccess must be a boolean`);
         }
         entries.push([key, value ? "true" : "false"]);
       } else if (key === "models") {

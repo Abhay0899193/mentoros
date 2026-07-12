@@ -10,6 +10,7 @@ import { ModelsSection } from './ModelsSection';
 import { TranscriptionSection } from './TranscriptionSection';
 import { IdentitySection } from './IdentitySection';
 import { PersonasSection } from './PersonasSection';
+import { ConnectivitySection } from './ConnectivitySection';
 
 function SectionSkeleton() {
   return (
@@ -87,6 +88,9 @@ export function SettingsScreen() {
           </motion.div>
           <motion.div variants={reduced(reduce, riseIn)}>
             <PersonasSection />
+          </motion.div>
+          <motion.div variants={reduced(reduce, riseIn)}>
+            <ConnectivitySection />
           </motion.div>
         </motion.div>
       )}

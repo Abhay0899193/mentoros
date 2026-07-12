@@ -846,6 +846,12 @@ export interface AppSettings {
    */
   cloudEnabled: boolean;
   /**
+   * LAN opt-in (§ "phone over LAN"): while true, the core binds 0.0.0.0 on the
+   * next relaunch so a phone on the same network can reach it with the LAN
+   * token. False binds loopback-only. Applies on relaunch by design.
+   */
+  lanAccess: boolean;
+  /**
    * Per-surface model routing. A cloud choice only takes effect while
    * cloudEnabled and a valid Anthropic key are present; otherwise the router
    * silently falls back to the local default (no broken surfaces, ever).

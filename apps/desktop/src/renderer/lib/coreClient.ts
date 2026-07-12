@@ -1136,6 +1136,24 @@ export interface AppSettings {
    * silently falls back to the local default (no broken surfaces, ever).
    */
   models: Record<ModelSurface, ModelChoice>;
+  /**
+   * Opt-in LAN exposure: core binds 0.0.0.0 (instead of loopback) so phones on
+   * the same network — or Tailscale — can open the app. Applies on relaunch.
+   */
+  lanAccess: boolean;
+}
+
+/** GET /network/access-info (loopback-only): everything the Connectivity UI shows. */
+export interface NetworkAccessInfo {
+  /** Effective LAN state (setting OR MENTOROS_LAN env) — what the NEXT launch binds. */
+  lanAccess: boolean;
+  port: number;
+  /** IPv4 LAN addresses of this Mac (non-internal). */
+  ips: string[];
+  /** Shared access token; null until LAN is first enabled. */
+  token: string | null;
+  /** Ready-to-open phone URLs (`http://<ip>:<port>/?token=…`). */
+  urls: string[];
 }
 
 export interface TtsVoiceInfo {
@@ -1500,6 +1518,8 @@ export interface CoreClient {
   getSettings(): Promise<AppSettings>;
   /** Partial update; returns the full merged settings. Fires `settings.changed`. */
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  /** LAN/Tailscale access details for the Connectivity section (loopback-only route). */
+  networkAccessInfo(): Promise<NetworkAccessInfo>;
   /** English Kokoro voices enumerated from the installed voices pack. */
   listTtsVoices(): Promise<TtsVoiceInfo[]>;
   /** URL of a one-shot WAV sample for the picker (`<audio src>`), independent of the /voice channel. */
@@ -1517,6 +1537,32 @@ function resolveCorePort(): number {
   } catch {
     return DEFAULT_CORE_PORT;
   }
+}
+
+/**
+ * Where the core lives. Two worlds:
+ * - Electron (file:// prod, or the vite dev window which carries ?corePort=N):
+ *   loopback + explicit port, exactly as before.
+ * - Served BY the core itself (phone over LAN / Tailscale — http(s) page with
+ *   no ?corePort): same-origin, so the URL bar is the single source of truth
+ *   and wss follows https (Tailscale). Auth rides the mentoros_token cookie the
+ *   server set on first load; no header plumbing needed here.
+ * Dev note: opening the bare vite URL in a plain browser needs ?corePort=4820
+ * appended manually now — the dev Electron window is unaffected.
+ */
+function resolveCoreBase(): { baseUrl: string; wsBase: string } {
+  try {
+    const { protocol, host, search } = window.location;
+    const isHttp = protocol === 'http:' || protocol === 'https:';
+    if (isHttp && !new URLSearchParams(search).has('corePort')) {
+      const ws = protocol === 'https:' ? 'wss:' : 'ws:';
+      return { baseUrl: `${protocol}//${host}`, wsBase: `${ws}//${host}` };
+    }
+  } catch {
+    /* fall through to loopback */
+  }
+  const port = resolveCorePort();
+  return { baseUrl: `http://127.0.0.1:${port}`, wsBase: `ws://127.0.0.1:${port}` };
 }
 
 type Listener = (payload: CoreEvents[keyof CoreEvents]) => void;
@@ -1559,9 +1605,8 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export function createCoreClient(): CoreClient {
-  const port = resolveCorePort();
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const wsUrl = `ws://127.0.0.1:${port}/events`;
+  const { baseUrl, wsBase } = resolveCoreBase();
+  const wsUrl = `${wsBase}/events`;
 
   // Core returns server-relative art paths; absolutize at the client boundary
   // (both fetch and event payloads) so every consumer can drop them into <img src>.
@@ -1873,15 +1918,16 @@ export function createCoreClient(): CoreClient {
 
     getSettings: () => get<AppSettings>('/settings'),
     updateSettings: (patch) => post<AppSettings>('/settings', patch),
+    networkAccessInfo: () => get<NetworkAccessInfo>('/network/access-info'),
     listTtsVoices: () => get<TtsVoiceInfo[]>('/voice/voices'),
     voicePreviewUrl: (voiceId) =>
-      `http://127.0.0.1:${port}/voice/preview?voice=${encodeURIComponent(voiceId)}`,
+      `${baseUrl}/voice/preview?voice=${encodeURIComponent(voiceId)}`,
     listSttModels: () => get<SttModelInfo[]>('/voice/stt-models'),
     downloadSttModel: (id) =>
       post<void>(`/voice/stt-models/${encodeURIComponent(id)}/download`),
 
     openVoiceChannel(handlers) {
-      const vws = new WebSocket(`ws://127.0.0.1:${port}/voice`);
+      const vws = new WebSocket(`${wsBase}/voice`);
       vws.binaryType = 'arraybuffer';
       let ttsActive = false;
 

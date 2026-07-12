@@ -1,7 +1,10 @@
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import type { WebSocket } from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
+import { createNetworkSystem, registerNetwork } from "./network.js";
 import { ChatEngine } from "./chat.js";
 import { defaultDataDir, Store } from "./db.js";
 import { createMemorySystem } from "./memory/index.js";
@@ -36,9 +39,10 @@ import type { CoreEvents, ModelSurface, Persona } from "./types.js";
  * keeps the future web/mobile/SaaS path open (plan.md §2.2).
  */
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
 export const CORE_VERSION = "0.0.0";
 export const DEFAULT_CORE_PORT = 4820;
-const HOST = "127.0.0.1";
 const MAX_PORT_SCAN = 32;
 
 export interface CoreHandle {
@@ -49,9 +53,21 @@ export interface CoreHandle {
 export interface StartCoreOptions {
   preferredPort?: number;
   dataDir?: string;
+  /** Directory of the built renderer served over LAN (defaults to ../renderer). */
+  rendererDir?: string;
 }
 
-function buildServer(startedAt: number, dataDir: string): FastifyInstance {
+/**
+ * A built (but not-yet-listening) core: the Fastify app plus the host it wants
+ * to bind and a setter for the resolved port (known only after `listen`).
+ */
+interface BuiltServer {
+  app: FastifyInstance;
+  host: string;
+  setResolvedPort: (port: number) => void;
+}
+
+function buildServer(startedAt: number, dataDir: string, rendererDir: string): BuiltServer {
   const app = Fastify({ logger: false });
   const store = new Store(dataDir);
 
@@ -107,6 +123,21 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
   });
 
+  /* ------------------------------- network ------------------------------- */
+  // Registered AFTER cors and BEFORE every other route so the LAN auth hook
+  // (onRequest) covers them all — including the @fastify/websocket upgrades
+  // (/events, /voice) whose HTTP upgrade requests run onRequest hooks too.
+  const network = createNetworkSystem(dataDir);
+  const lanEnabled =
+    process.env.MENTOROS_LAN === "1" || settings.store.get().lanAccess === true;
+  let resolvedPort = 0;
+  registerNetwork(app, {
+    tokenStore: network.tokenStore,
+    getPort: () => resolvedPort,
+    rendererDir,
+    lanEnabled,
+  });
+
   app.addHook("onClose", async () => {
     videogen.close();
     imagegen.close();
@@ -118,6 +149,7 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
     memory.close();
     llm.close();
     settings.close();
+    network.close();
     store.close();
   });
 
@@ -287,7 +319,14 @@ function buildServer(startedAt: number, dataDir: string): FastifyInstance {
   /* -------------------------------- voice -------------------------------- */
   registerVoice(app, { broadcast, dataDir, getSettings: () => settings.store.get() });
 
-  return app;
+  const host = lanEnabled ? "0.0.0.0" : "127.0.0.1";
+  return {
+    app,
+    host,
+    setResolvedPort: (port) => {
+      resolvedPort = port;
+    },
+  };
 }
 
 function isAddressInUse(err: unknown): boolean {
@@ -300,7 +339,8 @@ function isAddressInUse(err: unknown): boolean {
 }
 
 /**
- * Starts the core server on 127.0.0.1, scanning upward from
+ * Starts the core server (loopback, or 0.0.0.0 when LAN access is enabled via
+ * the persisted setting or MENTOROS_LAN=1), scanning upward from
  * {@link DEFAULT_CORE_PORT} if the preferred port is taken. Accepts either a
  * bare port (legacy) or an options object.
  */
@@ -311,13 +351,15 @@ export async function startCore(
     typeof opts === "number" ? { preferredPort: opts } : opts;
   const preferredPort = options.preferredPort ?? DEFAULT_CORE_PORT;
   const dataDir = options.dataDir ?? defaultDataDir();
+  const rendererDir = options.rendererDir ?? join(__dirname, "../renderer");
   const startedAt = Date.now();
 
   for (let offset = 0; offset < MAX_PORT_SCAN; offset += 1) {
     const port = preferredPort + offset;
-    const app = buildServer(startedAt, dataDir);
+    const { app, host, setResolvedPort } = buildServer(startedAt, dataDir, rendererDir);
     try {
-      await app.listen({ host: HOST, port });
+      await app.listen({ host, port });
+      setResolvedPort(port);
       return {
         port,
         async stop() {

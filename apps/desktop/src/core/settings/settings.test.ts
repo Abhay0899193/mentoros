@@ -166,6 +166,27 @@ test("settings: garbage stored model JSON reverts that surface to default", () =
   assert.deepEqual(s.models.voice, { provider: "ollama", model: "llama3.1:8b" });
 });
 
+/* ------------------------ LAN access (phone over LAN) ------------------ */
+
+test("settings: lanAccess defaults to false", () => {
+  assert.equal(memStore().get().lanAccess, false);
+});
+
+test("settings: lanAccess patch round-trips both ways", () => {
+  const store = memStore();
+  assert.equal(store.patch({ lanAccess: true }).lanAccess, true);
+  assert.equal(store.get().lanAccess, true);
+  assert.equal(store.patch({ lanAccess: false }).lanAccess, false);
+  assert.equal(store.get().lanAccess, false);
+});
+
+test("settings: lanAccess rejects a non-boolean and persists nothing", () => {
+  const store = memStore();
+  assert.throws(() => store.patch({ lanAccess: "yes" }), SettingsValidationError);
+  assert.throws(() => store.patch({ lanAccess: 1 }), SettingsValidationError);
+  assert.equal(store.get().lanAccess, false);
+});
+
 test("settings: a keys.* row is never exposed and cannot be patched", () => {
   const kv = memKv();
   kv.writeMany([["keys.anthropic", "sk-ant-secret"]]);

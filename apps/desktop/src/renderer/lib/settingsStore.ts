@@ -69,6 +69,8 @@ interface SettingsState {
   /** Switches the default persona for new chat/voice threads; may also change face/voice (core merges). */
   setActivePersona: (id: Persona) => Promise<void>;
   setCloudEnabled: (enabled: boolean) => Promise<void>;
+  /** Opt-in LAN exposure; the bind change applies on the next launch. */
+  setLanAccess: (enabled: boolean) => Promise<void>;
   /** Resolves to the resulting key state, or null if the request itself failed (no round trip). */
   saveAnthropicKey: (key: string) => Promise<ApiKeyState | null>;
   removeAnthropicKey: () => Promise<void>;
@@ -349,6 +351,24 @@ export const useSettings = create<SettingsState>((set, get) => ({
         title: 'Could not update cloud setting',
         description: 'The settings service did not respond.',
         action: { label: 'Retry', onClick: () => void get().setCloudEnabled(enabled) },
+      });
+    }
+  },
+
+  setLanAccess: async (enabled) => {
+    const prev = get().settings;
+    if (!prev || prev.lanAccess === enabled) return;
+    set({ settings: { ...prev, lanAccess: enabled } });
+    try {
+      const settings = await coreClient.updateSettings({ lanAccess: enabled });
+      set({ settings });
+    } catch {
+      set({ settings: prev });
+      toast({
+        tone: 'danger',
+        title: 'Could not update device access',
+        description: 'The settings service did not respond.',
+        action: { label: 'Retry', onClick: () => void get().setLanAccess(enabled) },
       });
     }
   },

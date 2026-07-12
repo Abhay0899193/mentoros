@@ -2,6 +2,56 @@
 
 *Researched 2026-07-12. Context: user asked how to use MentorOS on an iPhone 14 Pro Max (A16, 6 GB RAM, iOS Safari/WebKit).*
 
+## ✅ Shipped — Options A + B (2026-07-12)
+
+**No deployment, no domain.** Your Mac serves the app; the phone is a browser.
+(The earlier `http://<mac-ip>:5173` attempt failed because the vite page then
+called `http://127.0.0.1:4820` — the phone itself — and the core only allowed
+localhost origins. Both problems are gone: the core now serves the renderer
+itself, same-origin.)
+
+### How to use it (home Wi-Fi)
+
+1. Settings → **Connectivity** → turn on **Allow other devices**.
+2. **Restart MentorOS** (the network binding is chosen at boot; `MENTOROS_LAN=1`
+   env also forces it on).
+3. Open the URL shown in Connectivity on the phone —
+   `http://<mac-ip>:4820/?token=<token>`. The token is required off-loopback
+   (the DB holds chats + API keys); the first visit stores it as a cookie, so
+   subsequent visits/WS/asset loads just work. Treat the link like a password.
+4. Everything works except the **mic** — Safari requires HTTPS for
+   `getUserMedia`. For voice, use Tailscale (below).
+
+### How to use it anywhere + voice (Tailscale, free, no domain)
+
+1. Install [Tailscale](https://tailscale.com) on the Mac and the iPhone, sign
+   both into the same tailnet (free personal tier).
+2. On the Mac: `tailscale serve --bg 4820` (once; it persists). This
+   reverse-proxies `https://<mac-name>.<tailnet>.ts.net` → the core with a real
+   Let's Encrypt certificate.
+3. On the phone open `https://<mac-name>.<tailnet>.ts.net` — full app **including
+   the voice loop**, over any network incl. LTE. No token needed on this path:
+   `tailscale serve` arrives via loopback (exempt by design) and the tailnet
+   ACL is the auth. Nothing is exposed to the public internet.
+4. Add to Home Screen for an app-like full-screen launch (PWA manifest polish
+   is still a backlog item — Option C below).
+
+### What shipped where (for future maintainers)
+
+- Core: `lanAccess` setting (+`MENTOROS_LAN` env) → bind `0.0.0.0` at boot;
+  built renderer served same-origin from `out/renderer`; shared token
+  `keys.lanToken` enforced via an onRequest hook (loopback exempt — Electron and
+  tailscale-serve are frictionless; `?token=` → cookie handshake covers assets,
+  fetch, and WS upgrades); loopback-only `GET /network/access-info` feeds the
+  Connectivity UI.
+- Renderer: `coreClient` derives base/WS URLs from `window.location` when the
+  page is served over http(s) without `?corePort` (wss follows https →
+  Tailscale voice works); Settings → Connectivity section.
+- Dev note: the phone always gets the **built** renderer — run a build to
+  refresh what it sees. Opening the bare vite URL in a plain browser now needs
+  `?corePort=4820` appended.
+- Manual test script: `MANUAL_TEST_CHECKLIST.md` §9.
+
 ## The architectural head start
 
 The §2.2 boundary was built for exactly this. The core is a plain Fastify server
