@@ -58,6 +58,11 @@ async function make3mcTree(): Promise<string> {
     join(root, "SKILLS-TRACK/redis.md"),
     `---\ntitle: "Redis"\nweeks: [5]\n---\n# Redis`,
   );
+  await mkdir(join(root, "STUDY-GUIDES"), { recursive: true });
+  await writeFile(
+    join(root, "STUDY-GUIDES/week-01.md"),
+    `---\ntitle: "Week 1 Guide"\nweeks: [1]\n---\n# Guide`,
+  );
   return root;
 }
 
@@ -99,14 +104,16 @@ test("import3mc ingests skill docs and links them to weeks", async () => {
     onProgress: () => {},
     ingestSkillDoc: async (absPath, title, tags) => {
       ingested.push(title);
-      assert.deepEqual(tags, ["3mc", "quick-review"]);
+      assert.equal(tags[0], "3mc");
+      assert.equal(tags[1], absPath.includes("STUDY-GUIDES") ? "study-guide" : "quick-review");
       assert.ok(absPath.endsWith(".md"));
-      return `src-${title.toLowerCase()}`;
+      return `src-${title.toLowerCase().replaceAll(" ", "-")}`;
     },
   });
-  assert.deepEqual(ingested, ["Docker", "Redis"]);
+  assert.deepEqual(ingested, ["Docker", "Redis", "Week 1 Guide"]);
   assert.deepEqual(store.weekDocs(), [
     { week: 1, sourceId: "src-docker", title: "Docker" },
+    { week: 1, sourceId: "src-week-1-guide", title: "Week 1 Guide" },
     { week: 2, sourceId: "src-docker", title: "Docker" },
     { week: 5, sourceId: "src-redis", title: "Redis" },
   ]);
@@ -122,14 +129,15 @@ test("a failing skill-doc ingest never fails the plan import", async () => {
     onProgress: (p) => steps.push(p),
     ingestSkillDoc: async (_absPath, title) => {
       if (title === "Docker") throw new Error("ollama down");
-      return "src-redis";
+      return `src-${title.toLowerCase().replaceAll(" ", "-")}`;
     },
   });
   assert.ok(result.created > 0);
   assert.ok(steps.some((s) => s.step === "skill doc failed: docker.md"));
   assert.equal(steps.at(-1)?.step, "done");
-  // The surviving doc still links; the failed one is simply absent.
+  // Surviving docs still link; the failed one is simply absent.
   assert.deepEqual(store.weekDocs(), [
+    { week: 1, sourceId: "src-week-1-guide", title: "Week 1 Guide" },
     { week: 5, sourceId: "src-redis", title: "Redis" },
   ]);
 });

@@ -161,43 +161,52 @@ export async function import3mc(opts: {
   }
   onProgress({ step: `day notes: ${notes}`, created, merged, done: false });
 
-  // Quick-review skill docs (SKILLS-TRACK/*.md) → knowledge base + week links.
-  // Best-effort: a missing dir or a failed ingest never fails the plan import.
+  // Reference docs → knowledge base + week links. SKILLS-TRACK carries the
+  // 3mc quick-review skill sheets; STUDY-GUIDES carries the deep week/topic
+  // study guides. Best-effort: a missing dir or a failed ingest never fails
+  // the plan import.
   if (ingestSkillDoc) {
-    const skillsDir = join(path, "SKILLS-TRACK");
-    let files: string[] = [];
-    try {
-      files = (await readdir(skillsDir)).filter((f) => f.endsWith(".md")).sort();
-    } catch {
-      /* no SKILLS-TRACK in this source tree */
-    }
+    const docDirs: { dir: string; tag: string }[] = [
+      { dir: "SKILLS-TRACK", tag: "quick-review" },
+      { dir: "STUDY-GUIDES", tag: "study-guide" },
+    ];
     const weekDocs: WeekDocRow[] = [];
     let ingested = 0;
-    for (const file of files) {
-      const abs = join(skillsDir, file);
+    for (const { dir, tag } of docDirs) {
+      let files: string[] = [];
       try {
-        const body = await readFile(abs, "utf8");
-        const meta = parseSkillDocMeta(body);
-        const title = meta?.title ?? file.replace(/\.md$/, "");
-        onProgress({
-          step: `skill doc: ${title}`,
-          created,
-          merged,
-          done: false,
-        });
-        const sourceId = await ingestSkillDoc(abs, title, ["3mc", "quick-review"]);
-        ingested += 1;
-        for (const week of meta?.weeks ?? []) {
-          weekDocs.push({ week, sourceId, title });
+        files = (await readdir(join(path, dir)))
+          .filter((f) => f.endsWith(".md"))
+          .sort();
+      } catch {
+        continue; /* dir absent in this source tree */
+      }
+      for (const file of files) {
+        const abs = join(path, dir, file);
+        try {
+          const body = await readFile(abs, "utf8");
+          const meta = parseSkillDocMeta(body);
+          const title = meta?.title ?? file.replace(/\.md$/, "");
+          onProgress({
+            step: `skill doc: ${title}`,
+            created,
+            merged,
+            done: false,
+          });
+          const sourceId = await ingestSkillDoc(abs, title, ["3mc", tag]);
+          ingested += 1;
+          for (const week of meta?.weeks ?? []) {
+            weekDocs.push({ week, sourceId, title });
+          }
+        } catch (err) {
+          onProgress({
+            step: `skill doc failed: ${file}`,
+            created,
+            merged,
+            done: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
-      } catch (err) {
-        onProgress({
-          step: `skill doc failed: ${file}`,
-          created,
-          merged,
-          done: false,
-          error: err instanceof Error ? err.message : String(err),
-        });
       }
     }
     if (ingested > 0) store.replaceWeekDocs(weekDocs);
