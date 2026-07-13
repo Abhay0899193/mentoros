@@ -254,7 +254,17 @@ function buildServer(startedAt: number, dataDir: string, rendererDir: string): B
     engine: memory.engine,
     broadcast,
     import3mc: (path, onProgress) =>
-      import3mc({ path, store: learning.store, onProgress }),
+      import3mc({
+        path,
+        store: learning.store,
+        onProgress,
+        // Quick-review skill docs land in the KB (idempotent by path hash).
+        ingestSkillDoc: async (absPath, title, tags) => {
+          const prepared = kb.engine.prepareSource(absPath, { title, tags });
+          await kb.engine.runIngest(prepared);
+          return prepared.sourceId;
+        },
+      }),
   });
 
   /* ------------------------------- learning ------------------------------ */

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { ClipboardPaste, GraduationCap } from 'lucide-react';
+import { BookOpen, ClipboardPaste, GraduationCap, RefreshCw } from 'lucide-react';
 import { riseIn, staggerChildren, reduced } from '../../../motion/springs';
 import { useLearning } from '../../../lib/learningStore';
+import { useMemories, THREE_MC_PATH } from '../../../lib/memoryStore';
+import { useKb } from '../../../lib/kbStore';
 import { useShell } from '../../../lib/store';
 import { Button, Card, Chip } from '../../../ui';
 import type { LearningWeek } from '../../../lib/coreClient';
@@ -28,6 +30,15 @@ export function LearningScreen() {
   const reduce = useReducedMotion();
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const runImport = useMemories((s) => s.runImport);
+  const importState = useMemories((s) => s.importState);
+  const openReading = useKb((s) => s.openReading);
+  const reimporting = importState?.source === '3mc' && importState.active;
+
+  function openQuickReview(sourceId: string) {
+    openReading(sourceId);
+    setActive('knowledge');
+  }
 
   useEffect(() => {
     init();
@@ -69,14 +80,32 @@ export function LearningScreen() {
           </span>
           <HeatStrip heat={heat} />
           {imported && (
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<ClipboardPaste size={14} strokeWidth={1.5} />}
-              onClick={() => setImportOpen(true)}
-            >
-              Import progress
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<ClipboardPaste size={14} strokeWidth={1.5} />}
+                onClick={() => setImportOpen(true)}
+              >
+                Import progress
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={reimporting}
+                icon={
+                  <RefreshCw
+                    size={14}
+                    strokeWidth={1.5}
+                    className={reimporting ? 'animate-spin' : undefined}
+                  />
+                }
+                title="Re-read the 3-month-challenge repo — refreshes study notes and quick-review docs; your progress is preserved"
+                onClick={() => void runImport('3mc', THREE_MC_PATH)}
+              >
+                {reimporting ? (importState?.step ?? 'Importing…') : 'Re-import plan'}
+              </Button>
+            </>
           )}
         </div>
       </motion.header>
@@ -126,6 +155,24 @@ export function LearningScreen() {
                           <span className="min-w-0 flex-1 truncate text-small text-muted">{week.focus}</span>
                         )}
                       </div>
+                      {week.docs && week.docs.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 pb-1">
+                          <span className="flex items-center gap-1 text-[12px] text-faint">
+                            <BookOpen size={12} strokeWidth={1.5} />
+                            Quick review
+                          </span>
+                          {week.docs.map((doc) => (
+                            <button
+                              key={doc.sourceId}
+                              type="button"
+                              onClick={() => openQuickReview(doc.sourceId)}
+                              className="tap-target rounded-full bg-surface-1 hairline px-2.5 py-0.5 text-[12px] text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                            >
+                              {doc.title}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex flex-col gap-0.5">
                         {week.days.map((day) => (
                           <DayRow

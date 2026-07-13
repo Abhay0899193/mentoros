@@ -40,6 +40,9 @@ interface MemoryState {
   runImport: (source: ImportSource, path: string) => Promise<void>;
 }
 
+/** Canonical location of the 3-month-challenge repo (plan + notes + skill docs). */
+export const THREE_MC_PATH = '/Users/singha7/Documents/abhay/3-month-challenge';
+
 let initialized = false;
 
 export const useMemories = create<MemoryState>((set, get) => ({

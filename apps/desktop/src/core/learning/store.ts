@@ -13,6 +13,12 @@ import type { ParsedDay, ParsedTask } from "./plan.js";
 
 export interface DayRow extends ParsedDay {}
 
+export interface WeekDocRow {
+  week: number;
+  sourceId: string;
+  title: string;
+}
+
 export interface DayProgressRow {
   id: string;
   phase: number;
@@ -71,6 +77,12 @@ export class LearningStore {
         done INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS idx_mission_items_date ON mission_items(date);
+      CREATE TABLE IF NOT EXISTS learning_week_docs (
+        week INTEGER NOT NULL,
+        source_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        PRIMARY KEY (week, source_id)
+      );
     `);
     // Additive migration: week-level topic (focus) carried on each day row.
     try {
@@ -156,6 +168,26 @@ export class LearningStore {
     this.db
       .prepare(`UPDATE learning_days SET notes = ? WHERE id = ?`)
       .run(notes, dayId);
+  }
+
+  /** Replace the whole week→quick-review-doc mapping (importer owns this table). */
+  replaceWeekDocs(entries: WeekDocRow[]): void {
+    const insert = this.db.prepare(
+      `INSERT INTO learning_week_docs (week, source_id, title) VALUES (@week, @sourceId, @title)`,
+    );
+    this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM learning_week_docs`).run();
+      for (const e of entries) insert.run(e);
+    })();
+  }
+
+  weekDocs(): WeekDocRow[] {
+    return this.db
+      .prepare(
+        `SELECT week, source_id AS sourceId, title FROM learning_week_docs
+         ORDER BY week, title`,
+      )
+      .all() as WeekDocRow[];
   }
 
   dayNotes(dayId: string): string | null {

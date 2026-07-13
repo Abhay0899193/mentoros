@@ -61,6 +61,11 @@ export class LearningEngine {
   weeks(): LearningWeek[] {
     const rows = this.store.dayProgress();
     const { states } = computeDayStates(rows);
+    const docsByWeek = new Map<number, { sourceId: string; title: string }[]>();
+    for (const d of this.store.weekDocs()) {
+      if (!docsByWeek.has(d.week)) docsByWeek.set(d.week, []);
+      docsByWeek.get(d.week)!.push({ sourceId: d.sourceId, title: d.title });
+    }
     const byWeek = new Map<string, LearningWeek>();
     for (const r of rows) {
       const key = `${r.phase}-${r.week}`;
@@ -68,6 +73,8 @@ export class LearningEngine {
       if (!wk) {
         wk = { phase: r.phase, week: r.week, days: [] };
         if (r.focus) wk.focus = r.focus;
+        const docs = docsByWeek.get(r.week);
+        if (docs) wk.docs = docs;
         byWeek.set(key, wk);
       }
       const day: LearningDay = {

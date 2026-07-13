@@ -202,11 +202,19 @@ export interface LearningDay {
   hasNotes: boolean;
 }
 
+/** A quick-review reference doc (KB source) attached to a plan week. */
+export interface LearningWeekDoc {
+  sourceId: string;
+  title: string;
+}
+
 export interface LearningWeek {
   phase: number;
   week: number;
   focus?: string;
   days: LearningDay[];
+  /** Quick-review skill docs covering this week (imported from SKILLS-TRACK). */
+  docs?: LearningWeekDoc[];
 }
 
 /** Result of importing a study-ui `study-progress` export. */

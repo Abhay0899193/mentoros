@@ -46,7 +46,11 @@ export const useLearning = create<LearningState>((set, get) => ({
       coreClient.on('learning.progress', ({ summary }) => set({ summary }));
       coreClient.on('mission.updated', ({ mission }) => set({ mission }));
       coreClient.on('import.progress', ({ source, done }) => {
-        if (source === '3mc' && done) void get().refresh();
+        if (source === '3mc' && done) {
+          set({ dayTasks: {}, dayNotes: {} }); // re-import refreshes notes/resources
+          void get().loadWeeks();
+          void get().refresh();
+        }
       });
     }
     void get().refresh();

@@ -4,7 +4,7 @@ import { Flame, Check, ArrowRight, Moon, Download } from 'lucide-react';
 import { riseIn, staggerChildren, reduced, spring, dur } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
 import { useLearning } from '../../../lib/learningStore';
-import { useMemories } from '../../../lib/memoryStore';
+import { useMemories, THREE_MC_PATH } from '../../../lib/memoryStore';
 import { useShell } from '../../../lib/store';
 import { Button, Card, Chip } from '../../../ui';
 import { TYPE_COLOR, typeLabel } from '../memory/memoryMeta';
@@ -173,7 +173,7 @@ export function HomeScreen() {
               size="sm"
               variant="primary"
               disabled={importState?.active}
-              onClick={() => void runImport('3mc', '/Users/singha7/Documents/abhay/3-month-challenge')}
+              onClick={() => void runImport('3mc', THREE_MC_PATH)}
             >
               {importState?.active ? importState.step : 'Import plan'}
             </Button>

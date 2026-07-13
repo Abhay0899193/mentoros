@@ -1,7 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parsePlan, type ParsedPlan } from "./plan.js";
-import type { LearningStore } from "./store.js";
+import type { LearningStore, WeekDocRow } from "./store.js";
 
 /**
  * Importer for the 3-month-challenge study plan. Read-only against the source
@@ -31,6 +31,37 @@ export interface ImportProgress {
 export interface ImportResult {
   created: number;
   merged: number;
+}
+
+/**
+ * Ingest one skill-reference doc into the knowledge base; returns the KB
+ * sourceId. Injected by the server so the learning importer stays decoupled
+ * from the KB engine.
+ */
+export type SkillDocIngest = (
+  absPath: string,
+  title: string,
+  tags: string[],
+) => Promise<string>;
+
+/**
+ * Parse the SKILLS-TRACK frontmatter we care about: `title: "Docker"` and
+ * `weeks: [1, 2]`. Tolerant of quotes/spacing; returns null when the file has
+ * no frontmatter block or no weeks list (doc still ingests, just unlinked).
+ */
+export function parseSkillDocMeta(
+  body: string,
+): { title: string | null; weeks: number[] } | null {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(body);
+  if (!fm) return null;
+  const block = fm[1];
+  const titleMatch = /^title:\s*["']?(.+?)["']?\s*$/m.exec(block);
+  const weeksMatch = /^weeks:\s*\[([^\]]*)\]\s*$/m.exec(block);
+  const weeks = (weeksMatch?.[1] ?? "")
+    .split(",")
+    .map((s) => Number.parseInt(s.trim(), 10))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return { title: titleMatch?.[1]?.trim() ?? null, weeks };
 }
 
 async function loadRichestPlan(
@@ -68,8 +99,9 @@ export async function import3mc(opts: {
   path: string;
   store: LearningStore;
   onProgress: (p: ImportProgress) => void;
+  ingestSkillDoc?: SkillDocIngest;
 }): Promise<ImportResult> {
-  const { path, store, onProgress } = opts;
+  const { path, store, onProgress, ingestSkillDoc } = opts;
   const picked = await loadRichestPlan(path, onProgress);
   if (!picked) {
     onProgress({
@@ -128,6 +160,49 @@ export async function import3mc(opts: {
     }
   }
   onProgress({ step: `day notes: ${notes}`, created, merged, done: false });
+
+  // Quick-review skill docs (SKILLS-TRACK/*.md) → knowledge base + week links.
+  // Best-effort: a missing dir or a failed ingest never fails the plan import.
+  if (ingestSkillDoc) {
+    const skillsDir = join(path, "SKILLS-TRACK");
+    let files: string[] = [];
+    try {
+      files = (await readdir(skillsDir)).filter((f) => f.endsWith(".md")).sort();
+    } catch {
+      /* no SKILLS-TRACK in this source tree */
+    }
+    const weekDocs: WeekDocRow[] = [];
+    let ingested = 0;
+    for (const file of files) {
+      const abs = join(skillsDir, file);
+      try {
+        const body = await readFile(abs, "utf8");
+        const meta = parseSkillDocMeta(body);
+        const title = meta?.title ?? file.replace(/\.md$/, "");
+        onProgress({
+          step: `skill doc: ${title}`,
+          created,
+          merged,
+          done: false,
+        });
+        const sourceId = await ingestSkillDoc(abs, title, ["3mc", "quick-review"]);
+        ingested += 1;
+        for (const week of meta?.weeks ?? []) {
+          weekDocs.push({ week, sourceId, title });
+        }
+      } catch (err) {
+        onProgress({
+          step: `skill doc failed: ${file}`,
+          created,
+          merged,
+          done: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    if (ingested > 0) store.replaceWeekDocs(weekDocs);
+    onProgress({ step: `skill docs: ${ingested}`, created, merged, done: false });
+  }
 
   onProgress({ step: "done", created, merged, done: true });
   return { created, merged };

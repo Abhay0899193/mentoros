@@ -30,4 +30,4 @@ export function createLearningSystem(
 
 export { LearningEngine } from "./engine.js";
 export { LearningStore } from "./store.js";
-export { import3mc } from "./importer.js";
+export { import3mc, type SkillDocIngest } from "./importer.js";
