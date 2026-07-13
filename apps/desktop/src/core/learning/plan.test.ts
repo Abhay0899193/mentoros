@@ -7,6 +7,7 @@ import {
   dayOrder,
   levelForXp,
   parsePlan,
+  parseProgressExport,
   parseReviewBody,
   xpForTask,
   type ParsedDay,
@@ -80,18 +81,18 @@ function day(id: string, week: number, d: number): ParsedDay {
   return { id, phase: 1, week, day: d, title: id };
 }
 
-test("computeDayStates: done / current / locked / partial-available", () => {
+test("computeDayStates: done / current / future days stay available (no locking)", () => {
   const ordered = [
     { ...day("d1", 1, 1), taskCount: 2, doneCount: 2 }, // done
     { ...day("d2", 1, 2), taskCount: 3, doneCount: 1 }, // current (first not-done)
-    { ...day("d3", 1, 3), taskCount: 2, doneCount: 0 }, // locked
-    { ...day("d4", 1, 4), taskCount: 2, doneCount: 1 }, // partial → available
+    { ...day("d3", 1, 3), taskCount: 2, doneCount: 0 }, // future, untouched → available
+    { ...day("d4", 1, 4), taskCount: 2, doneCount: 1 }, // future, partial → available
   ];
   const { states, currentDayId } = computeDayStates(ordered);
   assert.equal(currentDayId, "d2");
   assert.equal(states.get("d1"), "done");
   assert.equal(states.get("d2"), "current");
-  assert.equal(states.get("d3"), "locked");
+  assert.equal(states.get("d3"), "available");
   assert.equal(states.get("d4"), "available");
 });
 
@@ -104,6 +105,36 @@ test("computeDayStates: skipped not-done day before current is available", () =>
   assert.equal(currentDayId, "d1");
   assert.equal(states.get("d1"), "current");
   assert.equal(states.get("d2"), "done");
+});
+
+/* --------------------------- progress import ----------------------------- */
+
+test("parseProgressExport keeps completed entries with valid dates", () => {
+  const entries = parseProgressExport({
+    "phase-1-week-1-day-1-lc-1": { completed: true, date: "2026-05-04" },
+    "phase-1-week-1-day-1-res-0": { completed: true }, // no date
+    "phase-1-week-1-day-2-lc-20": { completed: true, date: "bogus" },
+  });
+  assert.equal(entries.length, 3);
+  assert.deepEqual(entries[0], {
+    taskId: "phase-1-week-1-day-1-lc-1",
+    date: "2026-05-04",
+  });
+  assert.equal(entries[1].date, null);
+  assert.equal(entries[2].date, null); // malformed date dropped, entry kept
+});
+
+test("parseProgressExport drops non-completed and malformed entries", () => {
+  const entries = parseProgressExport({
+    a: { completed: false, date: "2026-05-04" },
+    b: "nope",
+    c: null,
+    d: { completed: "yes" },
+  });
+  assert.equal(entries.length, 0);
+  assert.deepEqual(parseProgressExport(null), []);
+  assert.deepEqual(parseProgressExport([1, 2]), []);
+  assert.deepEqual(parseProgressExport("{}"), []);
 });
 
 test("dayOrder sorts by phase, week, day", () => {

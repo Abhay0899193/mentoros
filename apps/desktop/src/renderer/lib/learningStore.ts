@@ -5,6 +5,7 @@ import {
   type LearningSummary,
   type LearningTask,
   type LearningWeek,
+  type ProgressImportResult,
   type ReviewItem,
   type TodayMission,
 } from './coreClient';
@@ -16,11 +17,14 @@ interface LearningState {
   reviews: ReviewItem[];
   heat: HeatCell[];
   dayTasks: Record<string, LearningTask[]>;
+  dayNotes: Record<string, string | null>;
 
   init: () => void;
   refresh: () => Promise<void>;
   loadWeeks: () => Promise<void>;
   loadDayTasks: (dayId: string) => Promise<void>;
+  loadDayNotes: (dayId: string) => Promise<void>;
+  importProgress: (progress: unknown) => Promise<ProgressImportResult>;
   completeMissionItem: (itemId: string, done: boolean) => Promise<void>;
   completeTask: (taskId: string, done: boolean) => Promise<void>;
 }
@@ -34,6 +38,7 @@ export const useLearning = create<LearningState>((set, get) => ({
   reviews: [],
   heat: [],
   dayTasks: {},
+  dayNotes: {},
 
   init: () => {
     if (!initialized) {
@@ -72,6 +77,19 @@ export const useLearning = create<LearningState>((set, get) => ({
   loadDayTasks: async (dayId) => {
     const tasks = await coreClient.learningDayTasks(dayId);
     set((s) => ({ dayTasks: { ...s.dayTasks, [dayId]: tasks } }));
+  },
+
+  loadDayNotes: async (dayId) => {
+    if (get().dayNotes[dayId] !== undefined) return;
+    const { notes } = await coreClient.learningDayNotes(dayId);
+    set((s) => ({ dayNotes: { ...s.dayNotes, [dayId]: notes } }));
+  },
+
+  importProgress: async (progress) => {
+    const result = await coreClient.importLearningProgress(progress);
+    set({ summary: result.summary, dayTasks: {} }); // task lists are stale now
+    await Promise.all([get().loadWeeks(), get().refresh()]);
+    return result;
   },
 
   completeMissionItem: async (itemId, done) => {

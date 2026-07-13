@@ -22,6 +22,27 @@ export function registerLearningRoutes(
     async (req) => engine.dayTasks(req.params.id),
   );
 
+  app.get<{ Params: { id: string } }>(
+    "/learning/days/:id/notes",
+    async (req) => ({ notes: engine.dayNotes(req.params.id) }),
+  );
+
+  // Pasted study-ui `study-progress` localStorage export (see importer.ts).
+  app.post<{ Body: { progress?: unknown } }>(
+    "/learning/progress/import",
+    async (req, reply) => {
+      const progress = req.body?.progress;
+      if (typeof progress !== "object" || progress === null) {
+        return reply
+          .code(400)
+          .send({ error: "progress must be the study-progress JSON object" });
+      }
+      const result = engine.importProgress(progress);
+      broadcast("learning.progress", { summary: result.summary });
+      return result;
+    },
+  );
+
   app.post<{ Params: { id: string }; Body: { done?: boolean } }>(
     "/learning/tasks/:id/complete",
     async (req, reply) => {

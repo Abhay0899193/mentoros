@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { GraduationCap } from 'lucide-react';
+import { ClipboardPaste, GraduationCap } from 'lucide-react';
 import { riseIn, staggerChildren, reduced } from '../../../motion/springs';
 import { useLearning } from '../../../lib/learningStore';
 import { useShell } from '../../../lib/store';
@@ -9,21 +9,25 @@ import type { LearningWeek } from '../../../lib/coreClient';
 import { HeatStrip } from './HeatStrip';
 import { ReviewQueue } from './ReviewQueue';
 import { DayRow } from './DayRow';
+import { ImportProgressDialog } from './ImportProgressDialog';
 
 /** Duolingo-style day-by-day path over the imported plan (plan.md §4.6). */
 export function LearningScreen() {
   const init = useLearning((s) => s.init);
   const loadWeeks = useLearning((s) => s.loadWeeks);
   const loadDayTasks = useLearning((s) => s.loadDayTasks);
+  const loadDayNotes = useLearning((s) => s.loadDayNotes);
   const completeTask = useLearning((s) => s.completeTask);
   const summary = useLearning((s) => s.summary);
   const weeks = useLearning((s) => s.weeks);
   const reviews = useLearning((s) => s.reviews);
   const heat = useLearning((s) => s.heat);
   const dayTasks = useLearning((s) => s.dayTasks);
+  const dayNotes = useLearning((s) => s.dayNotes);
   const setActive = useShell((s) => s.setActive);
   const reduce = useReducedMotion();
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     init();
@@ -41,8 +45,7 @@ export function LearningScreen() {
 
   const imported = summary?.imported ?? false;
 
-  function toggleDay(dayId: string, locked: boolean) {
-    if (locked) return;
+  function toggleDay(dayId: string) {
     const opening = expandedDay !== dayId;
     setExpandedDay(opening ? dayId : null);
     if (opening && !dayTasks[dayId]) void loadDayTasks(dayId);
@@ -60,11 +63,21 @@ export function LearningScreen() {
         className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6"
       >
         <h1 className="text-h1 text-ink">Learning path</h1>
-        <div className="flex max-w-full items-center gap-4">
+        <div className="flex max-w-full flex-wrap items-center gap-x-4 gap-y-2">
           <span className="shrink-0 font-mono text-small text-muted tabular">
             Level {summary?.level ?? 1} · {(summary?.xp ?? 0).toLocaleString()} XP
           </span>
           <HeatStrip heat={heat} />
+          {imported && (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<ClipboardPaste size={14} strokeWidth={1.5} />}
+              onClick={() => setImportOpen(true)}
+            >
+              Import progress
+            </Button>
+          )}
         </div>
       </motion.header>
 
@@ -119,9 +132,11 @@ export function LearningScreen() {
                             key={day.id}
                             day={day}
                             tasks={dayTasks[day.id]}
+                            notes={dayNotes[day.id]}
                             expanded={expandedDay === day.id}
-                            onToggle={() => toggleDay(day.id, day.state === 'locked')}
+                            onToggle={() => toggleDay(day.id)}
                             onCompleteTask={(taskId, done) => void completeTask(taskId, done)}
+                            onLoadNotes={() => void loadDayNotes(day.id)}
                           />
                         ))}
                       </div>
@@ -133,6 +148,8 @@ export function LearningScreen() {
           </motion.div>
         </>
       )}
+
+      <ImportProgressDialog open={importOpen} onClose={() => setImportOpen(false)} />
     </motion.div>
   );
 }

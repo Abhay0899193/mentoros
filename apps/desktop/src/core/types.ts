@@ -195,9 +195,11 @@ export interface LearningDay {
   week: number;
   day: number;
   title: string;
-  state: "locked" | "available" | "current" | "done";
+  state: "available" | "current" | "done";
   taskCount: number;
   doneCount: number;
+  /** Whether the imported plan carries study notes (day markdown) for this day. */
+  hasNotes: boolean;
 }
 
 export interface LearningWeek {
@@ -205,6 +207,19 @@ export interface LearningWeek {
   week: number;
   focus?: string;
   days: LearningDay[];
+}
+
+/** Result of importing a study-ui `study-progress` export. */
+export interface ProgressImportResult {
+  /** Completed entries found in the pasted payload. */
+  found: number;
+  /** Tasks newly marked done. */
+  applied: number;
+  /** Entries whose task was already done here (left untouched). */
+  alreadyDone: number;
+  /** Entries with no matching task in the imported plan. */
+  unknown: number;
+  summary: LearningSummary;
 }
 
 export interface LearningSummary {

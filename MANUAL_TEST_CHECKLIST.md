@@ -182,3 +182,22 @@ pre-existing); sheet tiles are square-cropped, so non-square cells lose their ed
 auto-detect needs a plain background (manual steppers always available); photo-preset
 add-expression is gated on the z-image-turbo toolchain even though it edits via Kontext
 (single shared probe — flag if annoying).
+
+## 11 · Learning path — progress import, unlocked days, study notes
+
+- [ ] Learning screen: every day in every week/phase is now expandable — no greyed
+      "locked" rows anywhere. The pulsing "current" dot still marks the first not-done day.
+- [ ] Expand a future day (e.g. Phase 3) and tick a task → 0/n increments, XP moves,
+      heatmap gets today's cell.
+- [ ] Study notes: expand a day → "Study notes" disclosure under the tasks → the full
+      3mc day markdown renders (headings, LeetCode table, code blocks). Code blocks
+      scroll horizontally inside themselves — page body never scrolls sideways.
+      (Notes appear after a re-import of the plan from Home — the notes column is
+      filled by the importer.)
+- [ ] Import progress: header "Import progress" → dialog. In the browser you used for
+      the study app (localhost:3000), DevTools console → `copy(localStorage.getItem('study-progress'))`,
+      paste, Import → result line shows applied/already-done/unknown counts; done days
+      flip to aurora checks; XP/level jump; heatmap backfills on the original dates.
+- [ ] Re-run the same import → everything lands in "already done", nothing double-applies.
+- [ ] Phone width (or real iPhone via §9): dialog rises as a bottom sheet, textarea usable,
+      day rows and notes readable at 320px with no horizontal overflow.

@@ -170,8 +170,7 @@ export interface DayProgress {
  * Derive per-day state from ordered days + their progress:
  *  - done: all tasks complete (taskCount > 0)
  *  - current: first not-done day in plan order
- *  - after current: locked, unless the day has partial progress (available)
- *  - before current: available
+ *  - everything else: available — the whole path is browsable ahead of order
  */
 export function computeDayStates(
   ordered: Array<ParsedDay & DayProgress>,
@@ -180,24 +179,9 @@ export function computeDayStates(
   const currentDayId = ordered.find((d) => !isDone(d))?.id ?? null;
 
   const states = new Map<string, LearningDay["state"]>();
-  let reachedCurrent = false;
   for (const d of ordered) {
-    if (isDone(d)) {
-      states.set(d.id, "done");
-      continue;
-    }
-    if (d.id === currentDayId) {
-      states.set(d.id, "current");
-      reachedCurrent = true;
-      continue;
-    }
-    if (!reachedCurrent) {
-      // Not-done day before the current one (a skipped day) — always available.
-      states.set(d.id, "available");
-    } else {
-      // After the current day: locked unless it has partial progress.
-      states.set(d.id, d.doneCount > 0 ? "available" : "locked");
-    }
+    if (isDone(d)) states.set(d.id, "done");
+    else states.set(d.id, d.id === currentDayId ? "current" : "available");
   }
   return { states, currentDayId };
 }
@@ -277,6 +261,37 @@ export function computeStreak(
   }
 
   return { current, best };
+}
+
+/* ----------------------- progress import (3mc UI) ----------------------- */
+
+export interface ProgressEntry {
+  taskId: string;
+  /** YYYY-MM-DD completion date from the export, when present. */
+  date: string | null;
+}
+
+/**
+ * Parse the study-ui `study-progress` localStorage payload:
+ * `Record<taskId, { completed: boolean; date?: "YYYY-MM-DD" }>`.
+ * Task ids follow the same `phase-P-week-W-day-D-…` scheme our importer uses,
+ * so entries map 1:1 onto learning_tasks. Only completed entries survive;
+ * malformed values are dropped, never thrown.
+ */
+export function parseProgressExport(root: unknown): ProgressEntry[] {
+  if (typeof root !== "object" || root === null || Array.isArray(root)) return [];
+  const out: ProgressEntry[] = [];
+  for (const [taskId, raw] of Object.entries(root as Record<string, unknown>)) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const entry = raw as { completed?: unknown; date?: unknown };
+    if (entry.completed !== true) continue;
+    const date =
+      typeof entry.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)
+        ? entry.date
+        : null;
+    out.push({ taskId, date });
+  }
+  return out;
 }
 
 /* --------------------------- review parsing ----------------------------- */

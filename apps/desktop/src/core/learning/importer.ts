@@ -108,6 +108,27 @@ export async function import3mc(opts: {
     done: false,
   });
 
+  // Full study notes: the day markdown bodies the JSON exports don't carry.
+  // Best-effort — a missing file just leaves that day without notes.
+  let notes = 0;
+  for (const day of plan.days) {
+    const rel = join(
+      `PHASE-${day.phase}`,
+      `week-${String(day.week).padStart(2, "0")}`,
+      `day-${String(day.day).padStart(2, "0")}.md`,
+    );
+    try {
+      const body = await readFile(join(path, rel), "utf8");
+      if (body.trim()) {
+        store.setDayNotes(day.id, body);
+        notes += 1;
+      }
+    } catch {
+      /* no markdown for this day */
+    }
+  }
+  onProgress({ step: `day notes: ${notes}`, created, merged, done: false });
+
   onProgress({ step: "done", created, merged, done: true });
   return { created, merged };
 }

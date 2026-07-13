@@ -6,6 +6,7 @@ import type {
   LearningTask,
   LearningWeek,
   MissionItem,
+  ProgressImportResult,
   ReviewItem,
   TodayMission,
 } from "../types.js";
@@ -15,6 +16,7 @@ import {
   computeDayStates,
   computeStreak,
   levelForXp,
+  parseProgressExport,
   parseReviewBody,
   reviewTitle,
   todayIso,
@@ -74,9 +76,10 @@ export class LearningEngine {
         week: r.week,
         day: r.day,
         title: r.title,
-        state: states.get(r.id) ?? "locked",
+        state: states.get(r.id) ?? "available",
         taskCount: r.taskCount,
         doneCount: r.doneCount,
+        hasNotes: r.hasNotes === 1,
       };
       wk.days.push(day);
     }
@@ -87,6 +90,46 @@ export class LearningEngine {
 
   dayTasks(dayId: string): LearningTask[] {
     return this.store.tasksForDay(dayId);
+  }
+
+  dayNotes(dayId: string): string | null {
+    return this.store.dayNotes(dayId);
+  }
+
+  /**
+   * Apply a pasted study-ui `study-progress` export. Only ever flips tasks TO
+   * done — tasks already done here keep their completion date, and nothing is
+   * un-done. Original export dates are preserved (noon UTC) so the heatmap and
+   * streak reflect when the work actually happened.
+   */
+  importProgress(root: unknown): ProgressImportResult {
+    const entries = parseProgressExport(root);
+    let applied = 0;
+    let alreadyDone = 0;
+    let unknown = 0;
+    for (const e of entries) {
+      const task = this.store.getTask(e.taskId);
+      if (!task) {
+        unknown += 1;
+        continue;
+      }
+      if (task.done) {
+        alreadyDone += 1;
+        continue;
+      }
+      const completedAt = e.date
+        ? `${e.date}T12:00:00.000Z`
+        : new Date().toISOString();
+      this.store.setTaskDone(e.taskId, true, completedAt);
+      applied += 1;
+    }
+    return {
+      found: entries.length,
+      applied,
+      alreadyDone,
+      unknown,
+      summary: this.summary(),
+    };
   }
 
   completeTask(taskId: string, done: boolean): LearningSummary | null {

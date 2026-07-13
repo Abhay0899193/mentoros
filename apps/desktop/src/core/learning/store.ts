@@ -22,6 +22,8 @@ export interface DayProgressRow {
   focus: string | null;
   taskCount: number;
   doneCount: number;
+  /** 1 when the day has imported study notes (day markdown). */
+  hasNotes: number;
 }
 
 export class LearningStore {
@@ -73,6 +75,12 @@ export class LearningStore {
     // Additive migration: week-level topic (focus) carried on each day row.
     try {
       this.db.exec(`ALTER TABLE learning_days ADD COLUMN focus TEXT`);
+    } catch {
+      /* column already exists */
+    }
+    // Additive migration: full study notes (the 3mc day markdown body).
+    try {
+      this.db.exec(`ALTER TABLE learning_days ADD COLUMN notes TEXT`);
     } catch {
       /* column already exists */
     }
@@ -143,6 +151,20 @@ export class LearningStore {
     return "created";
   }
 
+  /** Attach/replace the day's study notes (raw markdown). No-op on unknown id. */
+  setDayNotes(dayId: string, notes: string): void {
+    this.db
+      .prepare(`UPDATE learning_days SET notes = ? WHERE id = ?`)
+      .run(notes, dayId);
+  }
+
+  dayNotes(dayId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT notes FROM learning_days WHERE id = ?`)
+      .get(dayId) as { notes: string | null } | undefined;
+    return row?.notes ?? null;
+  }
+
   /* ------------------------------- reads --------------------------------- */
 
   isImported(): boolean {
@@ -157,6 +179,7 @@ export class LearningStore {
     return this.db
       .prepare(
         `SELECT d.id, d.phase, d.week, d.day, d.title, d.focus,
+                (d.notes IS NOT NULL) AS hasNotes,
                 COUNT(t.id) AS taskCount,
                 COALESCE(SUM(t.done), 0) AS doneCount
          FROM learning_days d

@@ -224,9 +224,11 @@ export interface LearningDay {
   week: number;
   day: number;
   title: string;
-  state: 'locked' | 'available' | 'current' | 'done';
+  state: 'available' | 'current' | 'done';
   taskCount: number;
   doneCount: number;
+  /** Whether the imported plan carries study notes (day markdown) for this day. */
+  hasNotes: boolean;
 }
 
 export interface LearningWeek {
@@ -235,6 +237,15 @@ export interface LearningWeek {
   /** Week topic from the plan, e.g. "Arrays, Strings, Two Pointers + Docker Basics". */
   focus?: string;
   days: LearningDay[];
+}
+
+/** Result of importing a study-ui `study-progress` export. */
+export interface ProgressImportResult {
+  found: number;
+  applied: number;
+  alreadyDone: number;
+  unknown: number;
+  summary: LearningSummary;
 }
 
 export interface LearningSummary {
@@ -1347,6 +1358,8 @@ export interface CoreClient {
   learningSummary(): Promise<LearningSummary>;
   learningWeeks(): Promise<LearningWeek[]>;
   learningDayTasks(dayId: string): Promise<LearningTask[]>;
+  learningDayNotes(dayId: string): Promise<{ notes: string | null }>;
+  importLearningProgress(progress: unknown): Promise<ProgressImportResult>;
   completeTask(taskId: string, done: boolean): Promise<LearningSummary>;
   todayMission(): Promise<TodayMission>;
   completeMissionItem(itemId: string, done: boolean): Promise<TodayMission>;
@@ -1786,6 +1799,9 @@ export function createCoreClient(): CoreClient {
     learningSummary: () => get<LearningSummary>('/learning/summary'),
     learningWeeks: () => get<LearningWeek[]>('/learning/weeks'),
     learningDayTasks: (dayId) => get<LearningTask[]>(`/learning/days/${dayId}/tasks`),
+    learningDayNotes: (dayId) => get<{ notes: string | null }>(`/learning/days/${dayId}/notes`),
+    importLearningProgress: (progress) =>
+      post<ProgressImportResult>('/learning/progress/import', { progress }),
     completeTask: (taskId, done) => post<LearningSummary>(`/learning/tasks/${taskId}/complete`, { done }),
     todayMission: () => get<TodayMission>('/mission/today'),
     completeMissionItem: (itemId, done) => post<TodayMission>(`/mission/items/${itemId}/complete`, { done }),
