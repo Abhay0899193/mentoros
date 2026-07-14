@@ -3,6 +3,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import type { LearningTask, MissionItem, TaskKind } from "../types.js";
 import type { ParsedDay, ParsedTask } from "./plan.js";
+import { xpForTask } from "./xp.js";
 
 /**
  * Persistence for the learning plan + daily mission. Opens its own connection to
@@ -300,19 +301,23 @@ export class LearningStore {
     return row;
   }
 
-  /** All completed tasks (id, kind, difficulty) — for XP totals. */
-  completedTasks(): Array<{
-    kind: TaskKind;
-    difficulty?: "Easy" | "Medium" | "Hard";
-  }> {
+  /** All completed tasks (kind, difficulty, completion date) — for XP totals. */
+  completedTaskRecords(): CompletedTaskRecord[] {
     const rows = this.db
       .prepare(
-        `SELECT kind, difficulty FROM learning_tasks WHERE done = 1`,
+        `SELECT kind, difficulty, completed_at FROM learning_tasks WHERE done = 1`,
       )
-      .all() as Array<{ kind: string; difficulty: string | null }>;
+      .all() as Array<{
+      kind: string;
+      difficulty: string | null;
+      completed_at: string | null;
+    }>;
     return rows.map((r) => ({
       kind: r.kind as TaskKind,
-      ...(r.difficulty ? { difficulty: r.difficulty as "Easy" | "Medium" | "Hard" } : {}),
+      ...(r.difficulty
+        ? { difficulty: r.difficulty as "Easy" | "Medium" | "Hard" }
+        : {}),
+      completedAt: r.completed_at,
     }));
   }
 
@@ -405,6 +410,13 @@ export class LearningStore {
   }
 }
 
+export interface CompletedTaskRecord {
+  kind: TaskKind;
+  difficulty?: "Easy" | "Medium" | "Hard";
+  /** Completion timestamp (ISO), null on legacy rows completed before tracking. */
+  completedAt: string | null;
+}
+
 interface TaskRow {
   id: string;
   day_id: string;
@@ -417,15 +429,19 @@ interface TaskRow {
 }
 
 function rowToTask(row: TaskRow): LearningTask {
+  const difficulty = row.difficulty
+    ? (row.difficulty as "Easy" | "Medium" | "Hard")
+    : undefined;
   const task: LearningTask = {
     id: row.id,
     dayId: row.day_id,
     kind: row.kind as TaskKind,
     title: row.title,
     done: row.done === 1,
+    xpWorth: xpForTask({ kind: row.kind as TaskKind, ...(difficulty ? { difficulty } : {}) }),
   };
   if (row.url) task.url = row.url;
-  if (row.difficulty) task.difficulty = row.difficulty as "Easy" | "Medium" | "Hard";
+  if (difficulty) task.difficulty = difficulty;
   if (row.completed_at) task.completedAt = row.completed_at;
   return task;
 }

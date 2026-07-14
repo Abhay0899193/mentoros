@@ -5,11 +5,9 @@ import {
   computeDayStates,
   computeStreak,
   dayOrder,
-  levelForXp,
   parsePlan,
   parseProgressExport,
   parseReviewBody,
-  xpForTask,
   type ParsedDay,
 } from "./plan.js";
 
@@ -54,25 +52,6 @@ test("parsePlan derives stable day ids and normalizes kinds/difficulty", () => {
   assert.equal(lc.kind, "leetcode");
   assert.equal(lc.difficulty, "Easy");
   assert.equal(tasks[2].kind, "other"); // podcast → other
-});
-
-/* ---------------------------------- xp ---------------------------------- */
-
-test("xpForTask: leetcode by difficulty, review 15, else 10", () => {
-  assert.equal(xpForTask({ kind: "leetcode", difficulty: "Easy" }), 10);
-  assert.equal(xpForTask({ kind: "leetcode", difficulty: "Medium" }), 20);
-  assert.equal(xpForTask({ kind: "leetcode", difficulty: "Hard" }), 40);
-  assert.equal(xpForTask({ kind: "leetcode" }), 10); // unlabelled
-  assert.equal(xpForTask({ kind: "review" }), 15);
-  assert.equal(xpForTask({ kind: "video" }), 10);
-});
-
-test("levelForXp = floor(sqrt(xp/100)) + 1", () => {
-  assert.equal(levelForXp(0), 1);
-  assert.equal(levelForXp(99), 1);
-  assert.equal(levelForXp(100), 2);
-  assert.equal(levelForXp(400), 3);
-  assert.equal(levelForXp(900), 4);
 });
 
 /* ------------------------------ day states ------------------------------ */

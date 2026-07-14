@@ -229,6 +229,8 @@ export interface LearningTask {
   difficulty?: 'Easy' | 'Medium' | 'Hard';
   done: boolean;
   completedAt?: string;
+  /** XP this task awards on completion (derived; shown as "+150 XP" pre-action). */
+  xpWorth: number;
 }
 
 export interface LearningDay {
@@ -269,6 +271,16 @@ export interface ProgressImportResult {
   summary: LearningSummary;
 }
 
+/** One daily-mission item surfaced as a "quest" with its XP reward attached. */
+export interface Quest {
+  id: string;
+  label: string;
+  kind: TaskKind | 'drill';
+  done: boolean;
+  /** XP awarded when this quest is completed. */
+  xp: number;
+}
+
 export interface LearningSummary {
   imported: boolean;
   totalDays: number;
@@ -276,8 +288,20 @@ export interface LearningSummary {
   totalTasks: number;
   doneTasks: number;
   currentDayId: string | null;
+  /** Total derived XP (task + doc-read + bonuses). */
   xp: number;
   level: number;
+  /** XP accrued inside the current level. */
+  xpIntoLevel: number;
+  /** XP still needed for the next level (0 at the cap). */
+  xpToNext: number;
+  streak: { current: number; best: number };
+  /** XP earned today (calendar day). */
+  todayXp: number;
+  /** XP per 7-day bucket, trailing weeks, oldest-first (last = current week). */
+  weeklyXp: number[];
+  /** Today's mission items surfaced as quests with XP rewards. */
+  quests: Quest[];
 }
 
 export interface MissionItem {

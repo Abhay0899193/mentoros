@@ -94,6 +94,14 @@ function buildServer(startedAt: number, dataDir: string, rendererDir: string): B
   const memory = createMemorySystem(dataDir, broadcast);
   const learning = createLearningSystem(dataDir, memory.engine);
   const kb = createKbSystem(dataDir, broadcast);
+  // Doc-read XP: the learning engine reads KB read-markers + tags through an
+  // injected lister so it never imports the KB (mirrors importer's listDocSources).
+  learning.engine.setReadDocLister(() =>
+    kb.engine
+      .listSources()
+      .filter((s) => s.readAt !== null)
+      .map((s) => ({ tags: s.tags, readAt: s.readAt })),
+  );
   const interview = createInterviewSystem(dataDir, broadcast, memory.engine, llm.router);
   // Personas: deleting the active custom persona resets settings.activePersona,
   // so the store gets the settings store; settings, in turn, consults the store

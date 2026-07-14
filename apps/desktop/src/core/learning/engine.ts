@@ -7,6 +7,7 @@ import type {
   LearningWeek,
   MissionItem,
   ProgressImportResult,
+  Quest,
   ReviewItem,
   TodayMission,
 } from "../types.js";
@@ -15,14 +16,34 @@ import {
   buildHeatmap,
   computeDayStates,
   computeStreak,
-  levelForXp,
   parseProgressExport,
   parseReviewBody,
   reviewTitle,
   todayIso,
-  xpForTask,
 } from "./plan.js";
+import {
+  levelForXp,
+  perfectDayBonus,
+  streakMilestoneBonus,
+  weekCompleteBonus,
+  weeklyXpBuckets,
+  xpForDocRead,
+  xpForMissionItem,
+  xpForTask,
+  xpOnDay,
+  type XpEvent,
+} from "./xp.js";
 import type { DayProgressRow, LearningStore } from "./store.js";
+
+/**
+ * Lists KB sources the user has marked read, with their tags + read timestamp.
+ * Injected by the server (wired to the KB engine) so the learning module never
+ * imports the KB — mirrors the importer's injected `listDocSources` pattern.
+ */
+export type ReadDocLister = () => { tags: string[]; readAt: string | null }[];
+
+/** Trailing weeks shown in the weeklyXp sparkline. */
+const WEEKLY_XP_WEEKS = 8;
 
 /**
  * Learning engine — daily-loop brains. Combines the plan store with the memory
@@ -31,21 +52,70 @@ import type { DayProgressRow, LearningStore } from "./store.js";
  * mission per day (§ daily loop). Framework-agnostic; no Electron.
  */
 export class LearningEngine {
+  private readDocs: ReadDocLister | null = null;
+
   constructor(
     private readonly store: LearningStore,
     private readonly memory: MemoryEngine,
-  ) {}
+    readDocs?: ReadDocLister,
+  ) {
+    this.readDocs = readDocs ?? null;
+  }
+
+  /**
+   * Inject the read-doc lister after construction (the server builds the KB
+   * engine after the learning system). Mirrors setPersonaLookup/setFaceLookup.
+   */
+  setReadDocLister(lister: ReadDocLister): void {
+    this.readDocs = lister;
+  }
 
   /* ------------------------------ summary -------------------------------- */
 
-  summary(): LearningSummary {
+  summary(today: string = todayIso()): LearningSummary {
     const rows = this.store.dayProgress();
     const { states, currentDayId } = computeDayStates(rows);
     const doneDays = rows.filter((r) => states.get(r.id) === "done").length;
     const { totalTasks, doneTasks } = this.store.totals();
-    const xp = this.store
-      .completedTasks()
-      .reduce((sum, t) => sum + xpForTask(t), 0);
+
+    // Task XP + per-task XP events (for today/weekly charts).
+    const completed = this.store.completedTaskRecords();
+    let taskXp = 0;
+    const events: XpEvent[] = [];
+    const completionDays = new Set<string>();
+    for (const t of completed) {
+      const xp = xpForTask(t);
+      taskXp += xp;
+      if (t.completedAt) {
+        events.push({ date: t.completedAt, xp });
+        completionDays.add(t.completedAt.slice(0, 10));
+      }
+    }
+
+    // Doc-read XP (study-guide 75 / quick-review 40), via the injected lister.
+    let docXp = 0;
+    for (const d of this.readDocs?.() ?? []) {
+      if (!d.readAt) continue;
+      const xp = xpForDocRead(d.tags);
+      if (xp <= 0) continue;
+      docXp += xp;
+      events.push({ date: d.readAt, xp });
+    }
+
+    // Bonuses: +50/perfect plan day, +250/complete plan week, streak milestones.
+    const completeWeeks = countCompleteWeeks(rows);
+    for (const date of this.store.missionCompletionDates()) {
+      completionDays.add(date.slice(0, 10));
+    }
+    const streak = computeStreak([...completionDays], today);
+    const bonusXp =
+      perfectDayBonus(doneDays) +
+      weekCompleteBonus(completeWeeks) +
+      streakMilestoneBonus(streak.best);
+
+    const xp = taskXp + docXp + bonusXp;
+    const { level, xpIntoLevel, xpToNext } = levelForXp(xp);
+
     return {
       imported: rows.length > 0,
       totalDays: rows.length,
@@ -54,8 +124,28 @@ export class LearningEngine {
       doneTasks,
       currentDayId,
       xp,
-      level: levelForXp(xp),
+      level,
+      xpIntoLevel,
+      xpToNext,
+      streak,
+      todayXp: xpOnDay(events, today),
+      weeklyXp: weeklyXpBuckets(events, WEEKLY_XP_WEEKS, today),
+      quests: this.quests(today),
     };
+  }
+
+  /** Today's mission items surfaced as quests with XP rewards attached. */
+  private quests(today: string): Quest[] {
+    return this.store.missionItems(today).map((item) => {
+      const task = item.taskId ? this.store.getTask(item.taskId) : undefined;
+      return {
+        id: item.id,
+        label: item.label,
+        kind: item.kind,
+        done: item.done,
+        xp: xpForMissionItem(item, task),
+      };
+    });
   }
 
   weeks(): LearningWeek[] {
@@ -292,6 +382,22 @@ export class LearningEngine {
 }
 
 /* ------------------------------- helpers -------------------------------- */
+
+/** A plan week is complete when every one of its days is fully done. */
+function countCompleteWeeks(rows: DayProgressRow[]): number {
+  const byWeek = new Map<string, { days: number; complete: boolean }>();
+  for (const r of rows) {
+    const key = `${r.phase}-${r.week}`;
+    const dayDone = r.taskCount > 0 && r.doneCount >= r.taskCount;
+    const wk = byWeek.get(key) ?? { days: 0, complete: true };
+    wk.days += 1;
+    wk.complete = wk.complete && dayDone;
+    byWeek.set(key, wk);
+  }
+  let count = 0;
+  for (const wk of byWeek.values()) if (wk.days > 0 && wk.complete) count += 1;
+  return count;
+}
 
 /** Prefer 1 leetcode + 1 non-leetcode, then top up to 3 by plan order. */
 function pickTasks(pending: LearningTask[]): LearningTask[] {

@@ -125,34 +125,6 @@ export function parsePlan(root: unknown): ParsedPlan {
   return { days, tasks };
 }
 
-/* --------------------------------- XP ----------------------------------- */
-
-/** XP earned by completing a task (leetcode by difficulty; review 15; else 10). */
-export function xpForTask(task: {
-  kind: TaskKind;
-  difficulty?: "Easy" | "Medium" | "Hard";
-}): number {
-  if (task.kind === "leetcode") {
-    switch (task.difficulty) {
-      case "Hard":
-        return 40;
-      case "Medium":
-        return 20;
-      case "Easy":
-        return 10;
-      default:
-        return 10; // unlabelled leetcode
-    }
-  }
-  if (task.kind === "review") return 15;
-  return 10;
-}
-
-/** level = floor(sqrt(xp / 100)) + 1. */
-export function levelForXp(xp: number): number {
-  return Math.floor(Math.sqrt(Math.max(0, xp) / 100)) + 1;
-}
-
 /* ------------------------------ day state ------------------------------- */
 
 /** Plan order comparator: phase, then (global) week, then day. */
