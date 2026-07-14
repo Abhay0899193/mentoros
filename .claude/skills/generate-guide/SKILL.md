@@ -30,10 +30,13 @@ root (absolute: `/Users/singha7/Documents/abhay/3-month-challenge`).
    order). Typically 4–7 parts. For a topic input, produce just that part in
    the week folder it belongs to.
 4. **Author** into `3-month-challenge/STUDY-GUIDES/week-NN/` as
-   `NN-topic-slug.md`, each meeting every RULES.md section (recognition cues,
-   intuition + mermaid, dual-language templates with marked core, complexity
-   with the why, ONE narrated worked example, tricks/traps, interviewer
-   follow-ups with model answers, edge-case checklist, ★ ladder, self-check).
+   `NN-topic-slug.md`, each meeting every RULES.md section (prerequisites,
+   recognition cues, intuition + mermaid, dual-language templates with marked
+   core, complexity with the why, ONE narrated worked example, tricks/traps,
+   interviewer follow-ups with model answers, edge-case checklist, ★ ladder,
+   self-check). Prerequisites are REAL-WORLD concepts with a self-test phrase
+   each — never "read week N"; link a sibling part only when it genuinely
+   covers the concept.
    Frontmatter: `{title, weeks: [N], topics: ["area/slug"], part: NN,
    outcomes: [...]}` — MentorOS's importer turns these into week links,
    Knowledge collections, and part ordering, so get them exactly right.

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { MoreHorizontal, Trash2, Circle, CheckCircle2, Check } from 'lucide-react';
 import { spring, dur } from '../../../motion/springs';
@@ -15,12 +15,30 @@ export function SourceCard({ source }: { source: KbSource }) {
   const setRead = useKb((s) => s.setRead);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const unread = source.readAt === null;
 
   function closeMenu() {
     setMenuOpen(false);
     setConfirming(false);
   }
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeMenu();
+    // Document-level, not a fixed backdrop: the card animates in via riseIn, and
+    // an ancestor transform turns position:fixed into card-relative — the invisible
+    // backdrop then sits over the card eating clicks instead of covering the page.
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) closeMenu();
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [menuOpen]);
 
   return (
     <Card
@@ -60,7 +78,7 @@ export function SourceCard({ source }: { source: KbSource }) {
           >
             {unread ? <CheckCircle2 size={16} strokeWidth={1.5} /> : <Circle size={16} strokeWidth={1.5} />}
           </button>
-          <div className="relative">
+          <div className="relative" ref={menuRef}>
           <button
             aria-label={`Actions for ${source.title}`}
             onClick={() => setMenuOpen((o) => !o)}
@@ -70,8 +88,6 @@ export function SourceCard({ source }: { source: KbSource }) {
           </button>
           <AnimatePresence>
             {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={closeMenu} />
                 <motion.div
                   initial={{ opacity: 0, y: 4, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -110,7 +126,6 @@ export function SourceCard({ source }: { source: KbSource }) {
                     </div>
                   )}
                 </motion.div>
-              </>
             )}
           </AnimatePresence>
           </div>

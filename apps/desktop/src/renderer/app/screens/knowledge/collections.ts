@@ -52,6 +52,27 @@ export function partNumber(tags: string[]): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Study-flow order: week asc → part asc → title. Sources without week/part
+ * tags sink below tagged ones, alphabetically — so guides read as a course
+ * (Week 1 part 0…N, Week 2 …) instead of import order.
+ */
+export function sourceFlowCompare(a: KbSource, b: KbSource): number {
+  const aWeeks = weekNumbers(a.tags);
+  const bWeeks = weekNumbers(b.tags);
+  const aWeek = aWeeks.length > 0 ? Math.min(...aWeeks) : Number.POSITIVE_INFINITY;
+  const bWeek = bWeeks.length > 0 ? Math.min(...bWeeks) : Number.POSITIVE_INFINITY;
+  if (aWeek !== bWeek) return aWeek - bWeek;
+  const aPart = partNumber(a.tags) ?? Number.POSITIVE_INFINITY;
+  const bPart = partNumber(b.tags) ?? Number.POSITIVE_INFINITY;
+  if (aPart !== bPart) return aPart - bPart;
+  return a.title.localeCompare(b.title);
+}
+
+function flowSorted(sources: KbSource[]): KbSource[] {
+  return [...sources].sort(sourceFlowCompare);
+}
+
 function dedupeById(sources: KbSource[]): KbSource[] {
   const seen = new Set<string>();
   const out: KbSource[] = [];
@@ -82,7 +103,7 @@ export function buildCollections(sources: KbSource[]): CollectionNode[] {
   }
   const weekNodes: CollectionNode[] = [...weekMap.entries()]
     .sort(([a], [b]) => a - b)
-    .map(([week, srcs]) => ({ id: `week:${week}`, label: `Week ${week}`, sources: srcs }));
+    .map(([week, srcs]) => ({ id: `week:${week}`, label: `Week ${week}`, sources: flowSorted(srcs) }));
 
   // Topics: any origin, grouped by the tag's area prefix (`dsa/two-pointers` → DSA).
   const topicMap = new Map<string, KbSource[]>();
@@ -99,7 +120,7 @@ export function buildCollections(sources: KbSource[]): CollectionNode[] {
     const area = slashIdx === -1 ? topic : topic.slice(0, slashIdx);
     const slug = slashIdx === -1 ? topic : topic.slice(slashIdx + 1);
     const children = areaChildren.get(area) ?? [];
-    children.push({ id: `topic:${topic}`, label: labelizeTopic(slug), sources: srcs });
+    children.push({ id: `topic:${topic}`, label: labelizeTopic(slug), sources: flowSorted(srcs) });
     areaChildren.set(area, children);
   }
   const topicNodes: CollectionNode[] = [...areaChildren.entries()]
@@ -108,27 +129,27 @@ export function buildCollections(sources: KbSource[]): CollectionNode[] {
       return {
         id: `topics:${area}`,
         label: labelizeArea(area),
-        sources: dedupeById(sortedChildren.flatMap((c) => c.sources)),
+        sources: flowSorted(dedupeById(sortedChildren.flatMap((c) => c.sources))),
         children: sortedChildren,
       };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
-  const skillSheets = sources.filter((s) => s.tags.includes('quick-review'));
-  const other = sources.filter((s) => !s.tags.includes('3mc'));
+  const skillSheets = flowSorted(sources.filter((s) => s.tags.includes('quick-review')));
+  const other = flowSorted(sources.filter((s) => !s.tags.includes('3mc')));
 
   return [
-    { id: 'all', label: 'All', sources },
+    { id: 'all', label: 'All', sources: flowSorted(sources) },
     {
       id: 'weekly',
       label: 'Weekly guides',
-      sources: dedupeById(weekNodes.flatMap((n) => n.sources)),
+      sources: flowSorted(dedupeById(weekNodes.flatMap((n) => n.sources))),
       children: weekNodes,
     },
     {
       id: 'topics',
       label: 'Topics',
-      sources: dedupeById(topicNodes.flatMap((n) => n.sources)),
+      sources: flowSorted(dedupeById(topicNodes.flatMap((n) => n.sources))),
       children: topicNodes,
     },
     { id: 'skill-sheets', label: 'Skill sheets', sources: skillSheets },
