@@ -60,6 +60,14 @@ export class KbEngine {
     return this.store.getSource(id);
   }
 
+  /** Mark a source read/unread. Returns the updated source; undefined = unknown id. */
+  setSourceRead(id: string, read: boolean): KbSource | undefined {
+    if (!this.store.getSource(id)) return undefined;
+    this.store.setSourceRead(id, read ? new Date().toISOString() : null);
+    this.broadcast("kb.updated", { sources: this.store.listSources() });
+    return this.store.getSource(id);
+  }
+
   suggestions(): KbSuggestedSource[] {
     return suggestSources(this.store);
   }

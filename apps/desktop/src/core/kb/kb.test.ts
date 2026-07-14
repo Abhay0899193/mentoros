@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { Embedder } from "../memory/embeddings.js";
 import { chunkText, OVERLAP_CHARS } from "./chunker.js";
+import { KbEngine } from "./engine.js";
 import { fuse, hybridSearch, makeSnippet } from "./search.js";
 import { ingestSource } from "./ingest.js";
 import { sourceIdForPath } from "./paths.js";
@@ -35,7 +36,12 @@ class FakeKbStore implements IKbStore {
       chunkCount: ex?.chunkCount ?? 0,
       fileCount: ex?.fileCount ?? 0,
       indexedAt: ex?.indexedAt ?? new Date().toISOString(),
+      readAt: ex?.readAt ?? null,
     });
+  }
+  setSourceRead(id: string, readAt: string | null): void {
+    const s = this.sources.get(id);
+    if (s) s.readAt = readAt;
   }
   getSource(id: string): KbSource | undefined {
     return this.sources.get(id);
@@ -247,4 +253,27 @@ test("ingest + search: FTS-only fallback when embeddings are unavailable", async
   const hits = await hybridSearch("distinctivetoken", {}, { store, vectors, embed: offlineEmbed });
   assert.ok(hits.length >= 1, "FTS still returns results");
   assert.equal(hits[0].matched, "fts", "degraded hits are marked fts");
+});
+
+/* ---------------------------- read state ----------------------------- */
+
+test("read state: toggle round-trips, broadcasts, survives re-upsert; unknown id undefined", () => {
+  const store = new FakeKbStore();
+  const vectors = new FakeKbVectorIndex();
+  const events: string[] = [];
+  const engine = new KbEngine(store, vectors, (event) => events.push(event), offlineEmbed);
+  store.upsertSource({ id: "src-1", kind: "md", title: "Guide", path: "/g.md", tags: ["3mc"] });
+
+  const marked = engine.setSourceRead("src-1", true);
+  assert.ok(marked?.readAt, "readAt set to a timestamp");
+  assert.ok(!Number.isNaN(Date.parse(marked!.readAt!)), "readAt is ISO");
+  assert.ok(events.includes("kb.updated"), "kb.updated broadcast on change");
+
+  // Re-ingest upserts the source row — read state must survive (user data).
+  store.upsertSource({ id: "src-1", kind: "md", title: "Guide v2", path: "/g.md", tags: ["3mc"] });
+  assert.ok(store.getSource("src-1")?.readAt, "readAt preserved across re-upsert");
+
+  const cleared = engine.setSourceRead("src-1", false);
+  assert.equal(cleared?.readAt, null, "unread clears the marker");
+  assert.equal(engine.setSourceRead("nope", true), undefined, "unknown id → undefined");
 });

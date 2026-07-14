@@ -285,6 +285,8 @@ export interface KbSource {
   fileCount: number;
   indexedAt: string; // ISO
   tags: string[];
+  /** When the user marked it read (ISO); null = unread. */
+  readAt: string | null;
 }
 
 /**

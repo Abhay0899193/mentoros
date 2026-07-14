@@ -326,6 +326,8 @@ export interface KbSource {
   fileCount: number;
   indexedAt: string; // ISO
   tags: string[];
+  /** When the user marked it read (ISO); null = unread. */
+  readAt: string | null;
 }
 
 /**
@@ -1399,6 +1401,8 @@ export interface CoreClient {
   ingestKbSource(path: string, opts?: { title?: string; tags?: string[] }): Promise<{ sourceId: string }>;
   /** Removes the source and all its chunks from both indexes. */
   deleteKbSource(id: string): Promise<void>;
+  /** Mark a source read/unread; read state syncs across every collection view. */
+  setKbSourceRead(id: string, read: boolean): Promise<KbSource>;
   /** Hybrid FTS5+vector search over all indexed chunks (RRF-fused). */
   hybridSearch(query: string, opts?: { k?: number; sourceIds?: string[] }): Promise<KbSearchHit[]>;
   /** Sources MentorOS proactively offers to index (interview-prep playbooks…). */
@@ -1838,6 +1842,14 @@ export function createCoreClient(): CoreClient {
       fetch(`${baseUrl}/kb/sources/${id}`, { method: 'DELETE' }).then((r) => {
         if (!r.ok) throw new Error(`core request failed: ${r.status}`);
       }),
+    setKbSourceRead: (id, read) =>
+      fetch(`${baseUrl}/kb/sources/${id}/read`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ read }),
+      })
+        .then((r) => json<{ source: KbSource }>(r))
+        .then((r) => r.source),
     hybridSearch: (query, opts) => post<KbSearchHit[]>('/kb/search', { query, ...opts }),
     kbSuggestions: () => get<KbSuggestedSource[]>('/kb/suggestions'),
     kbSourceText: (id, filePath) =>

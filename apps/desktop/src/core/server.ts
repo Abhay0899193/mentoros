@@ -267,6 +267,16 @@ function buildServer(startedAt: number, dataDir: string, rendererDir: string): B
           await kb.engine.runIngest(prepared);
           return prepared.sourceId;
         },
+        // Prune surface: 3mc-tagged sources whose backing file vanished (e.g.
+        // a monolith guide replaced by a per-topic split) get dropped.
+        listDocSources: async () =>
+          kb.engine
+            .listSources()
+            .filter((s) => s.tags.includes("3mc"))
+            .map((s) => ({ id: s.id, path: s.path ?? null })),
+        deleteDocSource: async (id) => {
+          kb.engine.deleteSource(id);
+        },
       }),
     // Persist the source fingerprint after a clean 3mc import so boot auto-sync
     // (below) can tell when the on-disk plan has drifted. Best-effort.

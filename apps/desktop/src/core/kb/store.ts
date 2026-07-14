@@ -62,6 +62,8 @@ export interface IKbStore {
   clearChunks(sourceId: string): void;
   insertChunk(sourceId: string, chunk: KbChunkInput): void;
   setSourceStats(id: string, stats: SourceStats): void;
+  /** Set or clear the read marker (ISO timestamp, null = unread). */
+  setSourceRead(id: string, readAt: string | null): void;
   /** FTS5 MATCH, best-first, returning chunk ids only. Query is sanitized here. */
   ftsSearch(query: string, limit: number, sourceIds?: string[]): string[];
   getChunk(chunkId: string): KbChunkMeta | undefined;
@@ -103,6 +105,12 @@ export function migrateKb(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_kb_chunk_vectors_source
       ON kb_chunk_vectors(source_id);
   `);
+  // Additive migration: per-source read marker (null = unread). Not part of the
+  // upsert's ON CONFLICT update, so re-ingesting a source preserves read state.
+  const cols = db.prepare(`PRAGMA table_info(kb_sources)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "read_at")) {
+    db.exec(`ALTER TABLE kb_sources ADD COLUMN read_at TEXT`);
+  }
 }
 
 /**
@@ -141,6 +149,7 @@ interface SourceRow {
   file_count: number;
   chunk_count: number;
   indexed_at: string;
+  read_at: string | null;
 }
 
 function rowToSource(row: SourceRow): KbSource {
@@ -153,6 +162,7 @@ function rowToSource(row: SourceRow): KbSource {
     fileCount: row.file_count,
     chunkCount: row.chunk_count,
     indexedAt: row.indexed_at,
+    readAt: row.read_at ?? null,
   };
 }
 
@@ -232,6 +242,10 @@ export class KbStore implements IKbStore {
          WHERE id = ?`,
       )
       .run(stats.fileCount, stats.chunkCount, stats.indexedAt, id);
+  }
+
+  setSourceRead(id: string, readAt: string | null): void {
+    this.db.prepare(`UPDATE kb_sources SET read_at = ? WHERE id = ?`).run(readAt, id);
   }
 
   ftsSearch(query: string, limit: number, sourceIds?: string[]): string[] {

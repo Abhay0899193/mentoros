@@ -45,6 +45,18 @@ export function registerKbRoutes(
     return reply.code(204).send();
   });
 
+  app.patch<{ Params: { id: string }; Body: { read?: boolean } }>(
+    "/kb/sources/:id/read",
+    async (req, reply) => {
+      if (typeof req.body?.read !== "boolean") {
+        return reply.code(400).send({ error: "read (boolean) is required" });
+      }
+      const source = engine.setSourceRead(req.params.id, req.body.read);
+      if (!source) return reply.code(404).send({ error: "source not found" });
+      return { source };
+    },
+  );
+
   app.post<{ Params: { id: string } }>(
     "/kb/sources/:id/open",
     async (req, reply) => {
