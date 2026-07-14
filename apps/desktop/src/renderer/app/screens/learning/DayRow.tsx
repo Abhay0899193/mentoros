@@ -3,9 +3,9 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { BookOpen, Check, ChevronRight } from 'lucide-react';
 import { spring, dur } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
-import { Chip } from '../../../ui';
 import type { LearningDay, LearningTask } from '../../../lib/coreClient';
 import { ReadingMarkdown } from '../knowledge/ReadingMarkdown';
+import { TaskRow } from './TaskRow';
 
 /** Node state dot (§4.6): available=hairline circle · current=aurora pulse · done=aurora check. */
 function StateDot({ state }: { state: LearningDay['state'] }) {
@@ -31,39 +31,6 @@ function StateDot({ state }: { state: LearningDay['state'] }) {
     );
   }
   return <span className="size-5 shrink-0 rounded-full hairline-strong" />;
-}
-
-function TaskRow({ task, onToggle }: { task: LearningTask; onToggle: (done: boolean) => void }) {
-  const reduce = useReducedMotion();
-  const difficultyTone =
-    task.difficulty === 'Easy' ? 'success' : task.difficulty === 'Medium' ? 'warning' : 'danger';
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => onToggle(!task.done)}
-        className="tap-target group flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left hover:bg-surface-2"
-      >
-        {/* particle burst: Phase 7 polish */}
-        <motion.span
-          whileTap={reduce ? undefined : { scale: 0.85 }}
-          transition={spring.snappy}
-          className={cn(
-            'flex size-4 shrink-0 items-center justify-center rounded-full border',
-            task.done ? 'border-transparent aurora-bg' : 'border-line-strong',
-          )}
-        >
-          {task.done && <Check size={10} strokeWidth={2.5} className="text-white" />}
-        </motion.span>
-        <span className={cn('min-w-0 flex-1 truncate text-small', task.done ? 'text-faint line-through' : 'text-ink')}>
-          {task.title}
-        </span>
-        {task.difficulty && <Chip tone={difficultyTone}>{task.difficulty}</Chip>}
-        <span className="shrink-0 text-[11px] tracking-[0.02em] text-faint uppercase">{task.kind}</span>
-      </button>
-    </li>
-  );
 }
 
 export function DayRow({

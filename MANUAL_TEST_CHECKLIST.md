@@ -236,3 +236,32 @@ add-expression is gated on the z-image-turbo toolchain even though it edits via 
       weeks: [1]) and still deep-link into the reading view.
 - [ ] `/generate-guide week 2` in Claude Code writes rule-conformant parts into
       `STUDY-GUIDES/week-02/`; next app launch auto-imports them under Week 2.
+
+## 14 · Gamification + Learning redesign (Phases D+E)
+
+- [ ] Learning header: level ring fills by XP-into-level with "N / M XP" beside it and a
+      flame pill showing the current streak. Your XP/level will have JUMPED once vs the
+      old screen (bonuses + doc-read XP now count — cosmetic, derived, no data changed).
+- [ ] Path tab (default): NO task rows anywhere — a Continue hero card ("Phase · Week ·
+      Day · Next: <task> · +XP") plus phase sections of week tiles (progress ring, focus
+      line, done/total; the current week glows with a ▶ in its ring).
+- [ ] Click Continue → drills into the current week with today's day expanded; click any
+      other tile → that week's page. Back link ("All weeks") returns to the grid; the
+      overview ↔ week transition slides on a spring.
+- [ ] Week page: "After this week: <focus>" line; "Guides & quick review" chips show a
+      READ tick (iris check) vs unread dot, matching Knowledge's read state; clicking one
+      opens the reading view. Day rows expand to task rows v2: kind icon, difficulty
+      chip, +XP badge, hover/touch ↗ opens LeetCode/video links externally (does NOT
+      toggle done).
+- [ ] Complete a task → success toast "+N XP · M XP to Level L" (bonus completions say
+      "Perfect day!"/"Week complete!" and the +N includes the bonus). Un-completing shows
+      no toast. Task list, week tile ring, and header ring all update.
+- [ ] Cross a level boundary (complete a big task near the ring's top) → full-screen
+      level-up moment instead of a toast; Escape/click/Continue dismisses.
+- [ ] Stats tab: activity heatmap + "+N XP today", weekly XP column chart (hover a bar →
+      tooltip; current week direct-labeled), Today's quests (mission items with +XP, or
+      a hint if no mission yet), badges grid (earned lit, unearned dimmed), review queue
+      when items are due.
+- [ ] Phone width (~390px): week grid 2-up, tabs/tiles/chips all tappable, no horizontal
+      scroll; dark AND light themes hold the surface ladder (chrome monochrome, color
+      only on rings/XP/state).
