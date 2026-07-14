@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { MoreHorizontal, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Trash2, Circle, CheckCircle2, Check } from 'lucide-react';
 import { spring, dur } from '../../../motion/springs';
 import { useKb } from '../../../lib/kbStore';
 import type { KbSource } from '../../../lib/coreClient';
@@ -12,8 +12,10 @@ import { KIND_LABEL } from './kbMeta';
 export function SourceCard({ source }: { source: KbSource }) {
   const openReading = useKb((s) => s.openReading);
   const remove = useKb((s) => s.remove);
+  const setRead = useKb((s) => s.setRead);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const unread = source.readAt === null;
 
   function closeMenu() {
     setMenuOpen(false);
@@ -31,12 +33,34 @@ export function SourceCard({ source }: { source: KbSource }) {
         <div className="flex min-w-0 items-center gap-3">
           <KindGlyph kind={source.kind} />
           <div className="min-w-0">
-            <h3 className="truncate text-h3 text-ink">{source.title}</h3>
+            <div className="flex min-w-0 items-center gap-1.5">
+              {unread ? (
+                <span className="size-1.5 shrink-0 rounded-full bg-iris" aria-hidden />
+              ) : (
+                <Check size={10} strokeWidth={2} className="shrink-0 text-faint" aria-hidden />
+              )}
+              <h3
+                className={
+                  unread ? 'truncate text-h3 text-ink' : 'truncate text-h3 font-normal text-muted'
+                }
+              >
+                {source.title}
+              </h3>
+            </div>
             <span className="text-[12px] text-faint">{KIND_LABEL[source.kind]}</span>
           </div>
         </div>
 
-        <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <button
+            aria-label={unread ? `Mark "${source.title}" as read` : `Mark "${source.title}" as unread`}
+            title={unread ? 'Mark read' : 'Mark unread'}
+            onClick={() => void setRead(source.id, unread)}
+            className="tap-target rounded-[6px] p-1 text-faint opacity-0 coarse:opacity-100 group-hover:opacity-100 hover:bg-surface-3 hover:text-body focus-visible:opacity-100"
+          >
+            {unread ? <CheckCircle2 size={16} strokeWidth={1.5} /> : <Circle size={16} strokeWidth={1.5} />}
+          </button>
+          <div className="relative">
           <button
             aria-label={`Actions for ${source.title}`}
             onClick={() => setMenuOpen((o) => !o)}
@@ -89,6 +113,7 @@ export function SourceCard({ source }: { source: KbSource }) {
               </>
             )}
           </AnimatePresence>
+          </div>
         </div>
       </div>
 

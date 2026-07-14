@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ArrowLeft, ExternalLink, FileWarning } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Circle, Check, ExternalLink, FileWarning } from 'lucide-react';
 import { coreClient } from '../../../lib/coreClient';
 import { useKb } from '../../../lib/kbStore';
 import { Button, Chip } from '../../../ui';
@@ -7,6 +7,7 @@ import { RichText } from '../chat/RichText';
 import { KindGlyph } from './KindGlyph';
 import { KIND_LABEL } from './kbMeta';
 import { ReadingMarkdown } from './ReadingMarkdown';
+import { buildCollections, findCollection, partNumber, weekNumbers } from './collections';
 
 /** Resolves a relative markdown link (./foo.md, ../x/bar.md) against the directory of the currently open file. */
 function resolveRelativePath(baseFile: string, rel: string): string {
@@ -38,6 +39,33 @@ export function ReadingView() {
   const readingFile = useKb((s) => s.readingFile);
   const closeReading = useKb((s) => s.closeReading);
   const openReading = useKb((s) => s.openReading);
+  const sources = useKb((s) => s.sources);
+  const selectedCollectionId = useKb((s) => s.selectedCollectionId);
+  const setRead = useKb((s) => s.setRead);
+
+  const source = sources.find((x) => x.id === readingId) ?? null;
+  const collections = useMemo(() => buildCollections(sources), [sources]);
+  const currentCollection =
+    selectedCollectionId !== 'all' ? findCollection(collections, selectedCollectionId) : null;
+
+  const siblingParts = useMemo(() => {
+    if (!source) return [];
+    const weeks = weekNumbers(source.tags);
+    const part = partNumber(source.tags);
+    if (weeks.length === 0 || part === null) return [];
+    return sources
+      .filter(
+        (s) =>
+          s.tags.includes('study-guide') &&
+          partNumber(s.tags) !== null &&
+          weekNumbers(s.tags).some((w) => weeks.includes(w)),
+      )
+      .sort((a, b) => (partNumber(a.tags) ?? 0) - (partNumber(b.tags) ?? 0));
+  }, [sources, source]);
+  const siblingIdx = source ? siblingParts.findIndex((s) => s.id === source.id) : -1;
+  const prevPart = siblingIdx > 0 ? siblingParts[siblingIdx - 1] : null;
+  const nextPart =
+    siblingIdx >= 0 && siblingIdx < siblingParts.length - 1 ? siblingParts[siblingIdx + 1] : null;
 
   const [content, setContent] = useState<ReadingContent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -92,20 +120,45 @@ export function ReadingView() {
         {content && (
           <>
             <span className="hidden text-faint sm:inline">/</span>
+            {currentCollection && (
+              <>
+                <span className="hidden max-w-[140px] truncate text-small text-muted sm:inline">
+                  {currentCollection.label}
+                </span>
+                <span className="hidden text-faint sm:inline">/</span>
+              </>
+            )}
             <KindGlyph kind={content.kind} size="sm" />
             <h1 className="min-w-0 flex-1 truncate text-h3 text-ink">{content.title}</h1>
             <Chip>{KIND_LABEL[content.kind]}</Chip>
-            {content.kind === 'pdf' && (
-              <Button
-                size="sm"
-                variant="secondary"
-                icon={<ExternalLink size={14} strokeWidth={1.5} />}
-                className="ml-auto"
-                onClick={() => void coreClient.openKbSource(readingId)}
-              >
-                Open in Finder
-              </Button>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {source && (
+                <Button
+                  size="sm"
+                  variant={source.readAt ? 'ghost' : 'secondary'}
+                  icon={
+                    source.readAt ? (
+                      <Check size={14} strokeWidth={1.5} />
+                    ) : (
+                      <Circle size={14} strokeWidth={1.5} />
+                    )
+                  }
+                  onClick={() => void setRead(readingId, !source.readAt)}
+                >
+                  {source.readAt ? 'Read ✓' : 'Mark read'}
+                </Button>
+              )}
+              {content.kind === 'pdf' && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={<ExternalLink size={14} strokeWidth={1.5} />}
+                  onClick={() => void coreClient.openKbSource(readingId)}
+                >
+                  Open in Finder
+                </Button>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -155,6 +208,33 @@ export function ReadingView() {
                   <ReadingMarkdown text={content.text} onOpenRelative={handleOpenRelative} />
                 ) : (
                   <RichText text={content.text} />
+                )}
+
+                {(prevPart || nextPart) && (
+                  <div className="mt-8 flex items-center justify-between gap-3 border-t border-line pt-4">
+                    {prevPart ? (
+                      <button
+                        onClick={() => openReading(prevPart.id)}
+                        className="tap-target flex min-w-0 items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-left text-small text-muted hover:bg-surface-2 hover:text-ink"
+                      >
+                        <ChevronLeft size={14} strokeWidth={1.5} className="shrink-0" />
+                        <span className="truncate">Previous part · {prevPart.title}</span>
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    {nextPart ? (
+                      <button
+                        onClick={() => openReading(nextPart.id)}
+                        className="tap-target flex min-w-0 items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-right text-small text-muted hover:bg-surface-2 hover:text-ink"
+                      >
+                        <span className="truncate">Next part · {nextPart.title}</span>
+                        <ChevronRight size={14} strokeWidth={1.5} className="shrink-0" />
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
                 )}
               </div>
             ) : (

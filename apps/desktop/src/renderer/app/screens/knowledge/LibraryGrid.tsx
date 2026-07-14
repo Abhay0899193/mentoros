@@ -1,10 +1,13 @@
+import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Sparkles, Library } from 'lucide-react';
+import { Sparkles, Library, LayoutGrid } from 'lucide-react';
 import { riseIn, staggerChildren, reduced } from '../../../motion/springs';
 import { useKb } from '../../../lib/kbStore';
 import { Button, Card } from '../../../ui';
 import { SourceCard } from './SourceCard';
 import { SuggestionCard } from './SuggestionCard';
+import { CollectionsNav } from './CollectionsNav';
+import { buildCollections, findCollection } from './collections';
 
 function SkeletonCard() {
   return (
@@ -28,7 +31,13 @@ export function LibraryGrid() {
   const loading = useKb((s) => s.loading);
   const ingest = useKb((s) => s.ingest);
   const setAddOpen = useKb((s) => s.setAddOpen);
+  const selectedCollectionId = useKb((s) => s.selectedCollectionId);
+  const setSelectedCollection = useKb((s) => s.setSelectedCollection);
   const reduce = useReducedMotion();
+
+  const collections = useMemo(() => buildCollections(sources), [sources]);
+  const activeCollection = findCollection(collections, selectedCollectionId) ?? collections[0];
+  const visibleSources = activeCollection.sources;
 
   if (loading) {
     return (
@@ -41,6 +50,7 @@ export function LibraryGrid() {
   }
 
   const empty = sources.length === 0;
+  const collectionEmpty = !empty && visibleSources.length === 0;
 
   return (
     <div className="flex flex-col gap-6 pt-6 pb-4">
@@ -87,18 +97,44 @@ export function LibraryGrid() {
           </Card>
         </motion.div>
       ) : (
-        <motion.div
-          variants={reduced(reduce, staggerChildren)}
-          initial="hidden"
-          animate="visible"
-          className="grid grid-cols-1 gap-4 @xl:grid-cols-2 @4xl:grid-cols-3"
-        >
-          {sources.map((s) => (
-            <motion.div key={s.id} variants={reduced(reduce, riseIn)}>
-              <SourceCard source={s} />
-            </motion.div>
-          ))}
-        </motion.div>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+          <CollectionsNav collections={collections} />
+
+          <div className="min-w-0 flex-1">
+            {collectionEmpty ? (
+              <motion.div variants={reduced(reduce, riseIn)} initial="hidden" animate="visible">
+                <Card padding="feature" className="flex flex-col items-center gap-4 py-14 text-center">
+                  <div className="flex size-12 items-center justify-center rounded-[10px] bg-surface-2 hairline">
+                    <LayoutGrid size={22} strokeWidth={1.5} className="text-muted" />
+                  </div>
+                  <div>
+                    <h2 className="text-h3 text-ink">Nothing in “{activeCollection.label}” yet</h2>
+                    <p className="mx-auto mt-1 max-w-sm text-small text-muted">
+                      Sources land here once they're tagged for this collection.
+                    </p>
+                  </div>
+                  <Button size="sm" onClick={() => setSelectedCollection('all')}>
+                    View all sources
+                  </Button>
+                </Card>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={activeCollection.id}
+                variants={reduced(reduce, staggerChildren)}
+                initial="hidden"
+                animate="visible"
+                className="grid grid-cols-1 gap-4 @xl:grid-cols-2 @4xl:grid-cols-3"
+              >
+                {visibleSources.map((s) => (
+                  <motion.div key={s.id} variants={reduced(reduce, riseIn)}>
+                    <SourceCard source={s} />
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

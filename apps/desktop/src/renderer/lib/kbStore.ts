@@ -39,6 +39,9 @@ interface KbState {
   readingId: string | null;
   readingFile: string | null;
 
+  /** Collections nav selection (§Phase C) — shared by LibraryGrid + ReadingView's breadcrumb. */
+  selectedCollectionId: string;
+
   addOpen: boolean;
   setAddOpen: (open: boolean) => void;
 
@@ -50,6 +53,8 @@ interface KbState {
   runSearch: (q: string) => Promise<void>;
   openReading: (id: string, filePath?: string | null) => void;
   closeReading: () => void;
+  setSelectedCollection: (id: string) => void;
+  setRead: (id: string, read: boolean) => Promise<void>;
 }
 
 let initialized = false;
@@ -117,6 +122,8 @@ export const useKb = create<KbState>((set, get) => ({
 
   readingId: null,
   readingFile: null,
+
+  selectedCollectionId: 'all',
 
   addOpen: false,
   setAddOpen: (addOpen) => set({ addOpen }),
@@ -222,4 +229,25 @@ export const useKb = create<KbState>((set, get) => ({
 
   openReading: (id, filePath = null) => set({ readingId: id, readingFile: filePath }),
   closeReading: () => set({ readingId: null, readingFile: null }),
+  setSelectedCollection: (selectedCollectionId) => set({ selectedCollectionId }),
+
+  setRead: async (id, read) => {
+    const prevSources = get().sources;
+    const now = new Date().toISOString();
+    set({
+      sources: prevSources.map((s) => (s.id === id ? { ...s, readAt: read ? now : null } : s)),
+    });
+    try {
+      const updated = await coreClient.setKbSourceRead(id, read);
+      set((s) => ({ sources: s.sources.map((x) => (x.id === id ? updated : x)) }));
+    } catch {
+      set({ sources: prevSources });
+      toast({
+        tone: 'danger',
+        title: read ? 'Could not mark as read' : 'Could not mark as unread',
+        description: 'The knowledge base service did not respond.',
+        action: { label: 'Retry', onClick: () => void get().setRead(id, read) },
+      });
+    }
+  },
 }));
