@@ -214,3 +214,25 @@ add-expression is gated on the z-image-turbo toolchain even though it edits via 
       change is reflected (new/edited guides appear in Knowledge + week chips update).
 - [ ] Relaunch again with NO 3mc changes → no import runs (digest unchanged, boot stays
       quiet).
+
+## 13 · Study-guide split + mermaid + Knowledge collections (Phases B+C)
+
+- [ ] Launch the app (auto-sync fires — the week-1 guide split changed the digest) →
+      Knowledge shows six "week-01" parts (Overview, Two Pointers, Sliding Window,
+      Kadane, Hash Maps, Docker); the old monolith "Week 1 Guide" card is GONE (pruned).
+- [ ] Open the Week 1 Overview part → the decision map renders as a themed mermaid SVG
+      (not ASCII); toggle light theme while it's open → diagram re-themes. The pointer
+      traces in Two Pointers stay ASCII on purpose.
+- [ ] Break a diagram (edit a guide's mermaid block to garbage, resync) → the block
+      falls back to a plain code block, page still renders. (Optional; revert after.)
+- [ ] Knowledge left rail (≥lg) / chips row (phone): All · Weekly guides → Week 1 ·
+      Topics → DSA/… · Skill sheets · Other, each with an unread count.
+- [ ] The SAME part (e.g. Two Pointers) appears under Weekly guides → Week 1 AND under
+      Topics → DSA → Two pointers; mark it read in one place → read dot + unread counts
+      update in BOTH, and survive an app relaunch + a plan re-sync.
+- [ ] Open a week-01 part in the reading view → breadcrumb shows the collection, corner
+      "Mark read" toggles, prev/next part buttons walk 00 → 05 in order.
+- [ ] Learning week 1 "Quick review" chips now include the six parts (frontmatter
+      weeks: [1]) and still deep-link into the reading view.
+- [ ] `/generate-guide week 2` in Claude Code writes rule-conformant parts into
+      `STUDY-GUIDES/week-02/`; next app launch auto-imports them under Week 2.

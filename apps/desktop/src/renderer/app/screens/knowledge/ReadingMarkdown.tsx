@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import { CodeBlock } from '../chat/CodeBlock';
+import { MermaidDiagram } from './MermaidDiagram';
 
 /**
  * Static markdown renderer for the KB reading surface. Unlike `chat/RichText`
@@ -361,7 +362,11 @@ function Blocks({ blocks, onOpenRelative }: { blocks: Block[]; onOpenRelative?: 
               </p>
             );
           case 'code':
-            return <CodeBlock key={i} code={b.code} lang={b.lang} />;
+            return b.lang === 'mermaid' ? (
+              <MermaidDiagram key={i} code={b.code} />
+            ) : (
+              <CodeBlock key={i} code={b.code} lang={b.lang} />
+            );
           case 'quote':
             return (
               <blockquote key={i} className="my-3 border-l-2 border-line-strong pl-4 text-body text-muted italic">
@@ -394,7 +399,11 @@ export function ReadingMarkdown({ text, onOpenRelative }: ReadingMarkdownProps) 
     <div className="select-text text-body">
       {parts.map((p, i) => {
         if (p.kind === 'code') {
-          return <CodeBlock key={i} code={p.content} lang={p.lang} />;
+          return p.lang === 'mermaid' ? (
+            <MermaidDiagram key={i} code={p.content} />
+          ) : (
+            <CodeBlock key={i} code={p.content} lang={p.lang} />
+          );
         }
         let blocks: Block[];
         try {

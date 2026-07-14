@@ -1,54 +1,36 @@
-# Study Guides — week deep-dives + topic mastery docs
+# Study Guides — week deep-dives + topic docs
 
-Status: **Week 1 exemplar shipped, generation feature awaiting user approval.**
+Status: **Rules + week-1 split shipped (2026-07-14). Week guides are authored
+on demand via the `/generate-guide` skill.**
 
-## What exists now (2026-07-14)
+## The canonical spec lives with the content
 
-- The 3mc importer ingests two doc folders from the challenge repo into the
-  Knowledge base and links them to Learning-path weeks via frontmatter
-  (`weeks: [1, 2]`), rendered as "Quick review" chips on each week:
-  - `SKILLS-TRACK/*.md` — the 12 original 3mc skill reference sheets
-    (Docker, PostgreSQL, Redis, Kafka, K8s, …), tag `quick-review`.
-  - `STUDY-GUIDES/*.md` — deep week/topic study guides, tag `study-guide`.
-- Exemplar: `3-month-challenge/STUDY-GUIDES/week-01-arrays-strings-two-pointers-docker.md`.
-  **This is the template** — user approves/amends its shape before more are made.
+**`3-month-challenge/STUDY-GUIDES/RULES.md`** is the single source of truth
+for what a guide part must contain (the "clears any interview on the topic"
+bar, required sections, frontmatter shape, mermaid policy, line budget). This
+file is only the app-side pointer — do not duplicate the rules here.
 
-## The exemplar's template (what every week guide contains)
+## Layout & import pipeline
 
-1. **Prerequisites banner** — what to read first, what later weeks build on
-   this ("read recursion before linked-list recursion" pointers).
-2. **The week's map** — ASCII decision tree: which technique for which cue,
-   with importance ratings (★–★★★★★).
-3. **Per-technique sections** — intuition + ASCII visualization, the reusable
-   template in **Python and Java** with the transferable core explicitly
-   marked vs the per-problem part, time/space complexity, this week's problems
-   mapped onto it, special tricks + classic traps, related problems beyond the
-   week.
-4. **Problem table** — every plan problem with technique + the one key idea,
-   plus a progressive re-solve order.
-5. **Tech-skill half** (Docker/SQL/…) — one mental-model picture, command
-   crib, gotchas, interview angle; deep content stays in the SKILLS-TRACK doc.
-6. **Self-check questions** — prove-it prompts, not recall prompts.
+- `STUDY-GUIDES/week-NN/NN-topic-slug.md` — one part per technique/topic per
+  week; `00-overview-decision-map.md` first. Exemplar: `week-01/` (6 parts).
+- `STUDY-GUIDES/custom/` — supplementary docs generated in-app (Phase G);
+  never week guides.
+- `SKILLS-TRACK/*.md` — the 12 original 3mc quick-review sheets.
+- The 3mc importer walks `STUDY-GUIDES/**/*.md` recursively (RULES.md
+  excluded), tags from frontmatter (`study-guide`, `week:N`, `topic:<slug>`,
+  `part:N`; sheets get `quick-review` + weeks), links `weeks:` to Learning
+  weeks, and prunes 3mc KB sources whose backing file vanished. Boot
+  auto-sync (digest drift) picks up newly authored guides on next launch;
+  ⌘K → "Sync learning plan" is the manual path.
+- ```mermaid fences render as Nocturne-themed SVG in the Knowledge reading
+  view (`MermaidDiagram.tsx`); a parse failure falls back to a code block.
 
-## Proposed next phase (needs approval — check-in question)
+## How guides get made (user decisions, 2026-07-14)
 
-Two ways to produce the remaining ~20 week guides + completed-topic mastery
-docs (e.g. "DSA: Arrays & Hashing — complete", "Docker — complete" once its
-weeks finish):
-
-- **Option A — in-app generation (recommended):** "Generate study guide"
-  button on a week (and on a finished topic). Core builds a rich prompt from
-  the plan data (topics, problems, day notes) + the template above, runs it
-  through the existing model router (cloud when key present, local fallback),
-  writes the markdown into the 3mc `STUDY-GUIDES/` folder, re-ingests into KB,
-  links the week. Scales to plan edits; costs the user's API key per guide
-  (~1 Opus call each); quality depends on the routed model.
-- **Option B — batch-authored by Claude Code:** author all guides in sessions
-  like the exemplar. Highest quality/consistency, no in-app feature, but ~20
-  large documents of token spend and they go stale if the plan changes.
-
-Open questions for the user at check-in:
-1. Approve/amend the Week-1 template?
-2. Option A or B (or B for near-term weeks, A as the feature)?
-3. Topic mastery docs: generate when the topic's last week completes
-   (auto-suggest) or on demand only?
+- **Week guides — `/generate-guide week N` in Claude Code, on demand.** The
+  skill (`.claude/skills/generate-guide/SKILL.md`) reads RULES.md + the plan
+  week + day notes, authors the part files, and the app auto-syncs. Quality
+  bar is Claude-Code-authored, not local-model.
+- **In-app "Generate guide" (Phase G)** produces supplementary docs into
+  `STUDY-GUIDES/custom/` via the model router — explicitly NOT week guides.
