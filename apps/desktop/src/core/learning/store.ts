@@ -83,6 +83,10 @@ export class LearningStore {
         title TEXT NOT NULL,
         PRIMARY KEY (week, source_id)
       );
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
     `);
     // Additive migration: week-level topic (focus) carried on each day row.
     try {
@@ -188,6 +192,43 @@ export class LearningStore {
          ORDER BY week, title`,
       )
       .all() as WeekDocRow[];
+  }
+
+  /**
+   * Last-import metadata for boot auto-sync. Stored as a JSON row on the shared
+   * `settings(key,value)` KV under `learning.importMeta` — same mechanism as the
+   * `keys.*` secret rows, but NOT part of the typed AppSettings (no renderer
+   * mirror). Not a "setting": it's derived import state.
+   */
+  readImportMeta(): { sourcePath: string; digest: string } | null {
+    const row = this.db
+      .prepare(`SELECT value FROM settings WHERE key = 'learning.importMeta'`)
+      .get() as { value: string } | undefined;
+    if (!row) return null;
+    try {
+      const parsed = JSON.parse(row.value) as unknown;
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        typeof (parsed as { sourcePath?: unknown }).sourcePath === "string" &&
+        typeof (parsed as { digest?: unknown }).digest === "string"
+      ) {
+        const { sourcePath, digest } = parsed as { sourcePath: string; digest: string };
+        return { sourcePath, digest };
+      }
+    } catch {
+      /* corrupt row → treat as absent */
+    }
+    return null;
+  }
+
+  writeImportMeta(meta: { sourcePath: string; digest: string }): void {
+    this.db
+      .prepare(
+        `INSERT INTO settings (key, value) VALUES ('learning.importMeta', @value)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run({ value: JSON.stringify(meta) });
   }
 
   dayNotes(dayId: string): string | null {

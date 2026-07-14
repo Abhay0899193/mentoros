@@ -4,6 +4,7 @@ import {
   CornerDownLeft,
   Moon,
   PanelLeft,
+  RefreshCw,
   Swords,
   Target,
   Settings,
@@ -13,7 +14,8 @@ import { cn } from "../../lib/cn";
 import { useShell, MODULES, DESIGN_MODULE, STUDIO_MODULE } from "../../lib/store";
 import { useTheme } from "../../theme/ThemeProvider";
 import { useInterview } from "../../lib/interviewStore";
-import { Overlay, Keycap } from "../../ui";
+import { useMemories, THREE_MC_PATH } from "../../lib/memoryStore";
+import { Overlay, Keycap, toast } from "../../ui";
 
 interface Action {
   id: string;
@@ -38,6 +40,7 @@ export function CommandPalette() {
   const { toggle: toggleTheme } = useTheme();
   const openInterviewPicker = useInterview((s) => s.openPicker);
   const openInterviewLauncher = useInterview((s) => s.openLauncher);
+  const runImport = useMemories((s) => s.runImport);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -86,6 +89,21 @@ export function CommandPalette() {
         },
       },
       {
+        id: "sync-learning-plan",
+        label: "Sync learning plan",
+        icon: RefreshCw,
+        keywords: "import reimport 3mc refresh study guides quick review plan learning",
+        run: () => {
+          void runImport("3mc", THREE_MC_PATH);
+          toast({
+            tone: "info",
+            title: "Syncing learning plan",
+            description: "Re-reading the 3-month-challenge repo — progress is preserved.",
+          });
+          setPaletteOpen(false);
+        },
+      },
+      {
         id: "toggle-theme",
         label: "Toggle theme",
         icon: Moon,
@@ -113,6 +131,7 @@ export function CommandPalette() {
       toggleTheme,
       openInterviewPicker,
       openInterviewLauncher,
+      runImport,
     ],
   );
 

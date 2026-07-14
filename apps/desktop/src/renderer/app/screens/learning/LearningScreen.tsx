@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { BookOpen, ClipboardPaste, GraduationCap, RefreshCw } from 'lucide-react';
+import { BookOpen, GraduationCap } from 'lucide-react';
 import { riseIn, staggerChildren, reduced } from '../../../motion/springs';
 import { useLearning } from '../../../lib/learningStore';
-import { useMemories, THREE_MC_PATH } from '../../../lib/memoryStore';
 import { useKb } from '../../../lib/kbStore';
 import { useShell } from '../../../lib/store';
 import { Button, Card, Chip } from '../../../ui';
@@ -11,7 +10,6 @@ import type { LearningWeek } from '../../../lib/coreClient';
 import { HeatStrip } from './HeatStrip';
 import { ReviewQueue } from './ReviewQueue';
 import { DayRow } from './DayRow';
-import { ImportProgressDialog } from './ImportProgressDialog';
 
 /** Duolingo-style day-by-day path over the imported plan (plan.md §4.6). */
 export function LearningScreen() {
@@ -29,11 +27,7 @@ export function LearningScreen() {
   const setActive = useShell((s) => s.setActive);
   const reduce = useReducedMotion();
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const runImport = useMemories((s) => s.runImport);
-  const importState = useMemories((s) => s.importState);
   const openReading = useKb((s) => s.openReading);
-  const reimporting = importState?.source === '3mc' && importState.active;
 
   function openQuickReview(sourceId: string) {
     openReading(sourceId);
@@ -79,34 +73,6 @@ export function LearningScreen() {
             Level {summary?.level ?? 1} · {(summary?.xp ?? 0).toLocaleString()} XP
           </span>
           <HeatStrip heat={heat} />
-          {imported && (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<ClipboardPaste size={14} strokeWidth={1.5} />}
-                onClick={() => setImportOpen(true)}
-              >
-                Import progress
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={reimporting}
-                icon={
-                  <RefreshCw
-                    size={14}
-                    strokeWidth={1.5}
-                    className={reimporting ? 'animate-spin' : undefined}
-                  />
-                }
-                title="Re-read the 3-month-challenge repo — refreshes study notes and quick-review docs; your progress is preserved"
-                onClick={() => void runImport('3mc', THREE_MC_PATH)}
-              >
-                {reimporting ? (importState?.step ?? 'Importing…') : 'Re-import plan'}
-              </Button>
-            </>
-          )}
         </div>
       </motion.header>
 
@@ -195,8 +161,6 @@ export function LearningScreen() {
           </motion.div>
         </>
       )}
-
-      <ImportProgressDialog open={importOpen} onClose={() => setImportOpen(false)} />
     </motion.div>
   );
 }

@@ -15,7 +15,7 @@ import type { LearningStore, WeekDocRow } from "./store.js";
 // LeetCode difficulty needed for XP). We parse every candidate that exists and
 // use the richest (most tasks), so difficulty-driven XP works while still
 // honouring the fallback semantics.
-const CANDIDATES = [
+export const CANDIDATES = [
   "study-ui/data/parsed-plan.json",
   "study-ui/public/study-plan.json",
 ];

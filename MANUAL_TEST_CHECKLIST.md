@@ -194,10 +194,23 @@ add-expression is gated on the z-image-turbo toolchain even though it edits via 
       scroll horizontally inside themselves — page body never scrolls sideways.
       (Notes appear after a re-import of the plan from Home — the notes column is
       filled by the importer.)
-- [ ] Import progress: header "Import progress" → dialog. In the browser you used for
-      the study app (localhost:3000), DevTools console → `copy(localStorage.getItem('study-progress'))`,
-      paste, Import → result line shows applied/already-done/unknown counts; done days
-      flip to aurora checks; XP/level jump; heatmap backfills on the original dates.
-- [ ] Re-run the same import → everything lands in "already done", nothing double-applies.
-- [ ] Phone width (or real iPhone via §9): dialog rises as a bottom sheet, textarea usable,
-      day rows and notes readable at 320px with no horizontal overflow.
+- [ ] ~~Import progress: header "Import progress" → dialog~~ (SUPERSEDED §12 — the paste
+      dialog and both header buttons were removed after the one-time migration; the
+      core `/learning/progress/import` endpoint still exists).
+- [ ] Phone width (or real iPhone via §9): day rows and notes readable at 320px with
+      no horizontal overflow.
+
+## 12 · Plan auto-sync + import status (Phase A of the Learning/KB overhaul)
+
+- [ ] Learning header shows ONLY "Level · XP" + heatmap — the "Import progress" and
+      "Re-import plan" buttons are gone.
+- [ ] Week rows show the "Quick review" chips (Docker + Week 1 Guide on week 1) — the
+      docs imported on 2026-07-14 07:30; a remount now always picks them up.
+- [ ] ⌘K → type "sync" → "Sync learning plan" → toast appears; if the 3mc repo changed
+      the re-import runs (idempotent — progress preserved); no permanent spinner is
+      possible anymore (status is polled every 2 s as a WS fallback).
+- [ ] Auto-sync: touch any file in the 3mc repo (e.g. `touch SKILLS-TRACK/docker.md`),
+      relaunch the app → within a few seconds a "Import complete" toast fires and the
+      change is reflected (new/edited guides appear in Knowledge + week chips update).
+- [ ] Relaunch again with NO 3mc changes → no import runs (digest unchanged, boot stays
+      quiet).

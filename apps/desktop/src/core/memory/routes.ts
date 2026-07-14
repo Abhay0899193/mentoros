@@ -28,6 +28,33 @@ interface ImportProgress {
   error?: string;
 }
 
+/**
+ * Snapshot of the most recent import job. Polled via GET /import/status as a
+ * WS-miss fallback: the renderer spinner is driven by `import.progress` events,
+ * and a dropped terminal ('done') event would otherwise strand it forever.
+ */
+interface ImportJob {
+  source: ImportSource;
+  path: string;
+  step: string;
+  created: number;
+  merged: number;
+  error?: string;
+  active: boolean;
+  done: boolean;
+  startedAt: number;
+  finishedAt?: number;
+}
+
+/** Handle returned to the server so boot auto-sync reuses the import runner. */
+export interface MemoryRoutesHandle {
+  /**
+   * Run the 3mc import through the same code path as POST /import (job record +
+   * digest persistence + graph relink). No-op when no 3mc importer is wired.
+   */
+  run3mc: (path: string) => Promise<void>;
+}
+
 /** Register the memory + import HTTP routes (mirror of coreClient §Memory). */
 export function registerMemoryRoutes(
   app: FastifyInstance,
@@ -39,9 +66,93 @@ export function registerMemoryRoutes(
       path: string,
       onProgress: (p: ImportProgress) => void,
     ) => Promise<{ created: number; merged: number }>;
+    /**
+     * Persist `{ sourcePath, digest }` after a successful 3mc import so boot
+     * auto-sync can detect out-of-date sources. Best-effort; called by the
+     * shared runner only on a clean finish.
+     */
+    persistImportMeta?: (path: string) => void;
   },
-): void {
-  const { engine, broadcast, import3mc } = deps;
+): MemoryRoutesHandle {
+  const { engine, broadcast, import3mc, persistImportMeta } = deps;
+
+  let lastImportJob: ImportJob | null = null;
+
+  const startJob = (source: ImportSource, path: string): void => {
+    lastImportJob = {
+      source,
+      path,
+      step: "starting",
+      created: 0,
+      merged: 0,
+      active: true,
+      done: false,
+      startedAt: Date.now(),
+    };
+  };
+
+  // Progressive fields only. created/merged are monotonic across a run, so keep
+  // the max (the trailing relink event reports 0/0 and must not clobber totals).
+  const updateJob = (p: ImportProgress): void => {
+    if (!lastImportJob) return;
+    lastImportJob.step = p.step;
+    if (p.created > lastImportJob.created) lastImportJob.created = p.created;
+    if (p.merged > lastImportJob.merged) lastImportJob.merged = p.merged;
+  };
+
+  const finalizeJob = (error?: string): void => {
+    if (!lastImportJob) return;
+    lastImportJob.active = false;
+    lastImportJob.done = true;
+    lastImportJob.finishedAt = Date.now();
+    if (error) lastImportJob.error = error;
+    else delete lastImportJob.error;
+  };
+
+  /**
+   * Single code path for every import (POST /import + boot auto-sync): stamp the
+   * job record, broadcast progress, relink the graph, then persist meta + mark
+   * terminal. `task` performs the actual ingest; `onSuccess` runs only on a
+   * clean finish (no captured terminal error).
+   */
+  const runImport = async (
+    source: ImportSource,
+    path: string,
+    task: (emit: (p: ImportProgress) => void) => Promise<unknown>,
+    onSuccess?: () => void,
+  ): Promise<void> => {
+    startJob(source, path);
+    let capturedError: string | undefined;
+    const emit = (p: ImportProgress): void => {
+      updateJob(p);
+      if (p.done && p.error) capturedError = p.error;
+      broadcast("import.progress", {
+        source,
+        step: p.step,
+        created: p.created,
+        merged: p.merged,
+        done: p.done,
+        ...(p.error ? { error: p.error } : {}),
+      });
+    };
+    try {
+      await task(emit);
+      runLinkPass(source);
+      if (!capturedError) onSuccess?.();
+      finalizeJob(capturedError);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      finalizeJob(msg);
+      broadcast("import.progress", {
+        source,
+        step: "import failed",
+        created: 0,
+        merged: 0,
+        done: true,
+        error: msg,
+      });
+    }
+  };
 
   /** Auto-link the graph after any import (fail-safe; never throws to caller). */
   const runLinkPass = (source: ImportSource): void => {
@@ -134,45 +245,46 @@ export function registerMemoryRoutes(
       if (abs !== home && !abs.startsWith(home + "/")) {
         return reply.code(400).send({ error: "path must be inside the home directory" });
       }
-      const emit = (p: ImportProgress) =>
-        broadcast("import.progress", {
-          source,
-          step: p.step,
-          created: p.created,
-          merged: p.merged,
-          done: p.done,
-          ...(p.error ? { error: p.error } : {}),
-        });
-      const onFailure = (err: unknown) =>
-        broadcast("import.progress", {
-          source,
-          step: "import failed",
-          created: 0,
-          merged: 0,
-          done: true,
-          error: err instanceof Error ? err.message : String(err),
-        });
-
       if (source === "3mc") {
         if (!import3mc) {
           return reply.code(503).send({ error: "3mc importer unavailable" });
         }
-        void import3mc(abs, emit)
-          .then(() => runLinkPass(source))
-          .catch(onFailure);
+        // Fire-and-forget: progress + completion arrive over /events; the job
+        // record backs the GET /import/status fallback.
+        void runImport(
+          source,
+          abs,
+          (emit) => import3mc(abs, emit),
+          () => persistImportMeta?.(abs),
+        );
         return reply.code(202).send({ started: true as const });
       }
 
       // Fire-and-forget: progress + completion arrive over /events.
-      void importInterviewPrep({
-        path: abs,
-        saveMemory: (input) => engine.saveMemory(input),
-        onProgress: emit,
-      })
-        .then(() => runLinkPass(source))
-        .catch(onFailure);
+      void runImport(source, abs, (emit) =>
+        importInterviewPrep({
+          path: abs,
+          saveMemory: (input) => engine.saveMemory(input),
+          onProgress: emit,
+        }),
+      );
 
       return reply.code(202).send({ started: true as const });
     },
   );
+
+  /** WS-miss fallback for the import spinner (see {@link ImportJob}). */
+  app.get("/import/status", async () => lastImportJob ?? { active: false, done: false });
+
+  return {
+    run3mc: async (path: string) => {
+      if (!import3mc) return;
+      await runImport(
+        "3mc",
+        path,
+        (emit) => import3mc(path, emit),
+        () => persistImportMeta?.(path),
+      );
+    },
+  };
 }

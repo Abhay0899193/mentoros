@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { WebSocket } from "@fastify/websocket";
@@ -9,7 +10,7 @@ import { ChatEngine } from "./chat.js";
 import { defaultDataDir, Store } from "./db.js";
 import { createMemorySystem } from "./memory/index.js";
 import { registerMemoryRoutes } from "./memory/routes.js";
-import { createLearningSystem, import3mc } from "./learning/index.js";
+import { createLearningSystem, import3mc, computeSourceDigest } from "./learning/index.js";
 import { registerLearningRoutes } from "./learning/routes.js";
 import { createKbSystem } from "./kb/index.js";
 import { registerKbRoutes } from "./kb/routes.js";
@@ -65,6 +66,8 @@ interface BuiltServer {
   app: FastifyInstance;
   host: string;
   setResolvedPort: (port: number) => void;
+  /** Fire boot auto-sync of the 3mc plan (call once, after a successful listen). */
+  autoSync: () => void;
 }
 
 function buildServer(startedAt: number, dataDir: string, rendererDir: string): BuiltServer {
@@ -250,7 +253,7 @@ function buildServer(startedAt: number, dataDir: string, rendererDir: string): B
   });
 
   /* -------------------------------- memory ------------------------------- */
-  registerMemoryRoutes(app, {
+  const memoryRoutes = registerMemoryRoutes(app, {
     engine: memory.engine,
     broadcast,
     import3mc: (path, onProgress) =>
@@ -265,6 +268,16 @@ function buildServer(startedAt: number, dataDir: string, rendererDir: string): B
           return prepared.sourceId;
         },
       }),
+    // Persist the source fingerprint after a clean 3mc import so boot auto-sync
+    // (below) can tell when the on-disk plan has drifted. Best-effort.
+    persistImportMeta: (path) => {
+      try {
+        const digest = computeSourceDigest(path);
+        if (digest) learning.store.writeImportMeta({ sourcePath: path, digest });
+      } catch {
+        /* meta persistence is best-effort — never fail an import over it */
+      }
+    },
   });
 
   /* ------------------------------- learning ------------------------------ */
@@ -329,6 +342,26 @@ function buildServer(startedAt: number, dataDir: string, rendererDir: string): B
   /* -------------------------------- voice -------------------------------- */
   registerVoice(app, { broadcast, dataDir, getSettings: () => settings.store.get() });
 
+  /**
+   * Boot auto-sync: if the last-imported 3mc source still exists and its content
+   * fingerprint has drifted, silently re-run the import through the shared runner
+   * (same broadcast + job record, so a connected renderer updates and the digest
+   * is re-persisted). Non-blocking and fully guarded — must never crash boot.
+   */
+  const autoSync = (): void => {
+    void (async () => {
+      try {
+        const meta = learning.store.readImportMeta();
+        if (!meta || !existsSync(meta.sourcePath)) return;
+        const digest = computeSourceDigest(meta.sourcePath);
+        if (!digest || digest === meta.digest) return;
+        await memoryRoutes.run3mc(meta.sourcePath);
+      } catch {
+        /* auto-sync is best-effort */
+      }
+    })();
+  };
+
   const host = lanEnabled ? "0.0.0.0" : "127.0.0.1";
   return {
     app,
@@ -336,6 +369,7 @@ function buildServer(startedAt: number, dataDir: string, rendererDir: string): B
     setResolvedPort: (port) => {
       resolvedPort = port;
     },
+    autoSync,
   };
 }
 
@@ -366,10 +400,12 @@ export async function startCore(
 
   for (let offset = 0; offset < MAX_PORT_SCAN; offset += 1) {
     const port = preferredPort + offset;
-    const { app, host, setResolvedPort } = buildServer(startedAt, dataDir, rendererDir);
+    const { app, host, setResolvedPort, autoSync } = buildServer(startedAt, dataDir, rendererDir);
     try {
       await app.listen({ host, port });
       setResolvedPort(port);
+      // Only after a real bind — throwaway instances (EADDRINUSE) never sync.
+      autoSync();
       return {
         port,
         async stop() {

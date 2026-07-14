@@ -8,6 +8,7 @@ import {
   type MemoryType,
 } from './coreClient';
 import { toast } from '../ui';
+import { useLearning } from './learningStore';
 
 interface ImportState {
   source: ImportSource;
@@ -44,6 +45,14 @@ interface MemoryState {
 export const THREE_MC_PATH = '/Users/singha7/Documents/abhay/3-month-challenge';
 
 let initialized = false;
+let statusPoll: ReturnType<typeof setInterval> | null = null;
+
+function stopStatusPoll() {
+  if (statusPoll) {
+    clearInterval(statusPoll);
+    statusPoll = null;
+  }
+}
 
 export const useMemories = create<MemoryState>((set, get) => ({
   records: [],
@@ -75,6 +84,7 @@ export const useMemories = create<MemoryState>((set, get) => ({
 
       coreClient.on('import.progress', ({ source, step, created, merged, done, error }) => {
         set({ importState: { source, step, created, merged, active: !done, error } });
+        if (done) stopStatusPoll();
         if (done && !error) {
           toast({
             tone: 'success',
@@ -128,6 +138,38 @@ export const useMemories = create<MemoryState>((set, get) => ({
     set({ importState: { source, step: 'Starting…', created: 0, merged: 0, active: true } });
     try {
       await coreClient.importSource(source, path);
+      // WS `import.progress` is the primary signal, but events can be missed
+      // (reconnect has no replay) — poll /import/status so the state always
+      // reaches a terminal value.
+      stopStatusPoll();
+      statusPoll = setInterval(async () => {
+        try {
+          const st = await coreClient.importStatus();
+          if (st.source !== source) return;
+          set({
+            importState: {
+              source,
+              step: st.step ?? 'Importing…',
+              created: st.created ?? 0,
+              merged: st.merged ?? 0,
+              active: st.active,
+              error: st.error,
+            },
+          });
+          if (!st.active) {
+            stopStatusPoll();
+            void get().refresh();
+            if (source === '3mc' && !st.error) {
+              // mirror the WS done-handler in learningStore (the event we missed)
+              useLearning.setState({ dayTasks: {}, dayNotes: {} });
+              void useLearning.getState().loadWeeks();
+              void useLearning.getState().refresh();
+            }
+          }
+        } catch {
+          /* core unreachable — keep polling; WS reconnect may still land */
+        }
+      }, 2000);
     } catch {
       set({
         importState: {

@@ -5,7 +5,6 @@ import {
   type LearningSummary,
   type LearningTask,
   type LearningWeek,
-  type ProgressImportResult,
   type ReviewItem,
   type TodayMission,
 } from './coreClient';
@@ -24,7 +23,6 @@ interface LearningState {
   loadWeeks: () => Promise<void>;
   loadDayTasks: (dayId: string) => Promise<void>;
   loadDayNotes: (dayId: string) => Promise<void>;
-  importProgress: (progress: unknown) => Promise<ProgressImportResult>;
   completeMissionItem: (itemId: string, done: boolean) => Promise<void>;
   completeTask: (taskId: string, done: boolean) => Promise<void>;
 }
@@ -87,13 +85,6 @@ export const useLearning = create<LearningState>((set, get) => ({
     if (get().dayNotes[dayId] !== undefined) return;
     const { notes } = await coreClient.learningDayNotes(dayId);
     set((s) => ({ dayNotes: { ...s.dayNotes, [dayId]: notes } }));
-  },
-
-  importProgress: async (progress) => {
-    const result = await coreClient.importLearningProgress(progress);
-    set({ summary: result.summary, dayTasks: {} }); // task lists are stale now
-    await Promise.all([get().loadWeeks(), get().refresh()]);
-    return result;
   },
 
   completeMissionItem: async (itemId, done) => {

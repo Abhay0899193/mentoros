@@ -194,6 +194,19 @@ export interface DerivedProfile {
 
 export type ImportSource = 'interview-prep' | '3mc';
 
+/** Last/current import job — poll fallback for missed `import.progress` WS events. */
+export interface ImportStatus {
+  active: boolean;
+  done: boolean;
+  source?: ImportSource;
+  step?: string;
+  created?: number;
+  merged?: number;
+  error?: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
 /* ---------------- Learning & Daily Loop (Phase 3) ---------------- */
 
 export type TaskKind =
@@ -1361,6 +1374,8 @@ export interface CoreClient {
   profile(): Promise<DerivedProfile>;
   /** Kick off an import; progress arrives via `import.progress`. Idempotent. */
   importSource(source: ImportSource, path: string): Promise<{ started: true }>;
+  /** Last/current import job state — reconciles the UI when WS events were missed. */
+  importStatus(): Promise<ImportStatus>;
 
   /* learning & daily loop */
   learningSummary(): Promise<LearningSummary>;
@@ -1803,6 +1818,7 @@ export function createCoreClient(): CoreClient {
     memoryGraph: () => get<MemoryGraphData>('/memories/graph'),
     profile: () => get<DerivedProfile>('/memories/profile'),
     importSource: (source, path) => post<{ started: true }>('/import', { source, path }),
+    importStatus: () => get<ImportStatus>('/import/status'),
 
     learningSummary: () => get<LearningSummary>('/learning/summary'),
     learningWeeks: () => get<LearningWeek[]>('/learning/weeks'),
