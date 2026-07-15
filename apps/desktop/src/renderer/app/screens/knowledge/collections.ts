@@ -136,6 +136,9 @@ export function buildCollections(sources: KbSource[]): CollectionNode[] {
     .sort((a, b) => a.label.localeCompare(b.label));
 
   const skillSheets = flowSorted(sources.filter((s) => s.tags.includes('quick-review')));
+  // In-app "New guide" output (Phase G) — STUDY-GUIDES/custom/**, tagged `generated`
+  // by the importer. Also reachable under Topics (it still carries topic: tags).
+  const generated = flowSorted(sources.filter((s) => s.tags.includes('generated')));
   const other = flowSorted(sources.filter((s) => !s.tags.includes('3mc')));
 
   return [
@@ -153,6 +156,7 @@ export function buildCollections(sources: KbSource[]): CollectionNode[] {
       children: topicNodes,
     },
     { id: 'skill-sheets', label: 'Skill sheets', sources: skillSheets },
+    { id: 'generated', label: 'Generated', sources: generated },
     { id: 'other', label: 'Other', sources: other },
   ];
 }

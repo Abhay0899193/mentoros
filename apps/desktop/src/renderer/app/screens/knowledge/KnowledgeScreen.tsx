@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, Sparkles } from 'lucide-react';
 import { useKb } from '../../../lib/kbStore';
 import { pathForFile } from '../../../lib/nativeBridge';
 import { toast, Button } from '../../../ui';
@@ -9,6 +9,7 @@ import { LibraryGrid } from './LibraryGrid';
 import { SearchView } from './SearchView';
 import { ReadingView } from './ReadingView';
 import { AddSourcePopover } from './AddSourcePopover';
+import { GenerateGuideDialog } from './GenerateGuideDialog';
 
 /** Personal Knowledge Base (plan.md §4.7): library, hybrid search, reading view. */
 export function KnowledgeScreen() {
@@ -19,10 +20,21 @@ export function KnowledgeScreen() {
   const ingest = useKb((s) => s.ingest);
   const readingId = useKb((s) => s.readingId);
   const setAddOpen = useKb((s) => s.setAddOpen);
+  const guideRun = useKb((s) => s.guideRun);
+  const resetGuideRun = useKb((s) => s.resetGuideRun);
 
   const [dragging, setDragging] = useState(false);
   const dragCounter = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const guideRunning = guideRun.status === 'generating' || guideRun.status === 'ingesting';
+
+  function openGuideDialog() {
+    // A finished/failed run from earlier shouldn't block writing a fresh one —
+    // an in-flight run (generating/ingesting) stays visible so reopening shows it.
+    if (guideRun.status === 'done') resetGuideRun();
+    setGuideOpen(true);
+  }
 
   useEffect(() => init(), [init]);
 
@@ -103,6 +115,17 @@ export function KnowledgeScreen() {
               className="w-full bg-transparent text-small text-ink outline-none placeholder:text-faint"
             />
           </div>
+          <Button
+            size="sm"
+            variant="primary"
+            className="shrink-0 whitespace-nowrap"
+            icon={<Sparkles size={14} strokeWidth={1.5} />}
+            disabled={guideRunning}
+            title={guideRunning ? 'A guide is already being generated' : undefined}
+            onClick={openGuideDialog}
+          >
+            New guide
+          </Button>
           <div className="relative shrink-0">
             <Button
               size="sm"
@@ -116,6 +139,8 @@ export function KnowledgeScreen() {
           </div>
         </div>
       </header>
+
+      <GenerateGuideDialog open={guideOpen} onClose={() => setGuideOpen(false)} />
 
       <div
         className={

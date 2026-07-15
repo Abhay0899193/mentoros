@@ -113,7 +113,7 @@ test("settings: cloudEnabled + models default to local-only", () => {
   const s = memStore().get();
   assert.equal(s.cloudEnabled, false);
   assert.deepEqual(s.models.chat, { provider: "ollama", model: "llama3.1:8b" });
-  assert.deepEqual(Object.keys(s.models).sort(), ["chat", "interviewer", "scorecard", "voice"]);
+  assert.deepEqual(Object.keys(s.models).sort(), ["chat", "guide", "interviewer", "scorecard", "voice"]);
 });
 
 test("settings: patch cloudEnabled + a per-surface cloud choice round-trips", () => {

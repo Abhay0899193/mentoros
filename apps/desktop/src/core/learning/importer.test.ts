@@ -240,6 +240,35 @@ test("prune removes 3mc sources whose backing file vanished, keeps live ones", a
   assert.deepEqual(deleted, ["gone"], "only the vanished under-root source is pruned");
 });
 
+test("STUDY-GUIDES/custom/** gets the generated tag; week guides don't", async () => {
+  const root = await make3mcTree();
+  await addNestedGuides(root);
+  await mkdir(join(root, "STUDY-GUIDES/custom"), { recursive: true });
+  await writeFile(
+    join(root, "STUDY-GUIDES/custom/bit-manipulation-tricks.md"),
+    `---\ntitle: "Bit Manipulation Tricks"\ntopics: ["dsa/bit-manipulation"]\noutcomes:\n  - "x"\n---\n# Body`,
+  );
+  const store = memStore();
+  const tagsByTitle = new Map<string, string[]>();
+  await import3mc({
+    path: root,
+    store,
+    onProgress: () => {},
+    ingestSkillDoc: async (_absPath, title, tags) => {
+      tagsByTitle.set(title, tags);
+      return `src-${title.toLowerCase().replaceAll(" ", "-")}`;
+    },
+  });
+  assert.deepEqual(tagsByTitle.get("Bit Manipulation Tricks"), [
+    "3mc",
+    "study-guide",
+    "topic:dsa/bit-manipulation",
+    "generated",
+  ]);
+  // week-01 guides (not under custom/) never get the generated tag.
+  assert.ok(!tagsByTitle.get("Two Pointers")?.includes("generated"));
+});
+
 test("a failing prune delete never fails the import", async () => {
   const root = await make3mcTree();
   const store = memStore();

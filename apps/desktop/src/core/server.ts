@@ -10,7 +10,12 @@ import { ChatEngine } from "./chat.js";
 import { defaultDataDir, Store } from "./db.js";
 import { createMemorySystem } from "./memory/index.js";
 import { registerMemoryRoutes } from "./memory/routes.js";
-import { createLearningSystem, import3mc, computeSourceDigest } from "./learning/index.js";
+import {
+  createLearningSystem,
+  import3mc,
+  computeSourceDigest,
+  createGuideGenerator,
+} from "./learning/index.js";
 import { registerLearningRoutes } from "./learning/routes.js";
 import { createKbSystem } from "./kb/index.js";
 import { registerKbRoutes } from "./kb/routes.js";
@@ -244,7 +249,7 @@ function buildServer(startedAt: number, dataDir: string, rendererDir: string): B
 
   /* -------------------------------- models ------------------------------- */
   // /models/status (per-surface), /models/providers, /models/keys/anthropic.
-  registerModelRoutes(app, { router: llm.router, keys: llm.keys });
+  registerModelRoutes(app, { router: llm.router, keys: llm.keys, endpoints: llm.endpoints });
 
   app.post<{ Body: { model?: string } }>("/models/pull", async (req, reply) => {
     const model = req.body?.model?.trim() || DEFAULT_MODEL;
@@ -299,7 +304,21 @@ function buildServer(startedAt: number, dataDir: string, rendererDir: string): B
   });
 
   /* ------------------------------- learning ------------------------------ */
-  registerLearningRoutes(app, { engine: learning.engine, broadcast });
+  // "New guide" (Phase G): same kb.engine ingest wiring as import3mc's
+  // ingestSkillDoc above; the model call rides the 'guide' router surface
+  // (Settings → Models). Root resolves from the same persisted importMeta the
+  // boot auto-sync reads, so a guide can only be generated after a plan import.
+  const guideGenerator = createGuideGenerator({
+    router: llm.router,
+    resolveRoot: () => learning.store.readImportMeta()?.sourcePath ?? null,
+    ingest: async (absPath, title, tags) => {
+      const prepared = kb.engine.prepareSource(absPath, { title, tags });
+      await kb.engine.runIngest(prepared);
+      return prepared.sourceId;
+    },
+    broadcast: (event) => broadcast("guide.progress", event),
+  });
+  registerLearningRoutes(app, { engine: learning.engine, broadcast, guideGenerator });
 
   /* ---------------------------- knowledge base --------------------------- */
   registerKbRoutes(app, { engine: kb.engine });

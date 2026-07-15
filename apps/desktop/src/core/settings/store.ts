@@ -71,6 +71,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     voice: { ...LOCAL_DEFAULT_CHOICE },
     interviewer: { ...LOCAL_DEFAULT_CHOICE },
     scorecard: { ...LOCAL_DEFAULT_CHOICE },
+    guide: { ...LOCAL_DEFAULT_CHOICE },
   },
 };
 
@@ -81,7 +82,7 @@ const FACE_PRESETS = new Set<string>(["aura", "nova", "ivy", "rae", "lena", "sie
 const FACE_GLAMS = new Set<string>(["natural", "polished", "glam"]);
 const FACE_MATURITIES = new Set<string>(["youthful", "balanced", "mature"]);
 const FACE_VIEWS = new Set<string>(["cameo", "full"]);
-const MODEL_SURFACES: ModelSurface[] = ["chat", "voice", "interviewer", "scorecard"];
+const MODEL_SURFACES: ModelSurface[] = ["chat", "voice", "interviewer", "scorecard", "guide"];
 const SURFACE_SET = new Set<string>(MODEL_SURFACES);
 const ALLOWED_KEYS = new Set<keyof AppSettings>([
   "ttsVoice",
@@ -100,13 +101,22 @@ const ALLOWED_KEYS = new Set<keyof AppSettings>([
 /** KV key for a per-surface routing choice, e.g. `models.chat`. */
 const modelKey = (surface: ModelSurface): string => `models.${surface}`;
 
-/** Validate a ModelChoice: known provider, non-empty model, catalog id for cloud. */
+/**
+ * Validate a ModelChoice: known provider, non-empty model, catalog id for cloud.
+ * For provider 'endpoint' an endpointId (non-empty string) is required and
+ * preserved — the endpoint's EXISTENCE is not checked here (a resolve-time
+ * concern: a dangling endpointId simply falls back to local at routing time).
+ */
 function validateChoice(value: unknown): ModelChoice | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
-  if (v.provider !== "ollama" && v.provider !== "anthropic") return null;
+  if (v.provider !== "ollama" && v.provider !== "anthropic" && v.provider !== "endpoint") return null;
   if (typeof v.model !== "string" || v.model.trim().length === 0) return null;
   if (v.provider === "anthropic" && !isCloudModel(v.model)) return null;
+  if (v.provider === "endpoint") {
+    if (typeof v.endpointId !== "string" || v.endpointId.trim().length === 0) return null;
+    return { provider: "endpoint", model: v.model, endpointId: v.endpointId };
+  }
   return { provider: v.provider, model: v.model };
 }
 
@@ -185,6 +195,7 @@ export class SettingsStore {
         voice: { ...DEFAULT_SETTINGS.models.voice },
         interviewer: { ...DEFAULT_SETTINGS.models.interviewer },
         scorecard: { ...DEFAULT_SETTINGS.models.scorecard },
+        guide: { ...DEFAULT_SETTINGS.models.guide },
       },
     };
     for (const { key, value } of this.kv.readAll()) {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   coreClient,
+  CoreRequestError,
   type KbSearchHit,
   type KbSource,
   type KbSuggestedSource,
@@ -8,6 +9,21 @@ import {
 import { toast, useToasts } from '../ui';
 
 type IngestStep = 'reading' | 'chunking' | 'embedding' | 'indexing' | 'done' | 'error';
+
+/**
+ * "New guide" run state (Phase G) — lives here, not component-local, so
+ * closing GenerateGuideDialog mid-run and reopening it shows the current
+ * state (generation keeps going in the background).
+ */
+export interface GuideRunState {
+  status: 'idle' | 'generating' | 'ingesting' | 'done' | 'error';
+  /** The submitted prompt — kept through the run so an error state can Retry it. */
+  prompt?: string;
+  chars?: number;
+  sourceId?: string;
+  slug?: string;
+  error?: string;
+}
 
 interface IngestProgress {
   path: string;
@@ -44,6 +60,11 @@ interface KbState {
 
   addOpen: boolean;
   setAddOpen: (open: boolean) => void;
+
+  /** "New guide" (Phase G) — see {@link GuideRunState}. */
+  guideRun: GuideRunState;
+  generateGuide: (prompt: string) => Promise<void>;
+  resetGuideRun: () => void;
 
   init: () => void;
   refresh: () => Promise<void>;
@@ -128,6 +149,22 @@ export const useKb = create<KbState>((set, get) => ({
   addOpen: false,
   setAddOpen: (addOpen) => set({ addOpen }),
 
+  guideRun: { status: 'idle' },
+  generateGuide: async (prompt) => {
+    set({ guideRun: { status: 'generating', prompt, chars: 0 } });
+    try {
+      await coreClient.generateGuide(prompt);
+      // Progress from here arrives over `guide.progress` (see init()).
+    } catch (err) {
+      const message =
+        err instanceof CoreRequestError
+          ? err.message
+          : 'The knowledge base service did not respond.';
+      set({ guideRun: { status: 'error', prompt, error: message } });
+    }
+  },
+  resetGuideRun: () => set({ guideRun: { status: 'idle' } }),
+
   init: () => {
     if (!initialized) {
       initialized = true;
@@ -140,6 +177,20 @@ export const useKb = create<KbState>((set, get) => ({
         }));
         pushIngestToast(get().ingests[p.path]);
         if (p.done && !p.error) void get().refresh();
+      });
+
+      coreClient.on('guide.progress', (p) => {
+        const prompt = get().guideRun.prompt;
+        if (p.step === 'generating') {
+          set({ guideRun: { status: 'generating', prompt, chars: p.chars } });
+        } else if (p.step === 'ingesting') {
+          set((s) => ({ guideRun: { status: 'ingesting', prompt, chars: s.guideRun.chars } }));
+        } else if (p.step === 'done') {
+          set({ guideRun: { status: 'done', prompt, slug: p.slug, sourceId: p.sourceId } });
+          void get().refresh();
+        } else {
+          set({ guideRun: { status: 'error', prompt, error: p.error } });
+        }
       });
     }
     void get().refresh();

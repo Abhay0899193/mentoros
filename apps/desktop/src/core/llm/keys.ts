@@ -12,11 +12,15 @@ import type { ApiKeyState } from "../types.js";
  *   keys.anthropic        → the raw key
  *   keys.anthropic.state  → 'valid' | 'invalid'
  *   keys.anthropic.error  → human validation error (optional)
+ *   keys.endpoint.<id>    → the raw token for a custom endpoint (no state row —
+ *                           endpoint token validation is the /test route's job,
+ *                           ephemeral, so we don't persist a valid/invalid flag)
  */
 
 const KEY = "keys.anthropic";
 const STATE = "keys.anthropic.state";
 const ERROR = "keys.anthropic.error";
+const ENDPOINT_PREFIX = "keys.endpoint.";
 
 /** KV persistence contract for secrets (adds delete over SettingsKv). */
 export interface KeyKv {
@@ -67,6 +71,11 @@ export function maskAnthropicKey(key: string): string {
   return `sk-ant-…${key.slice(-4)}`;
 }
 
+/** Generic secret mask: '…' + last 4 chars (for custom-endpoint tokens). */
+export function maskKey(key: string): string {
+  return `…${key.slice(-4)}`;
+}
+
 export class KeyStore {
   constructor(private readonly kv: KeyKv) {}
 
@@ -112,5 +121,29 @@ export class KeyStore {
   /** Forget the key and all its metadata rows. */
   clear(): void {
     this.kv.deleteKeys([KEY, STATE, ERROR]);
+  }
+
+  /* ------------------------- custom-endpoint tokens ------------------------ */
+
+  /** The stored raw token for a custom endpoint, or null when none is set. */
+  getEndpointToken(id: string): string | null {
+    const v = this.read().get(ENDPOINT_PREFIX + id);
+    return v && v.length > 0 ? v : null;
+  }
+
+  /** Store (or overwrite) a custom endpoint's token. */
+  setEndpointToken(id: string, token: string): void {
+    this.kv.writeMany([[ENDPOINT_PREFIX + id, token]]);
+  }
+
+  /** Forget a custom endpoint's token (no-op when absent). */
+  clearEndpointToken(id: string): void {
+    this.kv.deleteKeys([ENDPOINT_PREFIX + id]);
+  }
+
+  /** Masked display form of a custom endpoint token, or undefined when unset. */
+  endpointTokenMask(id: string): string | undefined {
+    const token = this.getEndpointToken(id);
+    return token ? maskKey(token) : undefined;
   }
 }

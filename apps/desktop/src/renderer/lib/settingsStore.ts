@@ -3,6 +3,9 @@ import {
   coreClient,
   type ApiKeyState,
   type AppSettings,
+  type CustomEndpointInfo,
+  type EndpointAuth,
+  type EndpointKind,
   type ModelChoice,
   type ModelSurface,
   type Persona,
@@ -44,6 +47,7 @@ interface SettingsState {
   providersLoaded: boolean;
   providersError: string | null;
   keySaving: boolean;
+  endpointSaving: boolean;
 
   init: () => void;
   loadSettings: () => Promise<void>;
@@ -75,6 +79,32 @@ interface SettingsState {
   saveAnthropicKey: (key: string) => Promise<ApiKeyState | null>;
   removeAnthropicKey: () => Promise<void>;
   setSurfaceModel: (surface: ModelSurface, choice: ModelChoice) => Promise<void>;
+
+  /* custom endpoints (Settings → Models → Custom endpoints) */
+  createEndpoint: (input: {
+    label: string;
+    kind: EndpointKind;
+    baseUrl: string;
+    auth?: EndpointAuth;
+    models?: string[];
+    token?: string;
+  }) => Promise<CustomEndpointInfo | null>;
+  updateEndpoint: (
+    id: string,
+    patch: Partial<{
+      label: string;
+      kind: EndpointKind;
+      baseUrl: string;
+      auth: EndpointAuth;
+      models: string[];
+      token: string;
+    }>,
+  ) => Promise<CustomEndpointInfo | null>;
+  deleteEndpoint: (id: string) => Promise<void>;
+  /** Pass-through — no store state; callers own their own loading/error UI. */
+  testEndpoint: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Pass-through — no store state; callers own their own loading/error UI. */
+  fetchEndpointModels: (id: string) => Promise<string[]>;
 }
 
 let initialized = false;
@@ -114,6 +144,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
   providersLoaded: false,
   providersError: null,
   keySaving: false,
+  endpointSaving: false,
 
   init: () => {
     if (!initialized) {
@@ -436,4 +467,59 @@ export const useSettings = create<SettingsState>((set, get) => ({
       });
     }
   },
+
+  createEndpoint: async (input) => {
+    set({ endpointSaving: true });
+    try {
+      const endpoint = await coreClient.createEndpoint(input);
+      set({ endpointSaving: false });
+      void get().loadProviders();
+      return endpoint;
+    } catch {
+      set({ endpointSaving: false });
+      toast({
+        tone: 'danger',
+        title: 'Could not create the endpoint',
+        description: 'The settings service did not respond — try again.',
+        action: { label: 'Retry', onClick: () => void get().createEndpoint(input) },
+      });
+      return null;
+    }
+  },
+
+  updateEndpoint: async (id, patch) => {
+    set({ endpointSaving: true });
+    try {
+      const endpoint = await coreClient.updateEndpoint(id, patch);
+      set({ endpointSaving: false });
+      void get().loadProviders();
+      return endpoint;
+    } catch {
+      set({ endpointSaving: false });
+      toast({
+        tone: 'danger',
+        title: 'Could not update the endpoint',
+        description: 'The settings service did not respond — try again.',
+        action: { label: 'Retry', onClick: () => void get().updateEndpoint(id, patch) },
+      });
+      return null;
+    }
+  },
+
+  deleteEndpoint: async (id) => {
+    try {
+      await coreClient.deleteEndpoint(id);
+      void get().loadProviders();
+    } catch {
+      toast({
+        tone: 'danger',
+        title: 'Could not delete the endpoint',
+        description: 'The settings service did not respond — try again.',
+        action: { label: 'Retry', onClick: () => void get().deleteEndpoint(id) },
+      });
+    }
+  },
+
+  testEndpoint: (id) => coreClient.testEndpoint(id),
+  fetchEndpointModels: (id) => coreClient.fetchEndpointModels(id),
 }));

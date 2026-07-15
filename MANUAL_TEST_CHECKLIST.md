@@ -296,3 +296,62 @@ add-expression is gated on the z-image-turbo toolchain even though it edits via 
       interrogation + LLM scorecard, hints in transcript.
 - [ ] Phone width: practice shows two tabs (Problem | Code); mark-done banner and
       results drawer sit above the tab bar; no horizontal scroll, dark + light.
+
+## 16 · In-app guide generation (Phase G)
+
+- [ ] Knowledge header shows a "New guide" button (Sparkles icon) at all times. With
+      your plan imported, click it → dialog with a prompt textarea (autofocus) and 3
+      example-prompt chips (bit manipulation, rate limiter, heapq patterns) — clicking a
+      chip fills the textarea. A hint line says "Writes with your Guide writer model —
+      change it in Settings → Models."
+- [ ] By default the `guide` surface is a local model (Settings → Models → Guide
+      writer, defaults local) — Generate still works but quality is bounded by the local
+      model. Switch the Guide writer to Claude (needs cloud + API key) for a noticeably
+      better guide, then Generate again.
+- [ ] Click Generate → dialog shows "Writing… N chars" with a live-updating count, then
+      "Adding to Knowledge…", then a done state with "Open guide" — clicking it opens the
+      new part in Reading view. The Knowledge header's "New guide" button is disabled
+      (with a tooltip) while a generation is running.
+- [ ] Check the 3mc repo on disk: the new file landed at
+      `STUDY-GUIDES/custom/<slug>.md` (never under `STUDY-GUIDES/week-NN/`), with proper
+      frontmatter (`title`, `topics`, `outcomes` — no `weeks` key) and no wrapping code
+      fence around the whole document.
+- [ ] Knowledge → a new "Generated" collection appears (after "Skill sheets", before
+      "Other") containing the new guide; it also shows up under Topics if it has a
+      matching topic tag.
+- [ ] Close the dialog mid-generation (before it finishes) — reopening "New guide" shows
+      the run still in progress (not reset to the empty compose form).
+- [ ] Re-run "Sync learning plan" (⌘K) afterwards — the generated doc stays in Knowledge
+      (same source, tag set preserved including `generated`), and week guides are
+      completely untouched (no week-NN files added/removed by this feature).
+- [ ] Trigger a 409: click Generate, then (before it finishes) try to start another one
+      from a second Knowledge tab/window if available, or just note the header button is
+      disabled — confirms single-flight. If you haven't imported a learning plan yet,
+      Generate should fail fast with "Import your learning plan first".
+
+## 17 · Custom LLM endpoints (Settings → Models)
+
+- [ ] Settings → Models shows a "Custom endpoints" block (between the API-key row and
+      the surface pickers) with an Add button. Click Add → dialog with quick-fill chips
+      (OpenCode Zen, Org Claude gateway), Label, Kind (OpenAI/Anthropic segmented),
+      Base URL, Auth scheme (Bearer / x-api-key), optional Token, and a Models textarea.
+- [ ] Click "OpenCode Zen" quick-fill → fields prefill (baseUrl
+      `https://opencode.ai/zen/v1`, kind OpenAI, bearer). Paste your Zen key, Create →
+      row appears with label, kind chip, masked token; token is never shown in full
+      anywhere after save.
+- [ ] Edit the endpoint → "Fetch from endpoint" fills the Models textarea from the
+      remote `/models` list; "Test" shows Reachable (green check). Break the token
+      (edit → new garbage token) → Test shows an error message, app stays usable.
+- [ ] Add your org Claude gateway as kind Anthropic (base URL + bearer token, model id
+      e.g. `Auto-MoM` typed manually). Test → Reachable.
+- [ ] Surface pickers (Chat/Voice/Interviewer/Scorecard/Guide writer) now show a
+      "Custom endpoints" group listing each endpoint's models (mono ids). With "Use
+      cloud models" OFF the group is dimmed with "Turn on cloud models to use these";
+      an endpoint choice while cloud is off shows "Falling back to local" on the row.
+      No Anthropic API key is needed for endpoint choices — only the cloud toggle.
+- [ ] Pick an endpoint model for Chat, send a message → reply streams from the
+      endpoint (verify via the gateway's usage page or by picking a model with an
+      obviously different voice/speed than llama3.1).
+- [ ] Delete an endpoint that a surface points at (inline Keep/Delete confirm) → the
+      surface row shows the fallback note and chat still works via the local model.
+- [ ] Restart the app → endpoints, tokens (masked), and surface choices survive.

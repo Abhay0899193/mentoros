@@ -98,18 +98,25 @@ function partFromFilename(name: string): number | null {
   return m ? Number.parseInt(m[1], 10) : null;
 }
 
-/** Build the KB tags for one study doc based on its origin dir + frontmatter. */
-function buildDocTags(
+/**
+ * Build the KB tags for one study doc based on its origin dir + frontmatter.
+ * Exported so the in-app guide generator ingests with EXACTLY the tags a later
+ * full re-import would derive — the upsert-by-path must not flap tag sets.
+ */
+export function buildDocTags(
   origin: "quick-review" | "study-guide",
   name: string,
   meta: SkillDocMeta | null,
+  /** True for files under STUDY-GUIDES/custom/ — in-app generated supplements. */
+  generated = false,
 ): string[] {
   const weekTags = (meta?.weeks ?? []).map((w) => `week:${w}`);
   if (origin === "quick-review") return ["3mc", "quick-review", ...weekTags];
   const topicTags = (meta?.topics ?? []).map((t) => `topic:${t}`);
   const part = meta?.part ?? partFromFilename(name);
   const partTags = part !== null ? [`part:${part}`] : [];
-  return ["3mc", "study-guide", ...weekTags, ...topicTags, ...partTags];
+  const generatedTag = generated ? ["generated"] : [];
+  return ["3mc", "study-guide", ...weekTags, ...topicTags, ...partTags, ...generatedTag];
 }
 
 /** Recursively collect `*.md` under a dir (relative, sorted). RULES.md skipped. */
@@ -244,7 +251,13 @@ export async function import3mc(opts: {
   // week/topic study guides (nested subfolders like week-01/, custom/).
   // Best-effort: a missing dir or a failed ingest never fails the plan import.
   if (ingestSkillDoc) {
-    type DocEntry = { abs: string; name: string; origin: "quick-review" | "study-guide" };
+    type DocEntry = {
+      abs: string;
+      name: string;
+      origin: "quick-review" | "study-guide";
+      /** True for STUDY-GUIDES/custom/** — in-app "New guide" output (Phase G). */
+      generated: boolean;
+    };
     const entries: DocEntry[] = [];
 
     // SKILLS-TRACK stays flat.
@@ -253,18 +266,26 @@ export async function import3mc(opts: {
         .filter((f) => f.endsWith(".md"))
         .sort();
       for (const f of files) {
-        entries.push({ abs: join(path, "SKILLS-TRACK", f), name: f, origin: "quick-review" });
+        entries.push({
+          abs: join(path, "SKILLS-TRACK", f),
+          name: f,
+          origin: "quick-review",
+          generated: false,
+        });
       }
     } catch {
       /* dir absent in this source tree */
     }
 
     // STUDY-GUIDES recurses into subfolders (RULES.md excluded by walkMarkdown).
+    // custom/ holds in-app generated supplements — tagged `generated` below so a
+    // later full re-import preserves that tag (idempotent, mirrors every other tag).
     for (const rel of await walkMarkdown(join(path, "STUDY-GUIDES"))) {
       entries.push({
         abs: join(path, "STUDY-GUIDES", rel),
         name: basename(rel),
         origin: "study-guide",
+        generated: rel === "custom" || rel.startsWith("custom/"),
       });
     }
 
@@ -276,7 +297,7 @@ export async function import3mc(opts: {
         const meta = parseSkillDocMeta(body);
         const title = meta?.title ?? entry.name.replace(/\.md$/, "");
         onProgress({ step: `skill doc: ${title}`, created, merged, done: false });
-        const tags = buildDocTags(entry.origin, entry.name, meta);
+        const tags = buildDocTags(entry.origin, entry.name, meta, entry.generated);
         const sourceId = await ingestSkillDoc(entry.abs, title, tags);
         ingested += 1;
         for (const week of meta?.weeks ?? []) {

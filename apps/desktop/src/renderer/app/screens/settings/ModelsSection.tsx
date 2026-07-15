@@ -7,6 +7,10 @@ import {
   Cloud,
   HardDrive,
   KeyRound,
+  Pencil,
+  Plug,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { useSettings } from "../../../lib/settingsStore";
 import {
@@ -19,11 +23,13 @@ import {
 import { cn } from "../../../lib/cn";
 import type {
   CloudModelInfo,
+  CustomEndpointInfo,
   ModelChoice,
   ModelSurface,
   ProvidersInfo,
 } from "../../../lib/coreClient";
 import { Panel, Chip, Switch, Button } from "../../../ui";
+import { EndpointDialog } from "./EndpointDialog";
 
 const SURFACES: { id: ModelSurface; label: string; description: string }[] = [
   { id: "chat", label: "Chat", description: "Conversation answers" },
@@ -37,6 +43,11 @@ const SURFACES: { id: ModelSurface; label: string; description: string }[] = [
     id: "scorecard",
     label: "Scorecard",
     description: "Post-interview grading",
+  },
+  {
+    id: "guide",
+    label: "Guide writer",
+    description: "In-app study-guide generation",
   },
 ];
 
@@ -58,6 +69,10 @@ function choiceLabel(
   if (choice.provider === "ollama") {
     const m = providers.ollama.models.find((x) => x.model === choice.model);
     return m ? `${m.label} · ${formatSize(m.sizeBytes)}` : choice.model;
+  }
+  if (choice.provider === "endpoint") {
+    const ep = providers.endpoints.find((x) => x.id === choice.endpointId);
+    return ep ? `${ep.label} · ${choice.model}` : choice.model;
   }
   const m = providers.anthropic.catalog.find((x) => x.model === choice.model);
   return m ? m.label : choice.model;
@@ -159,11 +174,13 @@ function SurfacePicker({
   choice,
   providers,
   cloudUsable,
+  cloudEnabled,
 }: {
   surface: ModelSurface;
   choice: ModelChoice;
   providers: ProvidersInfo;
   cloudUsable: boolean;
+  cloudEnabled: boolean;
 }) {
   const setSurfaceModel = useSettings((s) => s.setSurfaceModel);
   const [open, setOpen] = useState(false);
@@ -329,6 +346,76 @@ function SurfacePicker({
                   );
                 })}
               </div>
+
+              {providers.endpoints.length > 0 && (
+                <>
+                  <h4 className="mt-1 flex items-center gap-1.5 px-2 pt-1 pb-1 text-label font-medium tracking-[0.02em] text-faint uppercase">
+                    <Plug size={11} strokeWidth={1.5} />
+                    Custom endpoints
+                  </h4>
+                  {!cloudEnabled && (
+                    <p className="px-2 pb-1.5 text-[12px] text-faint">
+                      Turn on cloud models to use these
+                    </p>
+                  )}
+                  <div
+                    className={cn(
+                      "flex flex-col gap-0.5",
+                      !cloudEnabled && "pointer-events-none opacity-45",
+                    )}
+                  >
+                    {providers.endpoints.map((ep) => (
+                      <div key={ep.id} className="flex flex-col gap-0.5">
+                        <p className="truncate px-2 pt-1 text-[11px] font-medium text-muted">
+                          {ep.label}
+                        </p>
+                        {ep.models.length === 0 ? (
+                          <p className="px-2 pb-1 text-[11px] text-faint">
+                            No model ids — add some in its settings below
+                          </p>
+                        ) : (
+                          ep.models.map((model) => {
+                            const selected =
+                              choice.provider === "endpoint" &&
+                              choice.endpointId === ep.id &&
+                              choice.model === model;
+                            return (
+                              <button
+                                key={model}
+                                role="option"
+                                aria-selected={selected}
+                                onClick={() =>
+                                  choose({
+                                    provider: "endpoint",
+                                    model,
+                                    endpointId: ep.id,
+                                  })
+                                }
+                                className={cn(
+                                  "tap-target flex items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-[12px] hover:bg-surface-3",
+                                  selected && "bg-surface-3",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "flex size-4 shrink-0 items-center justify-center",
+                                    selected ? "text-iris" : "text-transparent",
+                                  )}
+                                >
+                                  <Check size={12} strokeWidth={2} />
+                                </span>
+                                <span className="min-w-0 flex-1 truncate font-mono text-ink">
+                                  {model}
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </motion.div>
         )}
@@ -343,6 +430,7 @@ function SurfaceRow({
   description,
   providers,
   cloudUsable,
+  cloudEnabled,
   choice,
 }: {
   surface: ModelSurface;
@@ -350,9 +438,16 @@ function SurfaceRow({
   description: string;
   providers: ProvidersInfo;
   cloudUsable: boolean;
+  cloudEnabled: boolean;
   choice: ModelChoice;
 }) {
-  const fallingBack = choice.provider === "anthropic" && !cloudUsable;
+  // Mirrors the router's resolve(): anthropic needs cloud + valid key; a custom
+  // endpoint needs cloud + the endpoint to still exist (no Anthropic key).
+  const fallingBack =
+    (choice.provider === "anthropic" && !cloudUsable) ||
+    (choice.provider === "endpoint" &&
+      (!cloudEnabled ||
+        !providers.endpoints.some((ep) => ep.id === choice.endpointId)));
 
   return (
     <div className="flex items-center justify-between gap-4 rounded-[10px] px-3 py-2.5">
@@ -361,7 +456,9 @@ function SurfaceRow({
         <p className="text-[12px] text-muted">{description}</p>
         {fallingBack && (
           <p className="mt-0.5 text-[11px] text-faint">
-            Falling back to local — enable cloud + a valid key
+            {choice.provider === "endpoint"
+              ? "Falling back to local — enable cloud + check the endpoint"
+              : "Falling back to local — enable cloud + a valid key"}
           </p>
         )}
       </div>
@@ -370,7 +467,71 @@ function SurfaceRow({
         choice={choice}
         providers={providers}
         cloudUsable={cloudUsable}
+        cloudEnabled={cloudEnabled}
       />
+    </div>
+  );
+}
+
+function EndpointRow({
+  endpoint,
+  onEdit,
+}: {
+  endpoint: CustomEndpointInfo;
+  onEdit: () => void;
+}) {
+  const deleteEndpoint = useSettings((s) => s.deleteEndpoint);
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <div className="group flex items-center gap-3 rounded-[10px] px-3 py-2">
+      <Plug size={14} strokeWidth={1.5} className="shrink-0 text-faint" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-small font-medium text-ink">
+            {endpoint.label}
+          </span>
+          <Chip>{endpoint.kind === "openai" ? "OpenAI" : "Anthropic"}</Chip>
+          {!endpoint.tokenMask && <Chip>Keyless</Chip>}
+        </div>
+        <p className="truncate font-mono text-[11px] text-faint">
+          {endpoint.baseUrl}
+          {endpoint.tokenMask && ` · ${endpoint.tokenMask}`}
+        </p>
+      </div>
+      {confirming ? (
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => setConfirming(false)}
+            className="tap-target text-[12px] font-medium text-faint hover:text-body"
+          >
+            Keep
+          </button>
+          <button
+            onClick={() => void deleteEndpoint(endpoint.id)}
+            className="tap-target text-[12px] font-medium text-danger"
+          >
+            Delete
+          </button>
+        </div>
+      ) : (
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
+          <button
+            onClick={onEdit}
+            aria-label={`Edit ${endpoint.label}`}
+            className="tap-target rounded-[8px] p-1.5 text-faint hover:bg-surface-2 hover:text-body"
+          >
+            <Pencil size={13} strokeWidth={1.5} />
+          </button>
+          <button
+            onClick={() => setConfirming(true)}
+            aria-label={`Delete ${endpoint.label}`}
+            className="tap-target rounded-[8px] p-1.5 text-faint hover:bg-surface-2 hover:text-danger"
+          >
+            <Trash2 size={13} strokeWidth={1.5} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -384,6 +545,10 @@ export function ModelsSection() {
   const loadProviders = useSettings((s) => s.loadProviders);
   const setCloudEnabled = useSettings((s) => s.setCloudEnabled);
   const reduce = useReducedMotion();
+
+  const [endpointDialog, setEndpointDialog] = useState<
+    { open: boolean; existing?: CustomEndpointInfo }
+  >({ open: false });
 
   const cloudEnabled = settings?.cloudEnabled ?? false;
   const keyState = providers?.anthropic.keyState ?? "none";
@@ -440,6 +605,40 @@ export function ModelsSection() {
           {providers && (
             <motion.div
               variants={reduced(reduce, riseIn)}
+              className="flex flex-col gap-0.5"
+            >
+              <div className="flex items-center justify-between gap-4 px-3 pt-1">
+                <div>
+                  <p className="text-small font-medium text-ink">
+                    Custom endpoints
+                  </p>
+                  <p className="mt-0.5 text-[12px] text-muted">
+                    Any OpenAI- or Anthropic-compatible API — org gateways,
+                    OpenCode Zen, LM Studio…
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={<Plus size={13} strokeWidth={1.5} />}
+                  onClick={() => setEndpointDialog({ open: true })}
+                >
+                  Add
+                </Button>
+              </div>
+              {providers.endpoints.map((ep) => (
+                <EndpointRow
+                  key={ep.id}
+                  endpoint={ep}
+                  onEdit={() => setEndpointDialog({ open: true, existing: ep })}
+                />
+              ))}
+            </motion.div>
+          )}
+
+          {providers && (
+            <motion.div
+              variants={reduced(reduce, riseIn)}
               className="flex flex-col gap-0.5 border-t border-line pt-3"
             >
               {SURFACES.map((s) => (
@@ -450,6 +649,7 @@ export function ModelsSection() {
                   description={s.description}
                   providers={providers}
                   cloudUsable={cloudUsable}
+                  cloudEnabled={cloudEnabled}
                   choice={
                     settings?.models[s.id] ?? {
                       provider: "ollama",
@@ -462,6 +662,12 @@ export function ModelsSection() {
           )}
         </motion.div>
       )}
+
+      <EndpointDialog
+        open={endpointDialog.open}
+        existing={endpointDialog.existing}
+        onClose={() => setEndpointDialog((d) => ({ ...d, open: false }))}
+      />
     </Panel>
   );
 }

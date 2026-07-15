@@ -84,7 +84,7 @@ export interface ModelStatus {
   state: "ready" | "ollama-offline" | "model-missing";
   model: string;
   /** Which provider the surface resolved to (absent = 'ollama', pre-slice shape). */
-  provider?: "ollama" | "anthropic";
+  provider?: "ollama" | "anthropic" | "endpoint";
   /** Set when a cloud choice was silently downgraded to local (no key / cloud off). */
   fellBack?: boolean;
 }
@@ -553,7 +553,7 @@ export type SttModelId = "small.en" | "medium.en" | "large-v3-turbo";
 
 /* -------- Model switching (local Ollama + cloud Claude, §2.4 router) ------- */
 
-export type ModelProvider = "ollama" | "anthropic";
+export type ModelProvider = "ollama" | "anthropic" | "endpoint";
 
 /**
  * The app surfaces that generate with an LLM, each independently routable.
@@ -561,12 +561,42 @@ export type ModelProvider = "ollama" | "anthropic";
  * surface:'voice'); the memory merge-judge is deliberately NOT routable — it
  * stays local (cheap latency-sensitive classifier).
  */
-export type ModelSurface = "chat" | "voice" | "interviewer" | "scorecard";
+export type ModelSurface = "chat" | "voice" | "interviewer" | "scorecard" | "guide";
 
 export interface ModelChoice {
   provider: ModelProvider;
   /** Ollama tag ('llama3.1:8b') or Anthropic model id ('claude-opus-4-8'). */
   model: string;
+  /**
+   * Which custom endpoint the model lives on. Semantically REQUIRED when
+   * provider === 'endpoint' (the router falls back to local without it); ignored
+   * for the ollama/anthropic providers.
+   */
+  endpointId?: string;
+}
+
+/** Wire protocol a custom endpoint speaks (OpenAI-compatible or Anthropic-compatible). */
+export type EndpointKind = "openai" | "anthropic";
+
+/** How the token is presented to a custom endpoint (default 'bearer'). */
+export type EndpointAuth = "bearer" | "x-api-key";
+
+/**
+ * A user-defined custom LLM endpoint: an arbitrary OpenAI- or Anthropic-
+ * compatible HTTP API (a corporate Claude gateway, OpenCode Zen, a self-hosted
+ * proxy…). The bearer/x-api-key token is a SECRET stored beside the config in
+ * KeyStore — it is NEVER returned, only a display mask.
+ */
+export interface CustomEndpointInfo {
+  id: string;
+  label: string;
+  kind: EndpointKind;
+  baseUrl: string;
+  auth: EndpointAuth;
+  /** Free-typed model ids (membership is not enforced at resolve time). */
+  models: string[];
+  /** Present only when a token is stored ('…<last4>'). */
+  tokenMask?: string;
 }
 
 /** One installed Ollama model (from /api/tags). */
@@ -608,6 +638,8 @@ export interface ProvidersInfo {
     keyError?: string;
     catalog: CloudModelInfo[];
   };
+  /** User-defined custom endpoints (configs + token masks; never the token). */
+  endpoints: CustomEndpointInfo[];
 }
 
 /**
@@ -1189,6 +1221,15 @@ export interface CoreEvents {
   /** After any task/mission completion — keeps Home/Learning live. */
   "learning.progress": { summary: LearningSummary };
   "mission.updated": { mission: TodayMission };
+  /**
+   * "New guide" progress (Phase G) — writing + ingesting one
+   * STUDY-GUIDES/custom/<slug>.md from a prompt. Mirrors `kb.ingest`'s shape.
+   */
+  "guide.progress":
+    | { step: "generating"; chars: number }
+    | { step: "ingesting" }
+    | { step: "done"; slug: string; sourceId: string }
+    | { step: "error"; error: string };
   /** Ingest progress for one source (drives the drag-drop progress toast). */
   "kb.ingest": {
     /** Set once the source row exists. */

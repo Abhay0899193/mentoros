@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { OllamaMessage } from "../ollama.js";
-import type { CloudModelInfo } from "../types.js";
+import type { CloudModelInfo, EndpointAuth } from "../types.js";
 
 /**
  * Anthropic (Claude) adapter. Mirrors the shape of the Ollama adapter so the
@@ -51,9 +51,28 @@ export function isCloudModel(model: string): boolean {
   return CLOUD_MODEL_IDS.has(model);
 }
 
-/** adaptive thinking is unsupported on Haiku — omit the param there entirely. */
+/**
+ * adaptive thinking is sent ONLY for known catalog ids (custom gateways/models
+ * may reject the param) and never for Haiku (unsupported there). A cloud choice
+ * that isn't in the catalog — or any custom-endpoint model — omits it entirely.
+ */
 function thinkingFor(model: string): { thinking: { type: "adaptive" } } | Record<string, never> {
-  return model === "claude-haiku-4-5" ? {} : { thinking: { type: "adaptive" } };
+  if (!isCloudModel(model) || model === "claude-haiku-4-5") return {};
+  return { thinking: { type: "adaptive" } };
+}
+
+/**
+ * Build a fresh Anthropic client. Defaults to an api-key call at
+ * api.anthropic.com (the standard cloud path). Custom Anthropic-compatible
+ * endpoints pass a baseUrl + auth: 'bearer' sends the token as an auth token
+ * (OAuth-style gateways), 'x-api-key' sends it as the api key.
+ */
+function buildClient(opts: { apiKey: string; baseUrl?: string; auth?: EndpointAuth }): Anthropic {
+  const base = opts.baseUrl ? { baseURL: opts.baseUrl } : {};
+  if (opts.auth === "bearer") {
+    return new Anthropic({ ...base, authToken: opts.apiKey, apiKey: null });
+  }
+  return new Anthropic({ ...base, apiKey: opts.apiKey });
 }
 
 /**
@@ -82,6 +101,10 @@ export interface AnthropicStreamOptions {
   messages: OllamaMessage[];
   signal: AbortSignal;
   onChunk: (delta: string) => void;
+  /** Custom Anthropic-compatible endpoint base URL (default: api.anthropic.com). */
+  baseUrl?: string;
+  /** How `apiKey` is sent to a custom endpoint (default: api-key at the cloud). */
+  auth?: EndpointAuth;
 }
 
 /**
@@ -90,7 +113,7 @@ export interface AnthropicStreamOptions {
  * the request via SDK request options, with a `stream.abort()` fallback.
  */
 export async function anthropicStream(opts: AnthropicStreamOptions): Promise<void> {
-  const client = new Anthropic({ apiKey: opts.apiKey });
+  const client = buildClient(opts);
   const { system, messages } = toAnthropicRequest(opts.messages);
 
   const stream = client.messages.stream(
@@ -139,11 +162,15 @@ export interface AnthropicOnceOptions {
   model: string;
   messages: OllamaMessage[];
   timeoutMs?: number;
+  /** Custom Anthropic-compatible endpoint base URL (default: api.anthropic.com). */
+  baseUrl?: string;
+  /** How `apiKey` is sent to a custom endpoint (default: api-key at the cloud). */
+  auth?: EndpointAuth;
 }
 
 /** Single non-streaming completion; concatenates the text blocks of the reply. */
 export async function anthropicOnce(opts: AnthropicOnceOptions): Promise<string> {
-  const client = new Anthropic({ apiKey: opts.apiKey });
+  const client = buildClient(opts);
   const { system, messages } = toAnthropicRequest(opts.messages);
   try {
     const res = await client.messages.create(
@@ -179,6 +206,24 @@ export async function validateAnthropicKey(
   } catch (err) {
     return { keyState: "invalid", keyError: humanizeAnthropicError(err) };
   }
+}
+
+/**
+ * List models from an Anthropic-compatible endpoint (for the fetch-models
+ * route). Throws humanized errors on failure so the route can surface 502 copy.
+ */
+export async function listAnthropicModels(opts: {
+  baseUrl?: string;
+  token: string | null;
+  auth?: EndpointAuth;
+}): Promise<string[]> {
+  const client = buildClient({
+    apiKey: opts.token ?? "local",
+    ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+    ...(opts.auth ? { auth: opts.auth } : {}),
+  });
+  const res = await client.models.list({}, { timeout: 6_000 });
+  return res.data.map((m) => m.id).sort();
 }
 
 /**

@@ -2,11 +2,13 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import type { SettingsStore } from "../settings/store.js";
+import { EndpointStore, SqliteEndpointKv } from "./endpoints.js";
 import { KeyStore, SqliteKeyKv } from "./keys.js";
-import { ModelRouter } from "./router.js";
+import { ModelRouter, type RouterEndpoints } from "./router.js";
 
 export interface LlmSystem {
   keys: KeyStore;
+  endpoints: EndpointStore;
   router: ModelRouter;
   close(): void;
 }
@@ -22,9 +24,24 @@ export function createLlmSystem(dataDir: string, settings: SettingsStore): LlmSy
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   const keys = new KeyStore(new SqliteKeyKv(db));
-  const router = new ModelRouter(settings, keys);
+  const endpoints = new EndpointStore(new SqliteEndpointKv(db));
+  // Compose config (EndpointStore) + secret (KeyStore) into the router's view.
+  const routerEndpoints: RouterEndpoints = {
+    get(id) {
+      const cfg = endpoints.get(id);
+      if (!cfg) return null;
+      return {
+        kind: cfg.kind,
+        baseUrl: cfg.baseUrl,
+        auth: cfg.auth,
+        token: keys.getEndpointToken(id),
+      };
+    },
+  };
+  const router = new ModelRouter(settings, keys, routerEndpoints);
   return {
     keys,
+    endpoints,
     router,
     close() {
       db.close();
@@ -32,13 +49,32 @@ export function createLlmSystem(dataDir: string, settings: SettingsStore): LlmSy
   };
 }
 
-export { KeyStore, SqliteKeyKv, maskAnthropicKey, type KeyKv } from "./keys.js";
-export { ModelRouter } from "./router.js";
+export { KeyStore, SqliteKeyKv, maskAnthropicKey, maskKey, type KeyKv } from "./keys.js";
+export {
+  EndpointStore,
+  SqliteEndpointKv,
+  validateEndpointInput,
+  slugify,
+  EndpointValidationError,
+  type EndpointKv,
+  type EndpointConfig,
+  type EndpointInput,
+} from "./endpoints.js";
+export { ModelRouter, type RouterEndpoints, type ResolvedEndpoint } from "./router.js";
 export {
   CLOUD_CATALOG,
   isCloudModel,
   toAnthropicRequest,
   validateAnthropicKey,
+  listAnthropicModels,
   humanizeAnthropicError,
 } from "./anthropic.js";
+export {
+  openaiStream,
+  openaiOnce,
+  listOpenAiModels,
+  parseSseLine,
+  SseBuffer,
+  humanizeStatus,
+} from "./openai.js";
 export { registerModelRoutes, type ModelRoutesDeps } from "./routes.js";

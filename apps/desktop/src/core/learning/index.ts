@@ -32,3 +32,10 @@ export { LearningEngine } from "./engine.js";
 export { LearningStore } from "./store.js";
 export { import3mc, type SkillDocIngest } from "./importer.js";
 export { computeSourceDigest } from "./digest.js";
+export {
+  createGuideGenerator,
+  GuideError,
+  type GuideProgress,
+  type GuideRouter,
+  type GuideDocIngest,
+} from "./guides.js";

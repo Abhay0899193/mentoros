@@ -108,7 +108,7 @@ export interface ModelStatus {
   state: 'ready' | 'ollama-offline' | 'model-missing';
   model: string;
   /** Which provider the surface resolved to (absent = 'ollama', pre-slice shape). */
-  provider?: 'ollama' | 'anthropic';
+  provider?: 'ollama' | 'anthropic' | 'endpoint';
   /** Set when a cloud choice was silently downgraded to local (no key / cloud off). */
   fellBack?: boolean;
 }
@@ -784,7 +784,7 @@ export type SttModelId = 'small.en' | 'medium.en' | 'large-v3-turbo';
 
 /* ---------------- Model switching (local Ollama + cloud Claude, §2.4 router) ---------------- */
 
-export type ModelProvider = 'ollama' | 'anthropic';
+export type ModelProvider = 'ollama' | 'anthropic' | 'endpoint';
 
 /**
  * The app surfaces that generate with an LLM, each independently routable.
@@ -792,12 +792,39 @@ export type ModelProvider = 'ollama' | 'anthropic';
  * surface:'voice'); the memory merge-judge is deliberately NOT routable — it
  * stays on the local model (cheap latency-sensitive classifier).
  */
-export type ModelSurface = 'chat' | 'voice' | 'interviewer' | 'scorecard';
+export type ModelSurface = 'chat' | 'voice' | 'interviewer' | 'scorecard' | 'guide';
 
 export interface ModelChoice {
   provider: ModelProvider;
   /** Ollama tag ('llama3.1:8b') or Anthropic model id ('claude-opus-4-8'). */
   model: string;
+  /**
+   * Which custom endpoint the model lives on. Required when provider ===
+   * 'endpoint' (the router falls back to local without it); ignored otherwise.
+   */
+  endpointId?: string;
+}
+
+/** Wire protocol a custom endpoint speaks (OpenAI-compatible or Anthropic-compatible). */
+export type EndpointKind = 'openai' | 'anthropic';
+
+/** How the token is presented to a custom endpoint (default 'bearer'). */
+export type EndpointAuth = 'bearer' | 'x-api-key';
+
+/**
+ * A user-defined custom LLM endpoint (a corporate Claude gateway, OpenCode Zen,
+ * a self-hosted proxy…). The token is a secret and is NEVER returned — only a
+ * display mask ('…f3a2') when one is stored.
+ */
+export interface CustomEndpointInfo {
+  id: string;
+  label: string;
+  kind: EndpointKind;
+  baseUrl: string;
+  auth: EndpointAuth;
+  /** Free-typed model ids (membership is not enforced at resolve time). */
+  models: string[];
+  tokenMask?: string;
 }
 
 /** One installed Ollama model (from /api/tags). */
@@ -839,6 +866,8 @@ export interface ProvidersInfo {
     keyError?: string;
     catalog: CloudModelInfo[];
   };
+  /** User-defined custom endpoints (configs + token masks; never the token). */
+  endpoints: CustomEndpointInfo[];
 }
 
 /**
@@ -1327,6 +1356,15 @@ export interface CoreEvents {
   /** After any task/mission completion — keeps Home/Learning live. */
   'learning.progress': { summary: LearningSummary };
   'mission.updated': { mission: TodayMission };
+  /**
+   * "New guide" progress (Phase G) — writing + ingesting one
+   * STUDY-GUIDES/custom/<slug>.md from a prompt. Mirrors `kb.ingest`'s shape.
+   */
+  'guide.progress':
+    | { step: 'generating'; chars: number }
+    | { step: 'ingesting' }
+    | { step: 'done'; slug: string; sourceId: string }
+    | { step: 'error'; error: string };
   /** Ingest progress for one source (drives the drag-drop progress toast). */
   'kb.ingest': {
     /** Set once the source row exists. */
@@ -1404,6 +1442,42 @@ export interface CoreClient {
   /** Forget the stored key; cloud choices fall back to local immediately. */
   clearAnthropicKey(): Promise<void>;
 
+  /* custom endpoints (Settings → Models → Custom endpoints) */
+  /**
+   * Create a custom endpoint (id derived from the label, deduped). A non-empty
+   * `token` is stored as its secret; omit it for a keyless gateway. 400 on
+   * invalid input. Resolves with the created endpoint (token masked only).
+   */
+  createEndpoint(input: {
+    label: string;
+    kind: EndpointKind;
+    baseUrl: string;
+    auth?: EndpointAuth;
+    models?: string[];
+    token?: string;
+  }): Promise<CustomEndpointInfo>;
+  /**
+   * Partial update. Token semantics: omit `token` to keep the current one, ''
+   * to clear it, a non-empty string to set it. 404 when unknown, 400 on invalid.
+   */
+  updateEndpoint(
+    id: string,
+    patch: Partial<{
+      label: string;
+      kind: EndpointKind;
+      baseUrl: string;
+      auth: EndpointAuth;
+      models: string[];
+      token: string;
+    }>,
+  ): Promise<CustomEndpointInfo>;
+  /** Forget an endpoint + its token; surfaces pointing at it fall back to local. */
+  deleteEndpoint(id: string): Promise<void>;
+  /** Fetch the endpoint's remote model list (does not persist it). 502 on failure. */
+  fetchEndpointModels(id: string): Promise<string[]>;
+  /** Probe the endpoint (list models, 6s). Never rejects on a bad endpoint. */
+  testEndpoint(id: string): Promise<{ ok: boolean; error?: string }>;
+
   /* personas (Settings → Personas + chat/voice persona pickers) */
   /** Built-ins first, then custom by createdAt. */
   listPersonas(): Promise<PersonaRecord[]>;
@@ -1443,6 +1517,13 @@ export interface CoreClient {
   completeMissionItem(itemId: string, done: boolean): Promise<TodayMission>;
   reviewQueue(): Promise<ReviewItem[]>;
   heatmap(days?: number): Promise<HeatCell[]>;
+  /**
+   * "New guide" (Phase G): writes one supplementary study-guide part from a
+   * prompt and ingests it (never touches week guides). Fire-and-forget —
+   * progress arrives via `guide.progress`. Throws CoreRequestError on 400
+   * (invalid prompt) or 409 (already running / no plan imported yet).
+   */
+  generateGuide(prompt: string): Promise<void>;
 
   /* knowledge base */
   listKbSources(): Promise<KbSource[]>;
@@ -1851,6 +1932,22 @@ export function createCoreClient(): CoreClient {
         if (!r.ok) throw new Error(`core request failed: ${r.status}`);
       }),
 
+    createEndpoint: (input) =>
+      post<{ endpoint: CustomEndpointInfo }>('/models/endpoints', input).then((r) => r.endpoint),
+    updateEndpoint: (id, patch) =>
+      fetch(`${baseUrl}/models/endpoints/${id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(patch),
+      }).then((r) => json<{ endpoint: CustomEndpointInfo }>(r)).then((r) => r.endpoint),
+    deleteEndpoint: (id) =>
+      fetch(`${baseUrl}/models/endpoints/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`core request failed: ${r.status}`);
+      }),
+    fetchEndpointModels: (id) =>
+      post<{ models: string[] }>(`/models/endpoints/${id}/models`).then((r) => r.models),
+    testEndpoint: (id) => post<{ ok: boolean; error?: string }>(`/models/endpoints/${id}/test`),
+
     listPersonas: () => get<PersonaRecord[]>('/personas'),
     createPersona: (input) => post<PersonaRecord>('/personas', input),
     updatePersona: (id, patch) =>
@@ -1901,6 +1998,7 @@ export function createCoreClient(): CoreClient {
     completeMissionItem: (itemId, done) => post<TodayMission>(`/mission/items/${itemId}/complete`, { done }),
     reviewQueue: () => get<ReviewItem[]>('/learning/reviews'),
     heatmap: (days) => get<HeatCell[]>(`/learning/heatmap${days ? `?days=${days}` : ''}`),
+    generateGuide: (prompt) => post<{ started: true }>('/learning/guides', { prompt }).then(() => undefined),
 
     listKbSources: () => get<KbSource[]>('/kb/sources'),
     ingestKbSource: (path, opts) => post<{ sourceId: string }>('/kb/sources', { path, ...opts }),

@@ -53,3 +53,26 @@ test('buildCollections nodes come back in flow order, not import order', () => {
   assert.equal(weekly.sources[0].title, 'Week 1 overview');
   assert.equal(weekly.sources.at(-1)!.title, 'Week 2 overview');
 });
+
+test('buildCollections places a Generated node (tag `generated`) after Skill sheets, before Other', () => {
+  const skillSheet = src('Docker', ['3mc', 'quick-review', 'week:1']);
+  const guide = src('Week 1 overview', ['3mc', 'study-guide', 'week:1', 'part:0']);
+  const generated = src('Bit Manipulation Tricks', ['3mc', 'study-guide', 'topic:dsa/bit-manipulation', 'generated']);
+  const other = src('Random note', []);
+  const tree = buildCollections([skillSheet, guide, generated, other]);
+
+  const ids = tree.map((n) => n.id);
+  assert.ok(ids.indexOf('generated') > ids.indexOf('skill-sheets'));
+  assert.ok(ids.indexOf('generated') < ids.indexOf('other'));
+
+  const generatedNode = findCollection(tree, 'generated')!;
+  assert.deepEqual(generatedNode.sources.map((s) => s.title), ['Bit Manipulation Tricks']);
+
+  // A generated doc's topic tags still surface it under Topics too (intended overlap).
+  const dsaTopics = findCollection(tree, 'topics:dsa')!;
+  assert.ok(dsaTopics.sources.some((s) => s.title === 'Bit Manipulation Tricks'));
+
+  // Untagged sources still land in Other, not Generated.
+  const otherNode = findCollection(tree, 'other')!;
+  assert.deepEqual(otherNode.sources.map((s) => s.title), ['Random note']);
+});

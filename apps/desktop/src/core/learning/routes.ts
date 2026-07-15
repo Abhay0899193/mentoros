@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { CoreEvents } from "../types.js";
+import { GuideError } from "./guides.js";
 import type { LearningEngine } from "./engine.js";
 
 type Broadcast = <E extends keyof CoreEvents>(
@@ -10,9 +11,17 @@ type Broadcast = <E extends keyof CoreEvents>(
 /** Register /learning/* and /mission/* routes (mirror of coreClient §Learning). */
 export function registerLearningRoutes(
   app: FastifyInstance,
-  deps: { engine: LearningEngine; broadcast: Broadcast },
+  deps: {
+    engine: LearningEngine;
+    broadcast: Broadcast;
+    /**
+     * In-app "New guide" generator (Phase G). Injected by the server (needs the
+     * model router + kb engine); undefined only in narrow tests that don't wire it.
+     */
+    guideGenerator?: { generate: (prompt: string) => Promise<void> };
+  },
 ): void {
-  const { engine, broadcast } = deps;
+  const { engine, broadcast, guideGenerator } = deps;
 
   app.get("/learning/summary", async () => engine.summary());
   app.get("/learning/weeks", async () => engine.weeks());
@@ -77,4 +86,36 @@ export function registerLearningRoutes(
       return mission;
     },
   );
+
+  /**
+   * "New guide" (Phase G): writes ONE supplementary study-guide part to
+   * STUDY-GUIDES/custom/<slug>.md from a prompt, then ingests it — NEVER
+   * touches STUDY-GUIDES/week-NN/. Fire-and-forget: progress arrives over
+   * `guide.progress` (§coreClient); this just starts it or reports why not.
+   */
+  app.post<{ Body: { prompt?: string } }>("/learning/guides", async (req, reply) => {
+    const prompt = req.body?.prompt;
+    if (typeof prompt !== "string") {
+      return reply.code(400).send({ error: "prompt is required" });
+    }
+    if (!guideGenerator) {
+      return reply.code(503).send({ error: "guide generator unavailable" });
+    }
+    try {
+      // generate() validates + single-flight-checks SYNCHRONOUSLY (throws a
+      // GuideError before any await) — caught here for an immediate 400/409.
+      // The returned promise (the actual slow generation) is fire-and-forget;
+      // its own failures already reached the client via `guide.progress`.
+      const promise = guideGenerator.generate(prompt);
+      promise.catch(() => {
+        /* already broadcast as guide.progress {step:'error'} */
+      });
+      return reply.code(202).send({ started: true as const });
+    } catch (err) {
+      if (err instanceof GuideError) {
+        return reply.code(err.status).send({ error: err.message });
+      }
+      return reply.code(500).send({ error: "could not start guide generation" });
+    }
+  });
 }

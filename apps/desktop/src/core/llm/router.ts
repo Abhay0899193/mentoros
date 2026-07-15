@@ -6,8 +6,11 @@ import {
   type OllamaMessage,
 } from "../ollama.js";
 import { anthropicOnce, anthropicStream, isCloudModel } from "./anthropic.js";
+import { openaiOnce, openaiStream } from "./openai.js";
 import type {
   ApiKeyState,
+  EndpointAuth,
+  EndpointKind,
   ModelProvider,
   ModelStatus,
   ModelSurface,
@@ -23,7 +26,10 @@ import type {
 
 /** The slice of SettingsStore the router reads (injectable for tests). */
 export interface RouterSettings {
-  get(): { cloudEnabled: boolean; models: Record<ModelSurface, { provider: ModelProvider; model: string }> };
+  get(): {
+    cloudEnabled: boolean;
+    models: Record<ModelSurface, { provider: ModelProvider; model: string; endpointId?: string }>;
+  };
 }
 
 /** The slice of KeyStore the router reads (injectable for tests). */
@@ -32,10 +38,29 @@ export interface RouterKeys {
   getState(): ApiKeyState;
 }
 
+/** A custom endpoint resolved to everything the adapters need (incl. its token). */
+export interface ResolvedEndpoint {
+  kind: EndpointKind;
+  baseUrl: string;
+  auth: EndpointAuth;
+  token: string | null;
+}
+
+/**
+ * The slice of the endpoint subsystem the router reads (injectable for tests):
+ * composes EndpointStore config + KeyStore token into a ready-to-call target,
+ * or null when the endpoint no longer exists.
+ */
+export interface RouterEndpoints {
+  get(id: string): ResolvedEndpoint | null;
+}
+
 export interface Resolved {
   provider: ModelProvider;
   model: string;
   fellBack: boolean;
+  /** Present only when provider === 'endpoint' — the dispatch target. */
+  endpoint?: ResolvedEndpoint;
 }
 
 export interface RouterStreamArgs {
@@ -57,6 +82,7 @@ export class ModelRouter {
   constructor(
     private readonly settings: RouterSettings,
     private readonly keys: RouterKeys,
+    private readonly endpoints?: RouterEndpoints,
   ) {}
 
   /** Resolve a surface to a concrete provider+model, reporting cloud→local fallback. */
@@ -68,6 +94,14 @@ export class ModelRouter {
         s.cloudEnabled && this.keys.getState() === "valid" && isCloudModel(choice.model);
       if (!usable) return { provider: "ollama", model: DEFAULT_MODEL, fellBack: true };
       return { provider: "anthropic", model: choice.model, fellBack: false };
+    }
+    if (choice.provider === "endpoint") {
+      // Cloud must be on, an endpointId must be set, and the endpoint must still
+      // exist. Model membership in endpoint.models is NOT required (free-typed).
+      const ep = choice.endpointId ? (this.endpoints?.get(choice.endpointId) ?? null) : null;
+      const usable = s.cloudEnabled && !!choice.endpointId && !!ep;
+      if (!usable || !ep) return { provider: "ollama", model: DEFAULT_MODEL, fellBack: true };
+      return { provider: "endpoint", model: choice.model, fellBack: false, endpoint: ep };
     }
     return { provider: "ollama", model: choice.model, fellBack: false };
   }
@@ -82,6 +116,31 @@ export class ModelRouter {
         signal: args.signal,
         onChunk: args.onChunk,
       });
+      return;
+    }
+    if (r.provider === "endpoint" && r.endpoint) {
+      const ep = r.endpoint;
+      if (ep.kind === "openai") {
+        await openaiStream({
+          baseUrl: ep.baseUrl,
+          token: ep.token,
+          auth: ep.auth,
+          model: r.model,
+          messages: args.messages,
+          signal: args.signal,
+          onChunk: args.onChunk,
+        });
+      } else {
+        await anthropicStream({
+          apiKey: ep.token ?? "local",
+          baseUrl: ep.baseUrl,
+          auth: ep.auth,
+          model: r.model,
+          messages: args.messages,
+          signal: args.signal,
+          onChunk: args.onChunk,
+        });
+      }
       return;
     }
     await chatStream({
@@ -102,6 +161,28 @@ export class ModelRouter {
         ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
       });
     }
+    if (r.provider === "endpoint" && r.endpoint) {
+      const ep = r.endpoint;
+      const timeout = args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {};
+      if (ep.kind === "openai") {
+        return openaiOnce({
+          baseUrl: ep.baseUrl,
+          token: ep.token,
+          auth: ep.auth,
+          model: r.model,
+          messages: args.messages,
+          ...timeout,
+        });
+      }
+      return anthropicOnce({
+        apiKey: ep.token ?? "local",
+        baseUrl: ep.baseUrl,
+        auth: ep.auth,
+        model: r.model,
+        messages: args.messages,
+        ...timeout,
+      });
+    }
     return chatOnce({
       model: r.model,
       messages: args.messages,
@@ -119,6 +200,11 @@ export class ModelRouter {
     const r = this.resolve(surface);
     if (r.provider === "anthropic") {
       return { state: "ready", model: r.model, provider: "anthropic" };
+    }
+    if (r.provider === "endpoint") {
+      // Endpoint reachability is enforced at resolve time (an unusable choice has
+      // already fallen back); a resolved endpoint is reported ready.
+      return { state: "ready", model: r.model, provider: "endpoint" };
     }
     const s = await probeOllama(r.model);
     return { ...s, provider: "ollama", ...(r.fellBack ? { fellBack: true } : {}) };
