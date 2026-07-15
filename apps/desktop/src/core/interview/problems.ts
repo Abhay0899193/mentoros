@@ -40,6 +40,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "two-sum",
     lcNumber: 1,
+    slug: "two-sum",
     title: "Two Sum",
     difficulty: "easy",
     pattern: "arrays-and-hashing",
@@ -87,6 +88,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "valid-parentheses",
     lcNumber: 20,
+    slug: "valid-parentheses",
     title: "Valid Parentheses",
     difficulty: "easy",
     pattern: "stack",
@@ -136,6 +138,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "best-time-buy-sell-stock",
     lcNumber: 121,
+    slug: "best-time-to-buy-and-sell-stock",
     title: "Best Time to Buy and Sell Stock",
     difficulty: "easy",
     pattern: "greedy",
@@ -182,6 +185,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "longest-substring-without-repeating",
     lcNumber: 3,
+    slug: "longest-substring-without-repeating-characters",
     title: "Longest Substring Without Repeating Characters",
     difficulty: "medium",
     pattern: "sliding-window",
@@ -229,6 +233,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "search-rotated-sorted-array",
     lcNumber: 33,
+    slug: "search-in-rotated-sorted-array",
     title: "Search in Rotated Sorted Array",
     difficulty: "medium",
     pattern: "binary-search",
@@ -277,6 +282,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "maximum-subarray",
     lcNumber: 53,
+    slug: "maximum-subarray",
     title: "Maximum Subarray",
     difficulty: "medium",
     pattern: "dp-1d",
@@ -322,6 +328,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "merge-intervals",
     lcNumber: 56,
+    slug: "merge-intervals",
     title: "Merge Intervals",
     difficulty: "medium",
     pattern: "intervals",
@@ -367,6 +374,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "number-of-islands",
     lcNumber: 200,
+    slug: "number-of-islands",
     title: "Number of Islands",
     difficulty: "medium",
     pattern: "graphs",
@@ -413,6 +421,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "coin-change",
     lcNumber: 322,
+    slug: "coin-change",
     title: "Coin Change",
     difficulty: "medium",
     pattern: "dp-1d",
@@ -458,6 +467,7 @@ export const PROBLEMS: BankProblem[] = [
   {
     id: "trapping-rain-water",
     lcNumber: 42,
+    slug: "trapping-rain-water",
     title: "Trapping Rain Water",
     difficulty: "hard",
     pattern: "two-pointers",
@@ -528,6 +538,7 @@ export function toPublicProblem(p: BankProblem): InterviewProblem {
     starterCode,
   };
   if (p.lcNumber !== undefined) meta.lcNumber = p.lcNumber;
+  if (p.slug) meta.slug = p.slug;
   if (p.custom) meta.custom = true;
   return meta;
 }

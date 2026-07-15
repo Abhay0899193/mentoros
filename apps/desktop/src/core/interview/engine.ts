@@ -7,6 +7,7 @@ import type {
   DraftValidation,
   EvalResult,
   InterviewLanguage,
+  InterviewMode,
   InterviewPhase,
   InterviewProblem,
   InterviewProblemDraft,
@@ -16,6 +17,7 @@ import type {
   InterviewSessionSummary,
   InterviewTurn,
   InterviewType,
+  LeetCodeFetchResult,
   MemoryRecord,
   SaveMemoryInput,
   SaveMemoryResult,
@@ -41,7 +43,8 @@ import {
 } from "./importer.js";
 import { Interviewer, type IInterviewer, type StreamTurnArgs } from "./interviewer.js";
 import { recommendProblem, type MistakeSignal, type RecResult } from "./recommend.js";
-import { gradeScorecard, writeScorecardMemories, type GradeInput, type ScorecardOnce } from "./scorecard.js";
+import { gradePractice, gradeScorecard, writeScorecardMemories, type GradeInput, type ScorecardOnce } from "./scorecard.js";
+import { fetchLeetCodeProblem } from "./leetcode.js";
 import { chatOnce } from "../ollama.js";
 import { runTests, type RunTestsOpts } from "./runner.js";
 import type { IInterviewStore } from "./store.js";
@@ -150,6 +153,7 @@ export class InterviewEngine {
       const sum: InterviewSessionSummary = {
         id: s.id,
         type: s.type,
+        mode: s.mode ?? "interview",
         problemTitle: problem?.title ?? s.problemId,
         pattern: problem?.pattern ?? "unknown",
         phase: s.phase,
@@ -158,6 +162,28 @@ export class InterviewEngine {
       if (sc) sum.score = sc.score;
       return sum;
     });
+  }
+
+  /**
+   * Resolve a problem (bank or custom) by its LeetCode titleSlug — the
+   * practice-mode "open this LC problem in-app" entry point. Case-insensitive.
+   */
+  problemBySlug(slug: string): InterviewProblem | undefined {
+    const want = slug.trim().toLowerCase();
+    if (!want) return undefined;
+    const hit = allProblems(this.importStore).find(
+      (p) => (p.slug ?? "").toLowerCase() === want,
+    );
+    return hit ? toPublicProblem(hit) : undefined;
+  }
+
+  /**
+   * Fetch a problem statement from LeetCode's public GraphQL (practice-mode
+   * import). Pure delegation to {@link fetchLeetCodeProblem}; errors bubble as
+   * LeetCodeNotFound (→404) / LeetCodeFetchError (→502) for the route to map.
+   */
+  fetchLeetCode(slug: string): Promise<LeetCodeFetchResult> {
+    return fetchLeetCodeProblem(slug);
   }
 
   /* ------------------------------- importer ---------------------------- */
@@ -223,17 +249,30 @@ export class InterviewEngine {
     type: InterviewType;
     problemId?: string;
     language: InterviewLanguage;
+    mode?: InterviewMode;
   }): { session: InterviewSession; problem: InterviewProblem } {
     const problemId = input.problemId ?? this.recommendedOrDefault();
     const problem = findProblem(this.importStore, problemId);
     if (!problem) throw new NotFoundError("problem not found");
 
+    const mode: InterviewMode = input.mode ?? "interview";
     const session = this.store.createSession({
       type: input.type,
       problemId,
       language: input.language,
+      mode,
     });
-    // Stream the framing opener as the first interviewer turn.
+
+    if (mode === "practice") {
+      // Practice: no interviewer, no framing, no LLM. Start directly in coding
+      // so /run and /hint are the only mechanics; resume never re-enters framing.
+      this.store.setPhase(session.id, "coding");
+      session.phase = "coding";
+      this.broadcast("interview.phase", { sessionId: session.id, phase: "coding" });
+      return { session, problem: toPublicProblem(problem) };
+    }
+
+    // Interview: stream the framing opener as the first interviewer turn.
     const turn = this.store.addTurn({
       sessionId: session.id,
       role: "interviewer",
@@ -343,8 +382,17 @@ export class InterviewEngine {
   }
 
   finish(id: string, code: string): { replyTurnId: string } {
-    this.requireSession(id);
+    const session = this.requireSession(id);
     this.store.setCode(id, code);
+    if (session.mode === "practice") {
+      // Practice has no interrogation and no interviewer. `finish` is the
+      // terminal action: move straight to a deterministic, LLM-free scorecard.
+      // Returns an empty replyTurnId — there is no interviewer turn to bind.
+      this.store.setPhase(id, "scorecard");
+      this.broadcast("interview.phase", { sessionId: id, phase: "scorecard" });
+      void this.gradePracticeAndPersist({ ...session, phase: "scorecard" });
+      return { replyTurnId: "" };
+    }
     this.store.setPhase(id, "interrogation");
     this.broadcast("interview.phase", { sessionId: id, phase: "interrogation" });
     this.store.addTurn({
@@ -359,8 +407,7 @@ export class InterviewEngine {
       kind: "chat",
       content: "",
     });
-    const session = this.requireSession(id);
-    this.streamInterviewer(session, "interrogation", reply.id, {
+    this.streamInterviewer(this.requireSession(id), "interrogation", reply.id, {
       code,
       lastEval: this.latestEval(id),
       interrogationOpener: true,
@@ -372,7 +419,12 @@ export class InterviewEngine {
     const session = this.requireSession(id);
     this.store.setPhase(id, "scorecard");
     this.broadcast("interview.phase", { sessionId: id, phase: "scorecard" });
-    void this.gradeAndPersist(session);
+    if (session.mode === "practice") {
+      // Defensive: practice grading is deterministic and LLM-free even via /end.
+      void this.gradePracticeAndPersist(session);
+    } else {
+      void this.gradeAndPersist(session);
+    }
     return { started: true };
   }
 
@@ -444,6 +496,37 @@ export class InterviewEngine {
     if (extra?.lastEval) args.lastEval = extra.lastEval;
     if (extra?.interrogationOpener) args.interrogationOpener = true;
     void this.interviewer.streamTurn(args);
+  }
+
+  /**
+   * Practice grading: a deterministic, LLM-free scorecard from the test results
+   * and hint usage. No interviewer call, no scorecard stream. Practice does NOT
+   * write memories — it is a low-stakes grind, not a graded mock, so it must not
+   * flood the profile's mistake/skill records or the spaced-repetition queue.
+   */
+  private async gradePracticeAndPersist(session: InterviewSession): Promise<void> {
+    const problem = findProblem(this.importStore, session.problemId);
+    if (!problem) return;
+    const endISO = new Date().toISOString();
+    const attempts = this.store.getAttempts(session.id);
+    const turns = this.store.getTurns(session.id);
+    const durationSec = Math.max(
+      0,
+      Math.round((Date.parse(endISO) - Date.parse(session.startedAt)) / 1000),
+    );
+    const scorecard = gradePractice({
+      problem,
+      session,
+      turns,
+      code: this.store.getCode(session.id) ?? "",
+      attempts,
+      hintsUsed: session.hintsUsed,
+      durationSec,
+      endISO,
+    });
+    this.store.setScorecard(scorecard);
+    this.store.setEnded(session.id, endISO);
+    this.broadcast("interview.scorecard", { sessionId: session.id, scorecard });
   }
 
   private async gradeAndPersist(session: InterviewSession): Promise<void> {

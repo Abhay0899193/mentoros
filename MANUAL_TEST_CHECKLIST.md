@@ -265,3 +265,34 @@ add-expression is gated on the z-image-turbo toolchain even though it edits via 
 - [ ] Phone width (~390px): week grid 2-up, tabs/tiles/chips all tappable, no horizontal
       scroll; dark AND light themes hold the surface ladder (chrome monochrome, color
       only on rings/XP/state).
+
+## 15 · Solve LeetCode in-app — practice mode (Phase F)
+
+- [ ] Learning → open a week → hover a LeetCode task row → a "Solve" action appears
+      (always visible on touch). Click → app switches to Interview and a practice
+      session opens for bank problems (e.g. LC 1/53/200 in week 1) — two panes only
+      (problem | editor + results), no interviewer transcript, no framing message.
+- [ ] Problem header shows an "Open on LeetCode" link that opens the real problem
+      in the browser. The task's ↗ external link still works and does NOT start a session.
+- [ ] Run tests (⌘⏎) works; Hint yields the canned hint ladder inline under the
+      problem statement (3 max); no LLM/Ollama needed anywhere in practice.
+- [ ] When ALL hidden tests pass, a banner offers "Mark task done · +N XP" → clicking it
+      marks the learning task done (XP toast/level-up fires; task shows done back in
+      Learning). Banner flips to "Task marked done".
+- [ ] "Finish practice" → deterministic scorecard appears quickly (no "Ollama down"
+      framing); Back to interviews returns to the launcher; the session appears in
+      history and resumes into the 2-pane practice layout (mark-done banner is NOT
+      expected after resume — renderer-only link).
+- [ ] A LeetCode task whose problem is NOT in the bank (any week-2+ problem, e.g.
+      LC 206): Solve → "Looking up this problem…" → "Set up practice" overlay with the
+      statement pre-filled and drafting already running → review draft (note says
+      hidden tests are generated approximations) → "Save & practice" → practice session
+      starts on the new custom problem. Re-Solving the same task later skips straight in
+      (slug now resolves).
+- [ ] Kill the network → Solve an unknown-slug task → warning toast ("paste the
+      statement instead") and the import overlay opens empty; pasting a statement
+      still produces a draft (needs LLM) and continues to practice.
+- [ ] Full interview mode is unchanged: pick from launcher → framing streams, 3 panes,
+      interrogation + LLM scorecard, hints in transcript.
+- [ ] Phone width: practice shows two tabs (Problem | Code); mark-done banner and
+      results drawer sit above the tab bar; no horizontal scroll, dark + light.

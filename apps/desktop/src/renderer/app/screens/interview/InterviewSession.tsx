@@ -11,6 +11,8 @@ import {
   AlertCircle,
   RefreshCw,
   ArrowLeft,
+  ExternalLink,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "../../../lib/cn";
 import { spring, dur } from "../../../motion/springs";
@@ -20,6 +22,7 @@ import type { InterviewProblem } from "../../../lib/coreClient";
 import { Button, Chip, CodeEditor } from "../../../ui";
 import { ReadingMarkdown } from "../knowledge/ReadingMarkdown";
 import { FallbackOrb } from "../../../orb/FallbackOrb";
+import { leetCodeUrlForSlug } from "../../../lib/leetcode";
 import { Transcript } from "./Transcript";
 import { ResultsDrawer } from "./ResultsDrawer";
 import { Scorecard } from "./Scorecard";
@@ -44,8 +47,92 @@ function ProblemHeader({ problem }: { problem: InterviewProblem }) {
         {problem.tags.map((t) => (
           <Chip key={t}>{t}</Chip>
         ))}
+        {problem.slug && (
+          <a
+            href={leetCodeUrlForSlug(problem.slug)}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-faint hover:text-ink"
+            title="Open on LeetCode"
+          >
+            <ExternalLink size={11} strokeWidth={1.5} />
+            Open on LeetCode
+          </a>
+        )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Practice mode has no transcript, so the (LLM-free, canned) hint ladder
+ * surfaces inline under the problem statement instead.
+ */
+function PracticeHints() {
+  const turns = useInterview((s) => s.turns);
+  const hints = turns.filter((t) => t.kind === "hint" && t.content);
+  if (hints.length === 0) return null;
+  return (
+    <div className="mt-5 flex flex-col gap-2">
+      {hints.map((h) => (
+        <motion.div
+          key={h.id}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={spring.smooth}
+          className="rounded-[10px] bg-surface-2 hairline p-3"
+        >
+          <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted">
+            <Lightbulb size={12} strokeWidth={1.5} className="text-iris" />
+            Hint {h.hintLevel}
+          </p>
+          <p className="text-small leading-relaxed text-body">{h.content}</p>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Practice + launched from a Learning task: passing every hidden test offers
+ * the "mark task done" (+XP) close-out (plan §F). The XP toast/level-up juice
+ * itself is learningStore's.
+ */
+function MarkTaskDoneBanner() {
+  const practiceLink = useInterview((s) => s.practiceLink);
+  const evalResult = useInterview((s) => s.evalResult);
+  const markLinkedTaskDone = useInterview((s) => s.markLinkedTaskDone);
+  const allPassed =
+    !!evalResult && evalResult.total > 0 && evalResult.passed === evalResult.total;
+  if (!practiceLink || !allPassed) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={spring.smooth}
+      className="flex shrink-0 items-center justify-between gap-3 border-t border-line bg-surface-1 px-4 py-2.5"
+    >
+      <p className="min-w-0 truncate text-small text-body">
+        {practiceLink.done ? (
+          <span className="flex items-center gap-1.5 text-success">
+            <Check size={14} strokeWidth={2} />
+            Task marked done — nice work.
+          </span>
+        ) : (
+          <>All tests pass — close out “{practiceLink.taskTitle}”?</>
+        )}
+      </p>
+      {!practiceLink.done && (
+        <Button
+          size="sm"
+          variant="primary"
+          icon={<Sparkles size={14} strokeWidth={1.5} />}
+          onClick={() => void markLinkedTaskDone()}
+        >
+          Mark task done · +{practiceLink.xpWorth} XP
+        </Button>
+      )}
+    </motion.div>
   );
 }
 
@@ -193,6 +280,7 @@ function Toolbar({ locked }: { locked: boolean }) {
   const backToLauncher = useInterview((s) => s.backToLauncher);
   if (!session) return null;
 
+  const practice = session.mode === "practice";
   const isInterrogation = session.phase === "interrogation";
   const isOver =
     session.phase === "scorecard" || session.phase === "abandoned";
@@ -240,11 +328,19 @@ function Toolbar({ locked }: { locked: boolean }) {
         {!locked && (
           <Button
             size="sm"
-            variant="secondary"
-            icon={<Check size={14} strokeWidth={1.5} />}
+            variant={practice ? "primary" : "secondary"}
+            icon={
+              practice ? (
+                <Flag size={14} strokeWidth={1.5} />
+              ) : (
+                <Check size={14} strokeWidth={1.5} />
+              )
+            }
+            loading={practice && scorecardLoading}
+            loadingLabel="Checking…"
             onClick={() => void finish()}
           >
-            I'm done
+            {practice ? "Finish practice" : "I'm done"}
           </Button>
         )}
         {isInterrogation && (
@@ -265,7 +361,7 @@ function Toolbar({ locked }: { locked: boolean }) {
   );
 }
 
-function GradingOverlay() {
+function GradingOverlay({ label }: { label?: string }) {
   const reduce = useReducedMotion();
   return (
     <motion.div
@@ -276,7 +372,7 @@ function GradingOverlay() {
       className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-canvas/85 backdrop-blur-sm"
     >
       <FallbackOrb state="thinking" size={64} frozen={!!reduce} />
-      <p className="text-small text-muted">Scoring against the L5 bar…</p>
+      <p className="text-small text-muted">{label ?? "Scoring against the L5 bar…"}</p>
     </motion.div>
   );
 }
@@ -330,9 +426,11 @@ const MOBILE_TABS: { id: MobileTab; label: string }[] = [
 function MobileTabBar({
   tab,
   onChange,
+  tabs = MOBILE_TABS,
 }: {
   tab: MobileTab;
   onChange: (t: MobileTab) => void;
+  tabs?: { id: MobileTab; label: string }[];
 }) {
   const reduce = useReducedMotion();
   return (
@@ -341,7 +439,7 @@ function MobileTabBar({
       aria-label="Interview view"
       className="relative mx-3 my-2 flex shrink-0 gap-1 rounded-full bg-surface-2 p-1 hairline"
     >
-      {MOBILE_TABS.map((o) => {
+      {tabs.map((o) => {
         const active = tab === o.id;
         return (
           <button
@@ -388,6 +486,11 @@ export function InterviewSession() {
   if (sessionError && !session) return <SessionErrorState />;
   if (!session || !problem) return null;
 
+  // Practice mode (plan §F): no interviewer → no transcript pane. The left
+  // column is the problem statement full-height (+ inline hints), the right
+  // stays Monaco + results; phones get two tabs instead of three.
+  const practice = session.mode === "practice";
+
   const locked =
     session.phase === "interrogation" ||
     session.phase === "scorecard" ||
@@ -401,7 +504,13 @@ export function InterviewSession() {
   return (
     <div className="relative flex h-full flex-col md:flex-row">
       {isMobile && <Toolbar locked={locked} />}
-      {isMobile && <MobileTabBar tab={mobileTab} onChange={setMobileTab} />}
+      {isMobile && (
+        <MobileTabBar
+          tab={mobileTab}
+          onChange={setMobileTab}
+          tabs={practice ? MOBILE_TABS.filter((t) => t.id !== "chat") : MOBILE_TABS}
+        />
+      )}
 
       <div
         className={cn(
@@ -415,23 +524,28 @@ export function InterviewSession() {
               ? mobileTab === "problem"
                 ? "min-h-0 flex-1 overflow-y-auto p-4"
                 : "hidden"
-              : "flex-[0_0_55%] overflow-y-auto p-6"
+              : practice
+                ? "min-h-0 flex-1 overflow-y-auto p-6"
+                : "flex-[0_0_55%] overflow-y-auto p-6"
           }
         >
           <ProblemHeader problem={problem} />
           <ReadingMarkdown text={problem.promptMd} />
+          {practice && <PracticeHints />}
         </div>
-        <div
-          className={
-            isMobile
-              ? mobileTab === "chat"
-                ? "flex min-h-0 flex-1 flex-col"
-                : "hidden"
-              : "flex-[0_0_45%] min-h-0"
-          }
-        >
-          <Transcript />
-        </div>
+        {!practice && (
+          <div
+            className={
+              isMobile
+                ? mobileTab === "chat"
+                  ? "flex min-h-0 flex-1 flex-col"
+                  : "hidden"
+                : "flex-[0_0_45%] min-h-0"
+            }
+          >
+            <Transcript />
+          </div>
+        )}
       </div>
 
       <div
@@ -450,9 +564,12 @@ export function InterviewSession() {
             onRun={() => void runTests()}
           />
           <AnimatePresence>
-            {scorecardLoading && !scorecard && <GradingOverlay />}
+            {scorecardLoading && !scorecard && (
+              <GradingOverlay label={practice ? "Checking your solution…" : undefined} />
+            )}
           </AnimatePresence>
         </div>
+        {practice && <MarkTaskDoneBanner />}
         <ResultsDrawer result={evalResult} />
       </div>
 

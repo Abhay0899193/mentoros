@@ -200,6 +200,16 @@ test("saveDraft: roundtrip sets custom:true and strips referenceSolution", async
   assert.equal(store.get("custom-two-sum"), undefined);
 });
 
+test("saveDraft: carries the LeetCode slug onto the custom problem", async () => {
+  const root = await tmpRoot();
+  const store = new MemImportStore();
+  const draft = validDraft({ slug: "two-sum" });
+  const v = await validateDraft(draft, runTests, root);
+  const saved = saveDraft(draft, v, store);
+  assert.equal(saved.slug, "two-sum", "slug persists on the saved custom problem");
+  assert.equal(store.get(saved.id)?.slug, "two-sum");
+});
+
 test("saveDraft: id dedupes against bank and existing customs", async () => {
   const root = await tmpRoot();
   const store = new MemImportStore();

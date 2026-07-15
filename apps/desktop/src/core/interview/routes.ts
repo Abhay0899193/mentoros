@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type {
   InterviewLanguage,
+  InterviewMode,
   InterviewProblemDraft,
   InterviewType,
 } from "../types.js";
@@ -12,6 +13,7 @@ import {
   InterviewNotFound,
   type InterviewEngine,
 } from "./engine.js";
+import { LeetCodeFetchError, LeetCodeNotFound } from "./leetcode.js";
 
 /**
  * Register the /interview/* HTTP routes (mirror of coreClient §Interview
@@ -32,11 +34,48 @@ export function registerInterviewRoutes(
 
   app.get("/interview/sessions", async () => engine.listSessions());
 
+  // Resolve a bank/custom problem by its LeetCode titleSlug (case-insensitive).
+  app.get<{ Params: { slug: string } }>(
+    "/interview/problems/by-slug/:slug",
+    async (req, reply) => {
+      const problem = engine.problemBySlug(req.params.slug);
+      if (!problem) return reply.code(404).send({ error: "problem not found" });
+      return { problem };
+    },
+  );
+
+  // Fetch a statement from LeetCode's public GraphQL (practice-mode import).
+  // 404 = unknown slug, 502 = network/parse failure — renderer falls back to paste.
+  app.post<{ Body: { slug?: string } }>(
+    "/interview/lc/fetch",
+    async (req, reply) => {
+      const slug = req.body?.slug?.trim();
+      if (!slug) return reply.code(400).send({ error: "slug is required" });
+      try {
+        return await engine.fetchLeetCode(slug);
+      } catch (err) {
+        if (err instanceof LeetCodeNotFound) {
+          return reply.code(404).send({ error: err.message });
+        }
+        if (err instanceof LeetCodeFetchError) {
+          return reply.code(502).send({ error: err.message });
+        }
+        return reply.code(502).send({ error: "could not reach LeetCode" });
+      }
+    },
+  );
+
   app.post<{
-    Body: { type?: InterviewType; problemId?: string; language?: InterviewLanguage };
+    Body: {
+      type?: InterviewType;
+      problemId?: string;
+      language?: InterviewLanguage;
+      mode?: InterviewMode;
+    };
   }>("/interview/sessions", async (req, reply) => {
     const type = req.body?.type ?? "coding";
     const language = req.body?.language ?? "python";
+    const mode: InterviewMode = req.body?.mode === "practice" ? "practice" : "interview";
     if (type !== "coding") {
       return reply.code(400).send({ error: "only coding interviews are available" });
     }
@@ -44,8 +83,9 @@ export function registerInterviewRoutes(
       const input: {
         type: InterviewType;
         language: InterviewLanguage;
+        mode: InterviewMode;
         problemId?: string;
-      } = { type, language };
+      } = { type, language, mode };
       if (req.body?.problemId) input.problemId = req.body.problemId;
       return engine.startSession(input);
     } catch (err) {

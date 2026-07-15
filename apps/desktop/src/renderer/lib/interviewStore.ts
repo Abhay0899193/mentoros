@@ -15,8 +15,31 @@ import {
   type InterviewType,
 } from "./coreClient";
 import { toast } from "../ui";
+import { slugFromLeetCodeUrl } from "./leetcode";
+import { useShell } from "./store";
+import { useLearning } from "./learningStore";
+import type { LearningTask } from "./coreClient";
 
 type View = "launcher" | "session";
+
+/**
+ * The learning task a practice session was launched from ("Solve" on a
+ * LeetCode task row, plan §F). Lets the session offer "Mark task done (+XP)"
+ * once the hidden tests pass. Renderer-only linkage — lost on resume from the
+ * launcher history (acceptable: the task row itself still toggles).
+ */
+export interface PracticeTaskLink {
+  taskId: string;
+  taskTitle: string;
+  xpWorth: number;
+  done: boolean;
+}
+
+/** Prefill for the import overlay when it opens as part of the Solve flow. */
+export interface ImportPrefill {
+  sourceText: string;
+  slug: string;
+}
 
 interface InterviewState {
   view: View;
@@ -36,6 +59,16 @@ interface InterviewState {
   importSaving: boolean;
   /** Set right after a successful save so the picker can select the new row. */
   lastImportedProblemId: string | null;
+  /** Pre-filled statement (LC fetch or paste-fallback) for the Solve flow. */
+  importPrefill: ImportPrefill | null;
+  /** 'practice' = saving the draft immediately starts a practice session. */
+  importIntent: "bank" | "practice";
+
+  /* practice mode (plan §F): solve LeetCode in-app, no interviewer/LLM */
+  /** Learning task the current practice session was launched from, if any. */
+  practiceLink: PracticeTaskLink | null;
+  /** True while the Solve flow resolves slug → problem / LC fetch. */
+  solvePreparing: boolean;
 
   sessions: InterviewSessionSummary[];
   sessionsLoading: boolean;
@@ -67,7 +100,7 @@ interface InterviewState {
   loadProblems: (type: InterviewType) => Promise<void>;
   loadSessions: () => Promise<void>;
 
-  openImport: () => void;
+  openImport: (prefill?: ImportPrefill, intent?: "bank" | "practice") => void;
   closeImport: () => void;
   clearImportGenerateError: () => void;
   generateDraft: (
@@ -87,6 +120,16 @@ interface InterviewState {
     problemId: string | undefined,
     language: InterviewLanguage,
   ) => Promise<void>;
+  /** LLM-free practice session (plan §F): starts directly in coding. */
+  startPractice: (problemId: string, language: InterviewLanguage) => Promise<void>;
+  /**
+   * "Solve" on a LeetCode learning task: resolve the URL's titleSlug against
+   * the bank/custom problems → practice session; unknown slug → LC GraphQL
+   * fetch → import overlay prefilled (paste fallback on fetch failure).
+   */
+  solveTask: (task: LearningTask) => Promise<void>;
+  /** Mark the linked learning task done after passing tests (+XP juice). */
+  markLinkedTaskDone: () => Promise<void>;
   resume: (sessionId: string) => Promise<void>;
   send: (content: string) => Promise<void>;
   requestHint: () => Promise<void>;
@@ -161,6 +204,11 @@ export const useInterview = create<InterviewState>((set, get) => ({
   importValidating: false,
   importSaving: false,
   lastImportedProblemId: null,
+  importPrefill: null,
+  importIntent: "bank",
+
+  practiceLink: null,
+  solvePreparing: false,
 
   sessions: [],
   sessionsLoading: false,
@@ -269,8 +317,15 @@ export const useInterview = create<InterviewState>((set, get) => ({
     }
   },
 
-  openImport: () => set({ importOpen: true, importGenerateError: null }),
-  closeImport: () => set({ importOpen: false }),
+  openImport: (prefill, intent) =>
+    set({
+      importOpen: true,
+      importGenerateError: null,
+      importPrefill: prefill ?? null,
+      importIntent: intent ?? "bank",
+    }),
+  closeImport: () =>
+    set({ importOpen: false, importPrefill: null, importIntent: "bank" }),
   clearImportGenerateError: () => set({ importGenerateError: null }),
 
   generateDraft: async (sourceText) => {
@@ -311,12 +366,15 @@ export const useInterview = create<InterviewState>((set, get) => ({
 
   saveDraft: async (draft) => {
     set({ importSaving: true });
+    const intent = get().importIntent;
     try {
       const meta = await coreClient.saveInterviewProblem(draft);
       set({
         importSaving: false,
         importOpen: false,
         lastImportedProblemId: meta.id,
+        importPrefill: null,
+        importIntent: "bank",
       });
       toast({
         tone: "success",
@@ -324,6 +382,10 @@ export const useInterview = create<InterviewState>((set, get) => ({
         description: meta.title,
       });
       void get().loadProblems("coding");
+      // Solve flow: the import was only a means to practice — go straight in.
+      if (intent === "practice") {
+        void get().startPractice(meta.id, get().pickerLanguage);
+      }
       return true;
     } catch {
       set({ importSaving: false });
@@ -383,6 +445,119 @@ export const useInterview = create<InterviewState>((set, get) => ({
       });
     } catch {
       set({ sessionLoading: false, sessionError: SERVICE_ERROR });
+    }
+  },
+
+  startPractice: async (problemId, language) => {
+    set({
+      sessionLoading: true,
+      sessionError: null,
+      pickerOpen: false,
+      view: "session",
+      turns: [],
+      evalResult: null,
+      scorecard: null,
+      scorecardDismissed: false,
+      turnError: null,
+      solvePreparing: false,
+    });
+    try {
+      const { session, problem } = await coreClient.startInterview({
+        type: "coding",
+        problemId,
+        language,
+        mode: "practice",
+      });
+      set({
+        sessionId: session.id,
+        session,
+        problem,
+        code: problem.starterCode[language] ?? "",
+        sessionLoading: false,
+        turnPhase: null, // nothing streams — there is no interviewer
+      });
+    } catch {
+      set({ sessionLoading: false, sessionError: SERVICE_ERROR });
+    }
+  },
+
+  solveTask: async (task) => {
+    const slug = slugFromLeetCodeUrl(task.url);
+    if (!slug) return; // Solve is only rendered for parseable LC urls
+    const language = get().pickerLanguage;
+    set({
+      practiceLink: {
+        taskId: task.id,
+        taskTitle: task.title,
+        xpWorth: task.xpWorth,
+        done: task.done,
+      },
+      solvePreparing: true,
+      sessionError: null,
+      // The import overlay is mounted under the launcher — make sure a stale
+      // 'session' view can't hide it if the slug needs the import path.
+      view: "launcher",
+    });
+    useShell.getState().setActive("interview");
+    try {
+      const problem = await coreClient.interviewProblemBySlug(slug);
+      if (problem) {
+        await get().startPractice(problem.id, language);
+        return;
+      }
+      // Unknown slug: fetch the statement from LeetCode and hand it to the
+      // importer (LLM drafts starters/tests — flagged in the overlay copy).
+      let prefill: ImportPrefill = { sourceText: "", slug };
+      try {
+        const lc = await coreClient.fetchLeetCodeProblem(slug);
+        prefill = {
+          slug,
+          sourceText: [
+            `# ${lc.title} (LeetCode, ${lc.difficulty})`,
+            "",
+            lc.statementMarkdown,
+            lc.exampleTestcases.trim()
+              ? `\nExample test cases (raw):\n${lc.exampleTestcases.trim()}`
+              : "",
+            lc.pythonStarter ? `\nPython starter:\n${lc.pythonStarter}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        };
+      } catch {
+        toast({
+          tone: "warning",
+          title: "Couldn't fetch from LeetCode",
+          description: "Paste the problem statement instead — same flow.",
+        });
+      }
+      set({ solvePreparing: false });
+      get().openImport(prefill, "practice");
+    } catch {
+      set({ solvePreparing: false });
+      toast({
+        tone: "danger",
+        title: "Couldn't start the practice session",
+        description: SERVICE_ERROR,
+      });
+    }
+  },
+
+  markLinkedTaskDone: async () => {
+    const link = get().practiceLink;
+    if (!link || link.done) return;
+    set({ practiceLink: { ...link, done: true } });
+    try {
+      // learningStore owns the XP juice (server-derived delta toast / level-up).
+      await useLearning.getState().completeTask(link.taskId, true);
+    } catch {
+      set({ practiceLink: { ...link, done: false } });
+      toast({
+        tone: "danger",
+        title: "Couldn't mark the task done",
+        description: SERVICE_ERROR,
+        action: { label: "Retry", onClick: () => void get().markLinkedTaskDone() },
+      });
     }
   },
 
@@ -527,6 +702,20 @@ export const useInterview = create<InterviewState>((set, get) => ({
   finish: async () => {
     const { sessionId, code, session } = get();
     if (!sessionId || !session) return;
+    if (session.mode === "practice") {
+      // Practice: finish is terminal — no interrogation, no interviewer turn.
+      // The deterministic scorecard arrives via the interview.scorecard event.
+      set({ scorecardLoading: true, turnError: null });
+      try {
+        await coreClient.finishCoding(sessionId, code);
+        set((s) => ({
+          session: s.session ? { ...s.session, phase: "scorecard" } : s.session,
+        }));
+      } catch {
+        set({ scorecardLoading: false, turnError: SERVICE_ERROR });
+      }
+      return;
+    }
     try {
       const { replyTurnId } = await coreClient.finishCoding(sessionId, code);
       const now = new Date().toISOString();
@@ -600,6 +789,8 @@ export const useInterview = create<InterviewState>((set, get) => ({
       streamingTurnId: null,
       turnPhase: null,
       turnError: null,
+      practiceLink: null,
+      solvePreparing: false,
     });
     void get().loadSessions();
   },

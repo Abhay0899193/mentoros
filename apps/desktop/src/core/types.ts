@@ -360,6 +360,12 @@ export interface MessageCitation {
 
 export type InterviewType = "coding" | "system-design" | "sql" | "behavioral";
 export type InterviewLanguage = "python" | "javascript";
+/**
+ * 'interview' = the full mock (framing → coding → interrogation → LLM scorecard).
+ * 'practice' = solve-LeetCode-in-app: no interviewer, no framing, no LLM — the
+ * session starts in `coding` and finishes on a deterministic, test-based result.
+ */
+export type InterviewMode = "interview" | "practice";
 export type InterviewPhase =
   | "framing"
   | "coding"
@@ -385,6 +391,25 @@ export interface InterviewProblem extends InterviewProblemMeta {
   promptMd: string;
   functionName: string;
   starterCode: Record<InterviewLanguage, string>;
+  /** LeetCode titleSlug (e.g. "two-sum") when the problem maps to one — the
+   *  resolve-by-slug key and the "open on leetcode.com" anchor. */
+  slug?: string;
+}
+
+/**
+ * Result of fetching a problem from LeetCode's public GraphQL (practice mode's
+ * "import from leetcode.com" path). The HTML statement is converted to readable
+ * markdown-ish text server-side; starters are extracted when LC provides them.
+ */
+export interface LeetCodeFetchResult {
+  title: string;
+  difficulty: string;
+  /** LC `content` HTML converted to markdown-ish plain text. */
+  statementMarkdown: string;
+  /** LC's newline-delimited example test cases (raw), for reference. */
+  exampleTestcases: string;
+  pythonStarter?: string;
+  jsStarter?: string;
 }
 
 /* ---- problem importer (paste statement → LLM draft → review → save) ---- */
@@ -413,6 +438,8 @@ export interface InterviewProblemDraft {
   hints: [string, string, string];
   tests: ImportedTestDraft[];
   referenceSolution: string;
+  /** Optional LeetCode titleSlug, set when the draft originates from an LC url/fetch. */
+  slug?: string;
 }
 
 export interface DraftValidation {
@@ -424,6 +451,8 @@ export interface DraftValidation {
 export interface InterviewSession {
   id: string;
   type: InterviewType;
+  /** 'interview' (full mock) vs 'practice' (LLM-free LeetCode grind). Legacy rows read as 'interview'. */
+  mode?: InterviewMode;
   problemId: string;
   language: InterviewLanguage;
   phase: InterviewPhase;
@@ -437,6 +466,7 @@ export interface InterviewSession {
 export interface InterviewSessionSummary {
   id: string;
   type: InterviewType;
+  mode?: InterviewMode;
   problemTitle: string;
   pattern: string;
   phase: InterviewPhase;

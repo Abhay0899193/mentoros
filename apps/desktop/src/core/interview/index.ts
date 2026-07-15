@@ -50,3 +50,10 @@ export { InterviewEngine } from "./engine.js";
 export { InterviewStore, migrateInterview } from "./store.js";
 export { InterviewImportStore, migrateImportStore } from "./importStore.js";
 export type { InterviewMemory } from "./engine.js";
+export {
+  slugFromLeetCodeUrl,
+  htmlToMarkdown,
+  fetchLeetCodeProblem,
+  LeetCodeNotFound,
+  LeetCodeFetchError,
+} from "./leetcode.js";

@@ -162,9 +162,14 @@ export function ImportProblemOverlay() {
   const importValidating = useInterview((s) => s.importValidating);
   const importSaving = useInterview((s) => s.importSaving);
   const problems = useInterview((s) => s.problems);
+  const importPrefill = useInterview((s) => s.importPrefill);
+  const importIntent = useInterview((s) => s.importIntent);
 
   const [step, setStep] = useState<Step>("paste");
   const [sourceText, setSourceText] = useState("");
+  // LeetCode titleSlug carried through the Solve flow so the saved custom
+  // problem resolves by slug next time (and gets an "Open on LeetCode" link).
+  const [slug, setSlug] = useState<string | undefined>(undefined);
   const [cancelled, setCancelled] = useState(false);
   const genIdRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -196,14 +201,21 @@ export function ImportProblemOverlay() {
     [problems],
   );
 
-  // Reset everything each time the overlay opens.
+  // Reset everything each time the overlay opens. A Solve-flow prefill
+  // (fetched LC statement) skips straight into generation; an empty prefill
+  // (fetch failed) still carries the slug and waits for a paste.
   useEffect(() => {
     if (!importOpen) return;
     setStep("paste");
-    setSourceText("");
+    setSourceText(importPrefill?.sourceText ?? "");
+    setSlug(importPrefill?.slug || undefined);
     setCancelled(false);
     setConfirmDiscard(false);
     clearImportGenerateError();
+    if (importPrefill?.sourceText) {
+      void handleGenerate(importPrefill.sourceText);
+      return;
+    }
     const t = setTimeout(() => textareaRef.current?.focus(), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -313,11 +325,12 @@ export function ImportProblemOverlay() {
       hints: [hint1, hint2, hint3],
       tests: parsedTests,
       referenceSolution,
+      ...(slug ? { slug } : {}),
     };
   }
 
-  async function handleGenerate() {
-    const text = sourceText.trim();
+  async function handleGenerate(prefillText?: string) {
+    const text = (prefillText ?? sourceText).trim();
     if (!text || importGenerating) return;
     setCancelled(false);
     const myGenId = ++genIdRef.current;
@@ -394,11 +407,13 @@ export function ImportProblemOverlay() {
       {step === "paste" ? (
         <>
           <div className="border-b border-line px-5 py-4">
-            <h2 className="text-h3 text-ink">Import a problem</h2>
+            <h2 className="text-h3 text-ink">
+              {importIntent === "practice" ? "Set up practice" : "Import a problem"}
+            </h2>
             <p className="mt-0.5 text-small text-muted">
-              Paste a statement — the mentor drafts starters, hidden tests,
-              hints, and a reference solution, then checks it against the tests
-              before you review it.
+              {importIntent === "practice"
+                ? "This problem isn't in your bank yet. The mentor drafts starters, hidden tests, and hints from the statement — review, save, and practice starts."
+                : "Paste a statement — the mentor drafts starters, hidden tests, hints, and a reference solution, then checks it against the tests before you review it."}
             </p>
           </div>
 
@@ -486,6 +501,8 @@ export function ImportProblemOverlay() {
             <p className="mt-0.5 text-small text-muted">
               Edit anything before saving — tests run against the reference
               solution below.
+              {slug &&
+                " Heads up: these hidden tests are generated approximations, not LeetCode's official ones."}
             </p>
           </div>
 
@@ -920,7 +937,7 @@ export function ImportProblemOverlay() {
                 disabled={saveDisabled}
                 onClick={() => void handleSave()}
               >
-                Save problem
+                {importIntent === "practice" ? "Save & practice" : "Save problem"}
               </Button>
             </div>
           </div>

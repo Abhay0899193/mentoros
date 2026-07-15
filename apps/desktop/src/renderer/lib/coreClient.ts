@@ -402,6 +402,12 @@ export interface MessageCitation {
 export type InterviewType = 'coding' | 'system-design' | 'sql' | 'behavioral';
 export type InterviewLanguage = 'python' | 'javascript';
 /**
+ * 'interview' = full mock (framing → coding → interrogation → LLM scorecard).
+ * 'practice' = solve-LeetCode-in-app: no interviewer/framing/LLM; starts in
+ * `coding` and finishes on a deterministic, test-based scorecard.
+ */
+export type InterviewMode = 'interview' | 'practice';
+/**
  * Session lifecycle mirrors the interview-prep protocol:
  * framing (§0 Frame) → coding → interrogation (§3.1, after "I'm done") →
  * scorecard (§3.6, terminal) — or abandoned.
@@ -432,6 +438,22 @@ export interface InterviewProblem extends InterviewProblemMeta {
   promptMd: string;
   functionName: string;
   starterCode: Record<InterviewLanguage, string>;
+  /** LeetCode titleSlug (e.g. 'two-sum') — resolve-by-slug key + "open on LC" link. */
+  slug?: string;
+}
+
+/**
+ * Result of fetching a problem from LeetCode's public GraphQL (practice-mode
+ * "import from leetcode.com"). Statement HTML is converted to markdown-ish text
+ * server-side; starters are extracted when LC provides them.
+ */
+export interface LeetCodeFetchResult {
+  title: string;
+  difficulty: string;
+  statementMarkdown: string;
+  exampleTestcases: string;
+  pythonStarter?: string;
+  jsStarter?: string;
 }
 
 /* ---- problem importer (paste statement → LLM draft → review → save) ---- */
@@ -464,6 +486,8 @@ export interface InterviewProblemDraft {
   tests: ImportedTestDraft[];
   /** Python reference implementation used to verify `tests` expectations. */
   referenceSolution: string;
+  /** Optional LeetCode titleSlug, set when the draft originates from an LC url/fetch. */
+  slug?: string;
 }
 
 export interface DraftValidation {
@@ -478,6 +502,8 @@ export interface DraftValidation {
 export interface InterviewSession {
   id: string;
   type: InterviewType;
+  /** 'interview' (full mock) vs 'practice' (LLM-free grind). Legacy rows read as 'interview'. */
+  mode?: InterviewMode;
   problemId: string;
   language: InterviewLanguage;
   phase: InterviewPhase;
@@ -491,6 +517,7 @@ export interface InterviewSession {
 export interface InterviewSessionSummary {
   id: string;
   type: InterviewType;
+  mode?: InterviewMode;
   problemTitle: string;
   pattern: string;
   phase: InterviewPhase;
@@ -1439,16 +1466,29 @@ export interface CoreClient {
   /* interview platform */
   /** Bank for one type; server marks ≤1 as recommended (weakness-targeted). */
   listInterviewProblems(type?: InterviewType): Promise<InterviewProblemMeta[]>;
+  /**
+   * Resolve a bank/custom problem by LeetCode titleSlug (case-insensitive).
+   * Returns null when nothing maps to the slug (renderer offers LC import).
+   */
+  interviewProblemBySlug(slug: string): Promise<InterviewProblem | null>;
+  /**
+   * Fetch a statement from LeetCode's public GraphQL for practice-mode import.
+   * Rejects (CoreRequestError) on 404 (unknown slug) / 502 (network) so the UI
+   * can fall back to paste-import.
+   */
+  fetchLeetCodeProblem(slug: string): Promise<LeetCodeFetchResult>;
   /** Past sessions, newest first (launcher history strip). */
   listInterviewSessions(): Promise<InterviewSessionSummary[]>;
   /**
    * Creates the session and streams the interviewer's framing opener via
    * interview.token/status. Omit problemId to take the recommended pick.
+   * `mode: 'practice'` starts LLM-free in `coding` (no framing/interviewer).
    */
   startInterview(input: {
     type: InterviewType;
     problemId?: string;
     language: InterviewLanguage;
+    mode?: InterviewMode;
   }): Promise<{ session: InterviewSession; problem: InterviewProblem }>;
   /** Full state for resume: transcript, attempts, scorecard if finished. */
   getInterviewSession(sessionId: string): Promise<{
@@ -1884,6 +1924,17 @@ export function createCoreClient(): CoreClient {
 
     listInterviewProblems: (type) =>
       get<InterviewProblemMeta[]>(`/interview/problems${type ? `?type=${type}` : ''}`),
+    interviewProblemBySlug: (slug) =>
+      get<{ problem: InterviewProblem }>(
+        `/interview/problems/by-slug/${encodeURIComponent(slug)}`,
+      )
+        .then((r) => r.problem)
+        .catch((e) => {
+          if (e instanceof CoreRequestError && e.status === 404) return null;
+          throw e;
+        }),
+    fetchLeetCodeProblem: (slug) =>
+      post<LeetCodeFetchResult>('/interview/lc/fetch', { slug }),
     listInterviewSessions: () => get<InterviewSessionSummary[]>('/interview/sessions'),
     startInterview: (input) =>
       post<{ session: InterviewSession; problem: InterviewProblem }>('/interview/sessions', input),

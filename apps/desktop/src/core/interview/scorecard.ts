@@ -247,6 +247,16 @@ function assemble(
   };
 }
 
+/**
+ * Deterministic, LLM-free scorecard for practice mode. Reuses the offline
+ * grader (test results + hint usage) but presents it as a first-class result,
+ * not an "Ollama unavailable" degradation — practice never asks for the LLM.
+ */
+export function gradePractice(input: GradeInput): InterviewScorecard {
+  const { passed, total } = testTotals(input);
+  return assemble(input, fallbackGrade(input, passed, total), passed, total, false);
+}
+
 /* --------------------------- offline fallback -------------------------- */
 
 export function fallbackGrade(input: GradeInput, passed: number, total: number): ParsedGrade {

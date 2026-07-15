@@ -303,6 +303,7 @@ class FakeStore implements IInterviewStore {
     const s: InterviewSession = {
       id: this.id("s"),
       type: input.type,
+      mode: input.mode ?? "interview",
       problemId: input.problemId,
       language: input.language,
       phase: "framing",
@@ -584,6 +585,105 @@ test("writeScorecardMemories: emits skill + mistake + learning with pattern tags
   assert.ok(skill.tags?.includes("dp-1d"));
   assert.ok(saved.some((s) => s.type === "mistake"));
   assert.ok(saved.some((s) => s.type === "learning"));
+});
+
+/* ----------------------------- practice mode --------------------------- */
+
+test("bank: every problem carries its real LeetCode slug", () => {
+  const bySlug = new Map(PROBLEMS.map((p) => [p.lcNumber, p.slug]));
+  assert.equal(bySlug.get(1), "two-sum");
+  assert.equal(bySlug.get(3), "longest-substring-without-repeating-characters");
+  assert.equal(bySlug.get(20), "valid-parentheses");
+  assert.equal(bySlug.get(33), "search-in-rotated-sorted-array");
+  assert.equal(bySlug.get(42), "trapping-rain-water");
+  assert.equal(bySlug.get(53), "maximum-subarray");
+  assert.equal(bySlug.get(56), "merge-intervals");
+  assert.equal(bySlug.get(121), "best-time-to-buy-and-sell-stock");
+  assert.equal(bySlug.get(200), "number-of-islands");
+  assert.equal(bySlug.get(322), "coin-change");
+  const slugs = new Set(PROBLEMS.map((p) => p.slug));
+  assert.equal(slugs.size, 10, "slugs are unique and present");
+});
+
+test("engine.problemBySlug: resolves case-insensitively and exposes slug on the DTO", () => {
+  const { engine } = makeEngine();
+  const p = engine.problemBySlug("Merge-Intervals");
+  assert.ok(p, "resolved the bank problem");
+  assert.equal(p!.id, "merge-intervals");
+  assert.equal(p!.slug, "merge-intervals");
+  assert.equal((p as unknown as Record<string, unknown>).tests, undefined, "no tests leak");
+  assert.equal(engine.problemBySlug("does-not-exist"), undefined);
+});
+
+test("engine.startSession(practice): skips framing — starts in coding, no interviewer turn", () => {
+  const { engine, store, streamCalls, events } = makeEngine();
+  const { session } = engine.startSession({
+    type: "coding",
+    problemId: "two-sum",
+    language: "python",
+    mode: "practice",
+  });
+  assert.equal(session.mode, "practice");
+  assert.equal(session.phase, "coding", "practice starts directly in coding");
+  assert.equal(store.getTurns(session.id).length, 0, "no framing turn created");
+  assert.equal(streamCalls.length, 0, "no interviewer LLM stream");
+  assert.ok(events.some((e) => e.event === "interview.phase" && e.payload.phase === "coding"));
+});
+
+test("engine.finish(practice): grades deterministically, LLM-free — no interviewer stream", async () => {
+  const { engine, store, streamCalls } = makeEngine();
+  const { session } = engine.startSession({
+    type: "coding",
+    problemId: "two-sum",
+    language: "python",
+    mode: "practice",
+  });
+  await engine.run(session.id, "def twoSum(n,t): return [0,1]");
+  const ret = engine.finish(session.id, "def twoSum(n,t): return [0,1]");
+  assert.equal(ret.replyTurnId, "", "no interviewer reply turn in practice");
+  assert.equal(store.getSession(session.id)!.phase, "scorecard");
+  const sc = await waitFor(() => store.getScorecard(session.id));
+  // gradeFn (the LLM grader) must NOT have run — deterministic score, not the fake's 7.
+  assert.notEqual(sc.score, 7, "practice used the deterministic grader, not gradeFn");
+  assert.equal(sc.testsPassed, 10);
+  assert.equal(sc.testsTotal, 10);
+  assert.equal(streamCalls.length, 0, "no interviewer stream anywhere in practice");
+});
+
+test("engine.finish(practice): does not write memories (low-stakes grind)", async () => {
+  const { engine, store, memoryWrites } = makeEngine();
+  const { session } = engine.startSession({
+    type: "coding",
+    problemId: "two-sum",
+    language: "python",
+    mode: "practice",
+  });
+  await engine.run(session.id, "def twoSum(n,t): return [0,1]");
+  engine.finish(session.id, "def twoSum(n,t): return [0,1]");
+  await waitFor(() => store.getScorecard(session.id));
+  assert.equal(memoryWrites.length, 0, "practice grading skips the memory writeback");
+});
+
+test("engine.end(practice): also grades deterministically without the LLM", async () => {
+  const { engine, store } = makeEngine();
+  const { session } = engine.startSession({
+    type: "coding",
+    problemId: "two-sum",
+    language: "python",
+    mode: "practice",
+  });
+  await engine.run(session.id, "def twoSum(n,t): return [0,1]");
+  engine.end(session.id);
+  const sc = await waitFor(() => store.getScorecard(session.id));
+  assert.notEqual(sc.score, 7, "end() on a practice session used the deterministic grader");
+});
+
+test("engine.listSessions: reports mode (practice vs interview)", () => {
+  const { engine } = makeEngine();
+  engine.startSession({ type: "coding", problemId: "two-sum", language: "python", mode: "practice" });
+  engine.startSession({ type: "coding", problemId: "valid-parentheses", language: "python" });
+  const modes = engine.listSessions().map((s) => s.mode).sort();
+  assert.deepEqual(modes, ["interview", "practice"]);
 });
 
 /* ------------------------------- helpers ------------------------------- */

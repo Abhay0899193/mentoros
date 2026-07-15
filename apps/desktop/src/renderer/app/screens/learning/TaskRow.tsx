@@ -13,6 +13,8 @@ import {
 import { spring } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
 import { Chip } from '../../../ui';
+import { useInterview } from '../../../lib/interviewStore';
+import { slugFromLeetCodeUrl } from '../../../lib/leetcode';
 import type { LearningTask, TaskKind } from '../../../lib/coreClient';
 
 const kindIcons: Record<TaskKind, LucideIcon> = {
@@ -29,12 +31,14 @@ const kindIcons: Record<TaskKind, LucideIcon> = {
 
 /**
  * Task row v2 (plan §E): kind icon · title · difficulty chip · +XP badge ·
- * open-externally action · done toggle. Row click toggles done (unchanged
- * from v1); the ↗ opens the task's URL (LeetCode/video/article) without
- * toggling. In-app Solve lands with Phase F practice mode.
+ * Solve-in-app (LeetCode tasks, plan §F practice mode) · open-externally ·
+ * done toggle. Row click toggles done; the ↗ opens the task's URL without
+ * toggling.
  */
 export function TaskRow({ task, onToggle }: { task: LearningTask; onToggle: (done: boolean) => void }) {
   const reduce = useReducedMotion();
+  const solveTask = useInterview((s) => s.solveTask);
+  const canSolve = task.kind === 'leetcode' && slugFromLeetCodeUrl(task.url) !== null;
   const Icon = kindIcons[task.kind] ?? BookOpen;
   const difficultyTone =
     task.difficulty === 'Easy' ? 'success' : task.difficulty === 'Medium' ? 'warning' : 'danger';
@@ -88,6 +92,22 @@ export function TaskRow({ task, onToggle }: { task: LearningTask; onToggle: (don
         >
           +{task.xpWorth}
         </span>
+
+        {canSolve && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void solveTask(task);
+            }}
+            aria-label={`Solve "${task.title}" in-app`}
+            title="Solve in-app (practice mode)"
+            className="tap-hit relative flex shrink-0 items-center gap-1 rounded-[6px] px-1.5 py-1 text-[11px] font-medium text-[var(--iris)] opacity-0 transition-opacity group-hover:opacity-100 coarse:opacity-100 hover:bg-surface-3 focus-visible:opacity-100"
+          >
+            <Code2 size={12} strokeWidth={1.75} />
+            Solve
+          </button>
+        )}
 
         {task.url && (
           <a

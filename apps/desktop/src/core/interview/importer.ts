@@ -142,6 +142,7 @@ function coerceDraft(o: Record<string, unknown>): InterviewProblemDraft {
   if (typeof o.lcNumber === "number" && Number.isFinite(o.lcNumber)) {
     draft.lcNumber = o.lcNumber;
   }
+  if (typeof o.slug === "string" && o.slug.trim()) draft.slug = o.slug.trim();
   return draft;
 }
 
@@ -376,6 +377,7 @@ export function saveDraft(
     tests: toHiddenTests(draft.tests),
   };
   if (draft.lcNumber !== undefined) problem.lcNumber = draft.lcNumber;
+  if (draft.slug?.trim()) problem.slug = draft.slug.trim();
 
   store.save(problem);
   // Reflect what a consumer sees (custom flag applied on read).

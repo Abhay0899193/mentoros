@@ -260,7 +260,7 @@ export function ProblemPicker() {
               size="sm"
               variant="secondary"
               icon={<Upload size={13} strokeWidth={1.5} />}
-              onClick={openImport}
+              onClick={() => openImport()}
             >
               Import problem
             </Button>

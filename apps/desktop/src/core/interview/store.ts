@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import type {
   EvalResult,
   InterviewLanguage,
+  InterviewMode,
   InterviewPhase,
   InterviewScorecard,
   InterviewSession,
@@ -28,6 +29,8 @@ export interface CreateSessionInput {
   type: InterviewType;
   problemId: string;
   language: InterviewLanguage;
+  /** Defaults to 'interview'; 'practice' skips framing/interrogation/LLM. */
+  mode?: InterviewMode;
 }
 
 export interface AddTurnInput {
@@ -100,11 +103,18 @@ export function migrateInterview(db: Database.Database): void {
       created_at TEXT NOT NULL
     );
   `);
+  // Additive migration (Phase F): practice mode. Legacy rows read as 'interview'.
+  try {
+    db.exec(`ALTER TABLE interview_sessions ADD COLUMN mode TEXT`);
+  } catch {
+    /* column already exists — idempotent */
+  }
 }
 
 interface SessionRow {
   id: string;
   type: string;
+  mode: string | null;
   problem_id: string;
   language: string;
   phase: string;
@@ -128,6 +138,7 @@ function rowToSession(r: SessionRow): InterviewSession {
   const s: InterviewSession = {
     id: r.id,
     type: r.type as InterviewType,
+    mode: r.mode === "practice" ? "practice" : "interview",
     problemId: r.problem_id,
     language: r.language as InterviewLanguage,
     phase: r.phase as InterviewPhase,
@@ -160,16 +171,18 @@ export class InterviewStore implements IInterviewStore {
   createSession(input: CreateSessionInput): InterviewSession {
     const id = randomUUID();
     const now = new Date().toISOString();
+    const mode: InterviewMode = input.mode ?? "interview";
     this.db
       .prepare(
         `INSERT INTO interview_sessions
-           (id, type, problem_id, language, phase, hints_used, code, started_at, ended_at)
-         VALUES (?, ?, ?, ?, 'framing', 0, NULL, ?, NULL)`,
+           (id, type, mode, problem_id, language, phase, hints_used, code, started_at, ended_at)
+         VALUES (?, ?, ?, ?, ?, 'framing', 0, NULL, ?, NULL)`,
       )
-      .run(id, input.type, input.problemId, input.language, now);
+      .run(id, input.type, mode, input.problemId, input.language, now);
     return {
       id,
       type: input.type,
+      mode,
       problemId: input.problemId,
       language: input.language,
       phase: "framing",
