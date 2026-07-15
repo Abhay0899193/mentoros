@@ -5,12 +5,14 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   Plus,
   RefreshCw,
   Trash2,
   XCircle,
 } from "lucide-react";
 import { useInterview } from "../../../lib/interviewStore";
+import { titleFromSlug } from "../../../lib/leetcode";
 import type {
   DraftValidation,
   ImportedTestDraft,
@@ -164,6 +166,7 @@ export function ImportProblemOverlay() {
   const problems = useInterview((s) => s.problems);
   const importPrefill = useInterview((s) => s.importPrefill);
   const importIntent = useInterview((s) => s.importIntent);
+  const fetchImportUrl = useInterview((s) => s.fetchImportUrl);
 
   const [step, setStep] = useState<Step>("paste");
   const [sourceText, setSourceText] = useState("");
@@ -173,6 +176,11 @@ export function ImportProblemOverlay() {
   const [cancelled, setCancelled] = useState(false);
   const genIdRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // import-from-URL row (Phase H) — fills the paste box, never auto-generates.
+  const [urlText, setUrlText] = useState("");
+  const [urlFetching, setUrlFetching] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   // review-step form state
   const [title, setTitle] = useState("");
@@ -211,6 +219,9 @@ export function ImportProblemOverlay() {
     setSlug(importPrefill?.slug || undefined);
     setCancelled(false);
     setConfirmDiscard(false);
+    setUrlText("");
+    setUrlFetching(false);
+    setUrlError(null);
     clearImportGenerateError();
     if (importPrefill?.sourceText) {
       void handleGenerate(importPrefill.sourceText);
@@ -327,6 +338,23 @@ export function ImportProblemOverlay() {
       referenceSolution,
       ...(slug ? { slug } : {}),
     };
+  }
+
+  async function handleFetchUrl() {
+    const url = urlText.trim();
+    if (!url || urlFetching) return;
+    setUrlFetching(true);
+    setUrlError(null);
+    const result = await fetchImportUrl(url);
+    setUrlFetching(false);
+    if (result.slug) setSlug(result.slug);
+    if (result.ok) {
+      setSourceText(result.sourceText);
+      setUrlText("");
+      textareaRef.current?.focus();
+    } else {
+      setUrlError(result.error);
+    }
   }
 
   async function handleGenerate(prefillText?: string) {
@@ -456,20 +484,82 @@ export function ImportProblemOverlay() {
                 </p>
               </div>
             ) : (
-              <textarea
-                ref={textareaRef}
-                value={sourceText}
-                onChange={(e) => setSourceText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    void handleGenerate();
-                  }
-                }}
-                placeholder={PASTE_PLACEHOLDER}
-                spellCheck={false}
-                className="h-full min-h-72 w-full resize-none rounded-[10px] bg-surface-2 hairline p-4 font-mono text-[12px] leading-relaxed text-ink outline-none placeholder:text-faint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--iris)]"
-              />
+              <div className="flex h-full min-h-0 flex-col gap-3">
+                <Field
+                  label="Import from URL"
+                  hint="(GeeksforGeeks, LeetCode, articles — fills the box below)"
+                >
+                  <div className="flex gap-2">
+                    <input
+                      value={urlText}
+                      onChange={(e) => {
+                        setUrlText(e.target.value);
+                        setUrlError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void handleFetchUrl();
+                        }
+                      }}
+                      placeholder="https://www.geeksforgeeks.org/problems/… or any problem page"
+                      spellCheck={false}
+                      className={cn(FIELD_MONO, "flex-1")}
+                    />
+                    <Button
+                      variant="secondary"
+                      loading={urlFetching}
+                      loadingLabel="Fetching…"
+                      disabled={urlText.trim() === "" || urlFetching}
+                      onClick={() => void handleFetchUrl()}
+                    >
+                      Fetch
+                    </Button>
+                  </div>
+                </Field>
+                {urlError && (
+                  <p className="text-small text-danger">{urlError}</p>
+                )}
+                {slug && !sourceText.trim() && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] bg-surface-2 px-3 py-2">
+                    <span className="text-small text-muted">
+                      Find “{titleFromSlug(slug)}” elsewhere:
+                    </span>
+                    <a
+                      href={`https://www.geeksforgeeks.org/search/?gq=${encodeURIComponent(titleFromSlug(slug))}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-small font-medium text-body hover:text-ink"
+                    >
+                      GeeksforGeeks
+                      <ExternalLink size={12} strokeWidth={1.5} />
+                    </a>
+                    <a
+                      href={`https://www.google.com/search?q=${encodeURIComponent(`site:neetcode.io ${titleFromSlug(slug)}`)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-small font-medium text-body hover:text-ink"
+                    >
+                      NeetCode
+                      <ExternalLink size={12} strokeWidth={1.5} />
+                    </a>
+                  </div>
+                )}
+                <textarea
+                  ref={textareaRef}
+                  value={sourceText}
+                  onChange={(e) => setSourceText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      void handleGenerate();
+                    }
+                  }}
+                  placeholder={PASTE_PLACEHOLDER}
+                  spellCheck={false}
+                  className="min-h-48 w-full flex-1 resize-none rounded-[10px] bg-surface-2 hairline p-4 font-mono text-[12px] leading-relaxed text-ink outline-none placeholder:text-faint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--iris)]"
+                />
+              </div>
             )}
           </div>
 

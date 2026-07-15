@@ -19,6 +19,7 @@ import type {
   InterviewType,
   LeetCodeFetchResult,
   MemoryRecord,
+  PageFetchResult,
   SaveMemoryInput,
   SaveMemoryResult,
 } from "../types.js";
@@ -45,6 +46,7 @@ import { Interviewer, type IInterviewer, type StreamTurnArgs } from "./interview
 import { recommendProblem, type MistakeSignal, type RecResult } from "./recommend.js";
 import { gradePractice, gradeScorecard, writeScorecardMemories, type GradeInput, type ScorecardOnce } from "./scorecard.js";
 import { fetchLeetCodeProblem } from "./leetcode.js";
+import { fetchProblemPage } from "./page.js";
 import { chatOnce } from "../ollama.js";
 import { runTests, type RunTestsOpts } from "./runner.js";
 import type { IInterviewStore } from "./store.js";
@@ -184,6 +186,15 @@ export class InterviewEngine {
    */
   fetchLeetCode(slug: string): Promise<LeetCodeFetchResult> {
     return fetchLeetCodeProblem(slug);
+  }
+
+  /**
+   * Fetch + extract an arbitrary problem page (Phase H import-from-URL). Pure
+   * delegation to {@link fetchProblemPage}; errors bubble as PageUrlError
+   * (→400) / PageExtractError (→422) / PageFetchError (→502).
+   */
+  fetchPage(url: string): Promise<PageFetchResult> {
+    return fetchProblemPage(url);
   }
 
   /* ------------------------------- importer ---------------------------- */

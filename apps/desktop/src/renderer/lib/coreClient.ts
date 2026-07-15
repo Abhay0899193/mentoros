@@ -458,6 +458,18 @@ export interface LeetCodeFetchResult {
   jsStarter?: string;
 }
 
+/**
+ * Result of fetching an arbitrary problem/article page ("import from URL").
+ * Main content is extracted heuristically server-side and converted to
+ * markdown; the user reviews it in the paste box before generating.
+ */
+export interface PageFetchResult {
+  /** Page <title>, site-name suffix trimmed; may be "". */
+  title: string;
+  markdown: string;
+  url: string;
+}
+
 /* ---- problem importer (paste statement → LLM draft → review → save) ---- */
 
 export interface ImportedTestDraft {
@@ -1560,6 +1572,12 @@ export interface CoreClient {
    * can fall back to paste-import.
    */
   fetchLeetCodeProblem(slug: string): Promise<LeetCodeFetchResult>;
+  /**
+   * Fetch + extract an arbitrary problem page for import-from-URL. Rejects
+   * (CoreRequestError) on 400 (bad URL) / 422 (nothing extractable —
+   * client-rendered page) / 502 (network) so the UI falls back to paste.
+   */
+  fetchProblemPage(url: string): Promise<PageFetchResult>;
   /** Past sessions, newest first (launcher history strip). */
   listInterviewSessions(): Promise<InterviewSessionSummary[]>;
   /**
@@ -2035,6 +2053,8 @@ export function createCoreClient(): CoreClient {
         }),
     fetchLeetCodeProblem: (slug) =>
       post<LeetCodeFetchResult>('/interview/lc/fetch', { slug }),
+    fetchProblemPage: (url) =>
+      post<PageFetchResult>('/interview/page/fetch', { url }),
     listInterviewSessions: () => get<InterviewSessionSummary[]>('/interview/sessions'),
     startInterview: (input) =>
       post<{ session: InterviewSession; problem: InterviewProblem }>('/interview/sessions', input),

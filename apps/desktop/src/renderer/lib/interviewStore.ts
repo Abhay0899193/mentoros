@@ -13,6 +13,7 @@ import {
   type InterviewSessionSummary,
   type InterviewTurn,
   type InterviewType,
+  type LeetCodeFetchResult,
 } from "./coreClient";
 import { toast } from "../ui";
 import { slugFromLeetCodeUrl } from "./leetcode";
@@ -39,6 +40,26 @@ export interface PracticeTaskLink {
 export interface ImportPrefill {
   sourceText: string;
   slug: string;
+}
+
+/** Result of the import overlay's "fetch from URL" action (Phase H). */
+export type FetchImportResult =
+  | { ok: true; sourceText: string; slug?: string }
+  | { ok: false; error: string; slug?: string };
+
+/** Importer sourceText composed from an LC GraphQL fetch (Solve + URL import). */
+function lcSourceText(lc: LeetCodeFetchResult): string {
+  return [
+    `# ${lc.title} (LeetCode, ${lc.difficulty})`,
+    "",
+    lc.statementMarkdown,
+    lc.exampleTestcases.trim()
+      ? `\nExample test cases (raw):\n${lc.exampleTestcases.trim()}`
+      : "",
+    lc.pythonStarter ? `\nPython starter:\n${lc.pythonStarter}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 interface InterviewState {
@@ -103,6 +124,13 @@ interface InterviewState {
   openImport: (prefill?: ImportPrefill, intent?: "bank" | "practice") => void;
   closeImport: () => void;
   clearImportGenerateError: () => void;
+  /**
+   * Fetch a statement from a URL for the import overlay's paste box. LeetCode
+   * URLs route through the GraphQL fetch (statement + starters, premium
+   * detected); anything else goes through the generic page extractor. Never
+   * throws — errors come back as designed copy for inline display.
+   */
+  fetchImportUrl: (url: string) => Promise<FetchImportResult>;
   generateDraft: (
     sourceText: string,
   ) => Promise<{
@@ -328,6 +356,32 @@ export const useInterview = create<InterviewState>((set, get) => ({
     set({ importOpen: false, importPrefill: null, importIntent: "bank" }),
   clearImportGenerateError: () => set({ importGenerateError: null }),
 
+  fetchImportUrl: async (url) => {
+    const slug = slugFromLeetCodeUrl(url);
+    try {
+      if (slug) {
+        const lc = await coreClient.fetchLeetCodeProblem(slug);
+        if (lc.paidOnly || !lc.statementMarkdown.trim()) {
+          return {
+            ok: false,
+            slug,
+            error: `${lc.title} is LeetCode Premium — its statement isn't public. Find it on GeeksforGeeks or NeetCode and import that URL, or paste the text.`,
+          };
+        }
+        return { ok: true, slug, sourceText: lcSourceText(lc) };
+      }
+      const page = await coreClient.fetchProblemPage(url);
+      const header = page.title ? `# ${page.title}\n\n` : "";
+      return { ok: true, sourceText: `${header}${page.markdown}` };
+    } catch (err) {
+      return {
+        ok: false,
+        ...(slug ? { slug } : {}),
+        error: err instanceof Error && err.message ? err.message : SERVICE_ERROR,
+      };
+    }
+  },
+
   generateDraft: async (sourceText) => {
     set({ importGenerating: true, importGenerateError: null });
     try {
@@ -518,23 +572,10 @@ export const useInterview = create<InterviewState>((set, get) => ({
             tone: "info",
             title: `${lc.title} is LeetCode Premium`,
             description:
-              "Its statement isn't public — paste the problem text (from LeetCode or anywhere) and the importer takes it from there.",
+              "Its statement isn't public — find it on GeeksforGeeks or NeetCode and import that URL, or paste the text.",
           });
         } else {
-          prefill = {
-            slug,
-            sourceText: [
-              `# ${lc.title} (LeetCode, ${lc.difficulty})`,
-              "",
-              lc.statementMarkdown,
-              lc.exampleTestcases.trim()
-                ? `\nExample test cases (raw):\n${lc.exampleTestcases.trim()}`
-                : "",
-              lc.pythonStarter ? `\nPython starter:\n${lc.pythonStarter}` : "",
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          };
+          prefill = { slug, sourceText: lcSourceText(lc) };
         }
       } catch {
         toast({

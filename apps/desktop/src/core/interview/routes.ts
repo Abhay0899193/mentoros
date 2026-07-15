@@ -14,6 +14,7 @@ import {
   type InterviewEngine,
 } from "./engine.js";
 import { LeetCodeFetchError, LeetCodeNotFound } from "./leetcode.js";
+import { PageExtractError, PageFetchError, PageUrlError } from "./page.js";
 
 /**
  * Register the /interview/* HTTP routes (mirror of coreClient §Interview
@@ -61,6 +62,31 @@ export function registerInterviewRoutes(
           return reply.code(502).send({ error: err.message });
         }
         return reply.code(502).send({ error: "could not reach LeetCode" });
+      }
+    },
+  );
+
+  // Fetch + extract an arbitrary problem page (import-from-URL). 400 = bad
+  // URL, 422 = fetched but no readable statement (client-rendered sites),
+  // 502 = network failure — renderer falls back to paste in every case.
+  app.post<{ Body: { url?: string } }>(
+    "/interview/page/fetch",
+    async (req, reply) => {
+      const url = req.body?.url?.trim();
+      if (!url) return reply.code(400).send({ error: "url is required" });
+      try {
+        return await engine.fetchPage(url);
+      } catch (err) {
+        if (err instanceof PageUrlError) {
+          return reply.code(400).send({ error: err.message });
+        }
+        if (err instanceof PageExtractError) {
+          return reply.code(422).send({ error: err.message });
+        }
+        if (err instanceof PageFetchError) {
+          return reply.code(502).send({ error: err.message });
+        }
+        return reply.code(502).send({ error: "could not fetch that page" });
       }
     },
   );

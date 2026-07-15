@@ -414,6 +414,19 @@ export interface LeetCodeFetchResult {
   jsStarter?: string;
 }
 
+/**
+ * Result of fetching an arbitrary problem/article page (Phase H "import from
+ * URL" — GeeksforGeeks etc.). Main content extracted heuristically and
+ * converted to markdown server-side; the user reviews it in the paste box.
+ */
+export interface PageFetchResult {
+  /** Page <title>, site-name suffix trimmed; may be "". */
+  title: string;
+  markdown: string;
+  /** The normalized URL that was fetched (after trim). */
+  url: string;
+}
+
 /* ---- problem importer (paste statement → LLM draft → review → save) ---- */
 
 export interface ImportedTestDraft {

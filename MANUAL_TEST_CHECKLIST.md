@@ -355,3 +355,26 @@ add-expression is gated on the z-image-turbo toolchain even though it edits via 
 - [ ] Delete an endpoint that a surface points at (inline Keep/Delete confirm) → the
       surface row shows the fallback note and chat still works via the local model.
 - [ ] Restart the app → endpoints, tokens (masked), and surface choices survive.
+
+## 18 · Import from URL (Phase H — GFG/premium fallback)
+
+- [ ] Interview → problem picker → Import a problem: the paste step now has an
+      "Import from URL" row above the paste box. Paste a GeeksforGeeks problem URL
+      (e.g. `https://www.geeksforgeeks.org/problems/alien-dictionary/1`) → Fetch →
+      the paste box fills with the extracted statement (title header + markdown,
+      nav/footer junk absent). Nothing auto-generates — you can trim before Generate.
+- [ ] Paste a LeetCode URL (e.g. `https://leetcode.com/problems/two-sum/`) into the
+      same row → Fetch routes through the LC GraphQL path: statement + raw example
+      testcases + Python starter land in the box, and the saved problem carries the
+      slug (Open on LeetCode link appears in the session).
+- [ ] Paste a *premium* LC URL (e.g. `…/problems/alien-dictionary/`) → inline error
+      "… is LeetCode Premium — its statement isn't public…", no draft generated.
+- [ ] Learning → a premium LC task → Solve → toast now says "find it on
+      GeeksforGeeks or NeetCode and import that URL, or paste the text"; the import
+      overlay opens empty with a "Find “{title}” elsewhere:" strip — GeeksforGeeks
+      and NeetCode search links open in the browser with the problem name queried.
+      Import the GFG URL from there → Generate → Save & practice works end-to-end.
+- [ ] Paste a client-rendered URL (e.g. `https://neetcode.io/problems/...`) → inline
+      422 copy: page "may render in the browser only — paste the text instead".
+- [ ] Paste garbage ("not a url") → inline "that's not a valid URL"; an unreachable
+      host → inline network-error copy. The overlay stays usable after each error.
