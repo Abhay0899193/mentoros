@@ -29,3 +29,19 @@ export function slugFromLeetCodeUrl(url: string | undefined | null): string | nu
 export function leetCodeUrlForSlug(slug: string): string {
   return `https://leetcode.com/problems/${slug}/`;
 }
+
+/** Words that stay uppercase when a slug is turned into a display title. */
+const SLUG_UPPER = new Set(['i', 'ii', 'iii', 'iv', 'v', 'bst', 'lru', 'lfu', 'ip', 'k']);
+
+/**
+ * Human-readable problem name from a titleSlug — "alien-dictionary" →
+ * "Alien Dictionary". Purely cosmetic (task rows whose plan title is just
+ * "LeetCode 269"); the real title still comes from LC on import.
+ */
+export function titleFromSlug(slug: string): string {
+  return slug
+    .split('-')
+    .filter(Boolean)
+    .map((w) => (SLUG_UPPER.has(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
+}

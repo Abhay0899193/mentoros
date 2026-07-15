@@ -201,6 +201,100 @@ export async function generateDraft(
   return repairEmptyStringArgs(coerceDraft(parsed as Record<string, unknown>));
 }
 
+/* ------------------------------ repair pass -------------------------------- */
+
+/** How many tests passed — used to decide whether a repair actually helped. */
+function passedCount(v: DraftValidation): number {
+  return v.tests.filter((t) => t.passed).length;
+}
+
+/**
+ * One self-correction round: show the model its own draft plus the concrete
+ * validation failures (shape errors + failing tests with runner detail) and ask
+ * for a fully corrected JSON object. Local models routinely emit a reference
+ * solution whose signature disagrees with some of their own tests — feeding the
+ * TypeErrors back fixes most of those without any user hand-editing.
+ */
+export async function repairDraft(
+  sourceText: string,
+  draft: InterviewProblemDraft,
+  validation: DraftValidation,
+  once: ScorecardOnce,
+): Promise<InterviewProblemDraft> {
+  const shape = validation.errors.map((e) => `- ${e}`).join("\n");
+  const failing = validation.tests
+    .filter((t) => !t.passed)
+    .map((t) => `- ${t.name}: ${t.detail ?? "failed"}`)
+    .join("\n");
+  const feedback = [
+    "That draft failed validation when the reference solution was executed against its own tests.",
+    shape ? `Shape errors:\n${shape}` : "",
+    failing ? `Failing tests:\n${failing}` : "",
+    "Fix the draft: functionName, both starter signatures, referenceSolution's parameters, and every test's args/expected must all be mutually consistent AND faithful to the ORIGINAL statement. Return the FULL corrected JSON object only.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const raw = await once({
+    messages: [
+      { role: "system", content: systemPrompt() },
+      {
+        role: "user",
+        content: `Convert this problem statement into the JSON described above:\n\n${sourceText}`,
+      },
+      { role: "assistant", content: JSON.stringify(draft) },
+      { role: "user", content: feedback },
+    ],
+    format: "json",
+    timeoutMs: 60_000,
+  });
+  const jsonText = extractFirstJsonObject(raw);
+  if (!jsonText) throw new DraftGenerationError();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    throw new DraftGenerationError();
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new DraftGenerationError();
+  }
+  return repairEmptyStringArgs(coerceDraft(parsed as Record<string, unknown>));
+}
+
+/**
+ * Generate → validate → (on failure) repair once → re-validate. The repaired
+ * draft is adopted only when it is strictly better (valid, or more passing
+ * tests / fewer shape errors); a repair that throws or regresses is discarded
+ * so the caller never sees anything worse than the first attempt.
+ */
+export async function generateValidatedDraft(
+  sourceText: string,
+  once: ScorecardOnce,
+  run: DraftRunFn,
+  tmpRoot: string,
+): Promise<{ draft: InterviewProblemDraft; validation: DraftValidation }> {
+  let draft = await generateDraft(sourceText, once);
+  let validation = await validateDraft(draft, run, tmpRoot);
+  if (!validation.ok) {
+    try {
+      const repaired = await repairDraft(sourceText, draft, validation, once);
+      const revalidated = await validateDraft(repaired, run, tmpRoot);
+      const better =
+        revalidated.ok ||
+        passedCount(revalidated) > passedCount(validation) ||
+        (passedCount(revalidated) === passedCount(validation) &&
+          revalidated.errors.length < validation.errors.length);
+      if (better) {
+        draft = repaired;
+        validation = revalidated;
+      }
+    } catch {
+      // Best-effort: keep the first draft + its validation for the review UI.
+    }
+  }
+  return { draft, validation };
+}
+
 /* ------------------------------- validation -------------------------------- */
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;

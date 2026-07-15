@@ -35,7 +35,7 @@ import {
   type IImportStore,
 } from "./importStore.js";
 import {
-  generateDraft,
+  generateValidatedDraft,
   saveDraft,
   validateDraft,
   DraftInvalidError,
@@ -191,14 +191,14 @@ export class InterviewEngine {
   /**
    * Draft a bank problem from a pasted statement (LLM, scorecard surface) and
    * validate it by executing the reference solution against its own tests.
+   * On validation failure the importer runs one self-correction round (the
+   * model sees its own failing tests) before giving up to the review UI.
    * Throws {@link DraftGenerationError} if the model output is unusable.
    */
   async importDraft(
     sourceText: string,
   ): Promise<{ draft: InterviewProblemDraft; validation: DraftValidation }> {
-    const draft = await generateDraft(sourceText, this.scorecardOnce());
-    const validation = await validateDraft(draft, this.runFn, this.tmpRoot);
-    return { draft, validation };
+    return generateValidatedDraft(sourceText, this.scorecardOnce(), this.runFn, this.tmpRoot);
   }
 
   /** Re-run validation for a (possibly user-edited) draft. */

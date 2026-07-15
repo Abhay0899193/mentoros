@@ -406,6 +406,8 @@ export interface LeetCodeFetchResult {
   difficulty: string;
   /** LC `content` HTML converted to markdown-ish plain text. */
   statementMarkdown: string;
+  /** LeetCode Premium — statement is NOT public (content comes back null). */
+  paidOnly: boolean;
   /** LC's newline-delimited example test cases (raw), for reference. */
   exampleTestcases: string;
   pythonStarter?: string;

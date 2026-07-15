@@ -126,6 +126,26 @@ test("fetchLeetCodeProblem: normalizes the GraphQL payload (starters, difficulty
   assert.ok(res.statementMarkdown.includes("`nums`"));
   assert.ok(res.pythonStarter?.includes("def twoSum"));
   assert.ok(res.jsStarter?.includes("twoSum"));
+  assert.equal(res.paidOnly, false);
+});
+
+test("fetchLeetCodeProblem: premium problem (isPaidOnly, null content) → paidOnly flag", async () => {
+  const impl = fakeFetch({
+    data: {
+      question: {
+        title: "Alien Dictionary",
+        content: null,
+        difficulty: "Hard",
+        isPaidOnly: true,
+        exampleTestcases: null,
+        codeSnippets: null,
+      },
+    },
+  });
+  const res = await fetchLeetCodeProblem("alien-dictionary", impl);
+  assert.equal(res.paidOnly, true);
+  assert.equal(res.statementMarkdown, "");
+  assert.equal(res.title, "Alien Dictionary");
 });
 
 test("fetchLeetCodeProblem: unknown slug (null question) → LeetCodeNotFound", async () => {

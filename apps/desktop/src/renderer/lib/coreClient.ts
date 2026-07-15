@@ -451,6 +451,8 @@ export interface LeetCodeFetchResult {
   title: string;
   difficulty: string;
   statementMarkdown: string;
+  /** LeetCode Premium — statement is not public; sourceText must be pasted. */
+  paidOnly: boolean;
   exampleTestcases: string;
   pythonStarter?: string;
   jsStarter?: string;

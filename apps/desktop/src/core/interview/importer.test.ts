@@ -12,6 +12,7 @@ import {
   draftShapeErrors,
   extractFirstJsonObject,
   generateDraft,
+  generateValidatedDraft,
   repairEmptyStringArgs,
   saveDraft,
   validateDraft,
@@ -163,6 +164,90 @@ test("validateDraft: a wrong expected fails that test with a detail", async () =
   assert.equal(failed?.passed, false);
   assert.ok(failed?.detail && failed.detail.length > 0);
   assert.ok(v.tests.filter((t) => t.name !== "wrong expected").every((t) => t.passed));
+});
+
+/* ------------------------------ repair pass ------------------------------ */
+
+test("generateValidatedDraft: valid first draft → no repair round", async () => {
+  const root = await tmpRoot();
+  let calls = 0;
+  const once: ScorecardOnce = async () => {
+    calls += 1;
+    return JSON.stringify(validDraft());
+  };
+  const { validation } = await generateValidatedDraft("paste", once, runTests, root);
+  assert.equal(validation.ok, true);
+  assert.equal(calls, 1);
+});
+
+test("generateValidatedDraft: failing draft is repaired using validation feedback", async () => {
+  const root = await tmpRoot();
+  const broken = validDraft({
+    tests: [
+      { name: "example 1", args: [[2, 7, 11, 15], 9], expected: [0, 1], normalize: "sortInner" },
+      { name: "example 2", args: [[3, 2, 4], 6], expected: [1, 2], normalize: "sortInner" },
+      { name: "wrong expected", args: [[1, 2], 3], expected: [5, 6], normalize: "sortInner" },
+    ],
+  });
+  const seen: Array<{ role: string; content: string }[]> = [];
+  let calls = 0;
+  const once: ScorecardOnce = async (o) => {
+    seen.push(o.messages as Array<{ role: string; content: string }>);
+    calls += 1;
+    return JSON.stringify(calls === 1 ? broken : validDraft());
+  };
+  const { validation } = await generateValidatedDraft("paste", once, runTests, root);
+  assert.equal(calls, 2);
+  assert.equal(validation.ok, true);
+  // The repair turn shows the model its own draft and the concrete failures.
+  const repairMsgs = seen[1];
+  assert.equal(repairMsgs.length, 4);
+  assert.equal(repairMsgs[2].role, "assistant");
+  assert.ok(repairMsgs[3].content.includes("wrong expected"));
+});
+
+test("generateValidatedDraft: unusable repair output keeps the first draft + validation", async () => {
+  const root = await tmpRoot();
+  const broken = validDraft({
+    tests: [
+      { name: "example 1", args: [[2, 7, 11, 15], 9], expected: [0, 1], normalize: "sortInner" },
+      { name: "example 2", args: [[3, 2, 4], 6], expected: [1, 2], normalize: "sortInner" },
+      { name: "wrong expected", args: [[1, 2], 3], expected: [5, 6], normalize: "sortInner" },
+    ],
+  });
+  let calls = 0;
+  const once: ScorecardOnce = async () => {
+    calls += 1;
+    return calls === 1 ? JSON.stringify(broken) : "not json at all";
+  };
+  const { draft, validation } = await generateValidatedDraft("paste", once, runTests, root);
+  assert.equal(calls, 2);
+  assert.equal(validation.ok, false);
+  assert.equal(draft.tests.length, 3);
+  assert.ok(validation.tests.some((t) => t.name === "wrong expected" && !t.passed));
+});
+
+test("generateValidatedDraft: repair that regresses is discarded", async () => {
+  const root = await tmpRoot();
+  const broken = validDraft({
+    tests: [
+      { name: "example 1", args: [[2, 7, 11, 15], 9], expected: [0, 1], normalize: "sortInner" },
+      { name: "example 2", args: [[3, 2, 4], 6], expected: [1, 2], normalize: "sortInner" },
+      { name: "wrong expected", args: [[1, 2], 3], expected: [5, 6], normalize: "sortInner" },
+    ],
+  });
+  // "Repair" nukes the reference so every test fails — strictly worse.
+  const worse = validDraft({ referenceSolution: "def twoSum(nums, target)\n    return []" });
+  let calls = 0;
+  const once: ScorecardOnce = async () => {
+    calls += 1;
+    return JSON.stringify(calls === 1 ? broken : worse);
+  };
+  const { validation } = await generateValidatedDraft("paste", once, runTests, root);
+  assert.equal(calls, 2);
+  assert.equal(validation.ok, false);
+  // First attempt's 2 passing tests kept, not the all-fail repair.
+  assert.equal(validation.tests.filter((t) => t.passed).length, 2);
 });
 
 test("validateDraft: a broken reference reports every test failed", async () => {

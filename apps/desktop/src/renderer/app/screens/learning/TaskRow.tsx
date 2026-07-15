@@ -14,7 +14,7 @@ import { spring } from '../../../motion/springs';
 import { cn } from '../../../lib/cn';
 import { Chip } from '../../../ui';
 import { useInterview } from '../../../lib/interviewStore';
-import { slugFromLeetCodeUrl } from '../../../lib/leetcode';
+import { slugFromLeetCodeUrl, titleFromSlug } from '../../../lib/leetcode';
 import type { LearningTask, TaskKind } from '../../../lib/coreClient';
 
 const kindIcons: Record<TaskKind, LucideIcon> = {
@@ -38,7 +38,14 @@ const kindIcons: Record<TaskKind, LucideIcon> = {
 export function TaskRow({ task, onToggle }: { task: LearningTask; onToggle: (done: boolean) => void }) {
   const reduce = useReducedMotion();
   const solveTask = useInterview((s) => s.solveTask);
-  const canSolve = task.kind === 'leetcode' && slugFromLeetCodeUrl(task.url) !== null;
+  const slug = task.kind === 'leetcode' ? slugFromLeetCodeUrl(task.url) : null;
+  const canSolve = slug !== null;
+  // Plan titles for LC tasks are bare numbers ("LeetCode 269") — append the
+  // problem name derived from the URL slug so the list reads at a glance.
+  const displayTitle =
+    slug && /^leetcode\s*#?\d+$/i.test(task.title.trim())
+      ? `${task.title.trim()} · ${titleFromSlug(slug)}`
+      : task.title;
   const Icon = kindIcons[task.kind] ?? BookOpen;
   const difficultyTone =
     task.difficulty === 'Easy' ? 'success' : task.difficulty === 'Medium' ? 'warning' : 'danger';
@@ -79,7 +86,7 @@ export function TaskRow({ task, onToggle }: { task: LearningTask; onToggle: (don
             task.done ? 'text-faint line-through' : 'text-ink',
           )}
         >
-          {task.title}
+          {displayTitle}
         </button>
 
         {task.difficulty && <Chip tone={difficultyTone}>{task.difficulty}</Chip>}

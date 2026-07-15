@@ -510,20 +510,32 @@ export const useInterview = create<InterviewState>((set, get) => ({
       let prefill: ImportPrefill = { sourceText: "", slug };
       try {
         const lc = await coreClient.fetchLeetCodeProblem(slug);
-        prefill = {
-          slug,
-          sourceText: [
-            `# ${lc.title} (LeetCode, ${lc.difficulty})`,
-            "",
-            lc.statementMarkdown,
-            lc.exampleTestcases.trim()
-              ? `\nExample test cases (raw):\n${lc.exampleTestcases.trim()}`
-              : "",
-            lc.pythonStarter ? `\nPython starter:\n${lc.pythonStarter}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        };
+        if (lc.paidOnly || !lc.statementMarkdown.trim()) {
+          // Premium (or otherwise statement-less) problem: LC's public API has
+          // no statement. Feeding just the title to the draft LLM makes it
+          // hallucinate a whole different problem — wait for a paste instead.
+          toast({
+            tone: "info",
+            title: `${lc.title} is LeetCode Premium`,
+            description:
+              "Its statement isn't public — paste the problem text (from LeetCode or anywhere) and the importer takes it from there.",
+          });
+        } else {
+          prefill = {
+            slug,
+            sourceText: [
+              `# ${lc.title} (LeetCode, ${lc.difficulty})`,
+              "",
+              lc.statementMarkdown,
+              lc.exampleTestcases.trim()
+                ? `\nExample test cases (raw):\n${lc.exampleTestcases.trim()}`
+                : "",
+              lc.pythonStarter ? `\nPython starter:\n${lc.pythonStarter}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          };
+        }
       } catch {
         toast({
           tone: "warning",
