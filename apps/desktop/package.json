@@ -13,6 +13,11 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "reader:export": "node --import tsx ../../tools/reader-export.mts",
+    "reader:dev": "vite --config vite.reader.config.ts",
+    "reader:build": "vite build --config vite.reader.config.ts",
+    "reader:preview": "vite preview --config vite.reader.config.ts",
+    "reader:publish": "pnpm run reader:export && pnpm run reader:build && npx --yes vercel@latest deploy --prod --yes out/reader",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "postinstall": "electron-rebuild -f -w better-sqlite3 --arch arm64"

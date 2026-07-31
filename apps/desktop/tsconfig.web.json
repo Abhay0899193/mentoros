@@ -19,5 +19,10 @@
     "outDir": "./out/types-web",
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.web.tsbuildinfo"
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"]
+  "include": [
+    "src/renderer/**/*.ts",
+    "src/renderer/**/*.tsx",
+    "src/reader/**/*.ts",
+    "src/reader/**/*.tsx"
+  ]
 }

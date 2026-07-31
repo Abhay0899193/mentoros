@@ -1,0 +1,31 @@
+/* Reader styling = Nocturne, with the two shell rules inverted.
+   The desktop app owns its own scroll regions and blocks selection for a
+   native feel; a reader must scroll the document (so iOS collapses the URL bar
+   and momentum works) and must let you select text. */
+@import '../renderer/theme/index.css';
+
+/* Tailwind v4 scans from this file's directory by default — the reused
+   components live one level up, so they'd be invisible to the scanner. */
+@source '../renderer';
+
+@layer base {
+  body {
+    overflow: visible;
+    user-select: text;
+    overscroll-behavior-y: auto;
+  }
+
+  /* Body copy sized for a phone held at arm's length, not a desktop panel. */
+  .reader-prose {
+    font-size: 16.5px;
+    line-height: 1.7;
+  }
+}
+
+/* Filter/chip rails scroll horizontally; a visible bar under them is noise. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

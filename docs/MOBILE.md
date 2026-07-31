@@ -2,6 +2,12 @@
 
 *Researched 2026-07-12. Context: user asked how to use MentorOS on an iPhone 14 Pro Max (A16, 6 GB RAM, iOS Safari/WebKit).*
 
+> **Update 2026-07-31 — Option C shipped, differently.** Reading no longer needs
+> the Mac at all: the **Reader** (`docs/READER.md`) publishes the guides, sheets,
+> day notes and plan as a static PWA on Vercel's free tier — home-screen icon,
+> works offline, laptop closed. Everything below still applies to the *full* app
+> (writes, code running, AI), which will always need the Mac.
+
 ## ✅ Shipped — Options A + B (2026-07-12)
 
 **No deployment, no domain.** Your Mac serves the app; the phone is a browser.

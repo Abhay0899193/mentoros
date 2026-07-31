@@ -378,3 +378,32 @@ add-expression is gated on the z-image-turbo toolchain even though it edits via 
       422 copy: page "may render in the browser only — paste the text instead".
 - [ ] Paste garbage ("not a url") → inline "that's not a valid URL"; an unreachable
       host → inline network-error copy. The overlay stays usable after each error.
+
+## 19 · MentorOS Reader — phone, offline (docs/READER.md)
+
+- [ ] With the desktop app **running**: `cd apps/desktop && pnpm reader:export`
+      → prints "185 docs …" and "progress: N weeks from the running app" (not
+      "app not running"). Quit the app and re-run → it still succeeds, and says
+      it's shipping without ticks.
+- [ ] `pnpm reader:build && pnpm reader:preview` → open
+      `http://localhost:4173` in Chrome at phone size (device toolbar, iPhone 14
+      Pro): Today shows "You're on week N", this week's guides, quick-review
+      chips. No horizontal scrolling anywhere.
+- [ ] Open a guide → mermaid diagrams render, code blocks have a Copy button,
+      the progress hairline under the header fills as you scroll, prev/next part
+      buttons move through the week in order.
+- [ ] Scroll a guide half way, go back, return to Today → the "Continue reading"
+      card shows it at roughly the right %, and tapping it resumes mid-page.
+- [ ] Library → search "dijkstra" → title matches first, then body matches with a
+      context line. Filters (Guides/Sheets/Day notes/Everything + week chips)
+      narrow the list.
+- [ ] Plan → tap a week → tap a day → tasks list with difficulty chips; LeetCode
+      links open in the browser; "Read the day's notes" opens the day markdown.
+- [ ] Theme toggle (top-right of Today) → light mode is legible everywhere,
+      survives a reload.
+- [ ] `pnpm reader:publish` → deploys, prints a `https://….vercel.app` URL.
+      Open it on the iPhone → Share → Add to Home Screen → the icon launches
+      full-screen with no Safari chrome.
+- [ ] **Offline:** open the home-screen app once with signal, then turn on
+      Airplane Mode and launch it again → the library, guides and plan all still
+      open. Turn signal back on after a `reader:publish` → new content appears.

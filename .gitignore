@@ -38,3 +38,8 @@ release/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Reader content bundle — generated from the 3mc tree by `pnpm reader:export`.
+# It's your study notes, not source: publish it, don't commit it.
+apps/desktop/src/reader/public/content.json
+.vercel/
