@@ -26,6 +26,14 @@ import type { HiddenTest } from "./problems.js";
 const RUN_TIMEOUT_MS = 10_000;
 const INPUT_MAX = 200;
 
+/**
+ * Per-test `timeBudgetMs` values are JS-calibrated. CPython runs the same
+ * algorithmic code several times slower, so a linear solution that clears a
+ * 1.5s JS budget could false-positive under Python — scale the budget up there
+ * to keep the gap-to-quadratic wide without flagging honest O(n) code.
+ */
+const PYTHON_BUDGET_SCALE = 5;
+
 export interface RunTestsOpts {
   language: InterviewLanguage;
   functionName: string;
@@ -60,9 +68,17 @@ export async function runTests(
   const payloadPath = join(dir, "payload.json");
   const codePath = join(dir, opts.language === "python" ? "user.py" : "user.js");
   const harnessPath = join(dir, opts.language === "python" ? "harness.py" : "harness.cjs");
+  // Bake the language-scaled budget into each test so the harnesses stay dumb:
+  // they just compare elapsed against the number handed to them.
+  const budgetScale = opts.language === "python" ? PYTHON_BUDGET_SCALE : 1;
+  const tests = opts.tests.map((t) =>
+    t.timeBudgetMs
+      ? { ...t, timeBudgetMs: Math.round(t.timeBudgetMs * budgetScale) }
+      : t,
+  );
   writeFileSync(
     payloadPath,
-    JSON.stringify({ functionName: opts.functionName, tests: opts.tests }),
+    JSON.stringify({ functionName: opts.functionName, tests }),
   );
   writeFileSync(codePath, opts.code);
   writeFileSync(harnessPath, opts.language === "python" ? PY_HARNESS : JS_HARNESS);
@@ -287,6 +303,10 @@ def main():
             lines = traceback.format_exc(limit=3).strip().splitlines()
             err = lines[-1] if lines else 'error'
         elapsed = (time.perf_counter() - start) * 1000.0
+        budget = t.get('timeBudgetMs')
+        if ok and budget and elapsed > budget:
+            ok = False
+            err = 'too slow: ' + str(round(elapsed)) + 'ms > ' + str(budget) + 'ms budget on a large input — check your time complexity'
         if ok:
             passed += 1
         try:
@@ -380,6 +400,10 @@ for (const t of payload.tests) {
     catch (_) { ok = false; }
   } catch (e) { err = e && e.message ? e.message : String(e); }
   const elapsed = Number(process.hrtime.bigint() - start) / 1e6;
+  if (ok && t.timeBudgetMs && elapsed > t.timeBudgetMs) {
+    ok = false;
+    err = 'too slow: ' + Math.round(elapsed) + 'ms > ' + t.timeBudgetMs + 'ms budget on a large input — check your time complexity';
+  }
   if (ok) passed++;
   let actualJson;
   try { actualJson = JSON.stringify(actual); } catch (_) { actualJson = String(actual); }

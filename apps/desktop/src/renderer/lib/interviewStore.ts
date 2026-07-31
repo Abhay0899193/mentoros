@@ -760,9 +760,17 @@ export const useInterview = create<InterviewState>((set, get) => ({
       // The deterministic scorecard arrives via the interview.scorecard event.
       set({ scorecardLoading: true, turnError: null });
       try {
-        await coreClient.finishCoding(sessionId, code);
+        // Practice grading is deterministic and returned inline — set it here
+        // rather than waiting on the interview.scorecard broadcast, so a dropped
+        // event can never strand the "Checking your solution…" overlay.
+        const { scorecard } = await coreClient.finishCoding(sessionId, code);
         set((s) => ({
           session: s.session ? { ...s.session, phase: "scorecard" } : s.session,
+          ...(scorecard
+            ? { scorecard, scorecardLoading: false, scorecardDismissed: false }
+            : // No scorecard came back (problem missing) — clear the spinner and
+              // surface it rather than spin on an event that will never arrive.
+              { scorecardLoading: false, turnError: SERVICE_ERROR }),
         }));
       } catch {
         set({ scorecardLoading: false, turnError: SERVICE_ERROR });

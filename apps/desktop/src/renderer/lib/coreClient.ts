@@ -1609,7 +1609,10 @@ export interface CoreClient {
    * Candidate declares done → phase moves to interrogation and the interviewer
    * opens with the §3.1 questions (streamed reply).
    */
-  finishCoding(sessionId: string, code: string): Promise<{ replyTurnId: string }>;
+  finishCoding(
+    sessionId: string,
+    code: string,
+  ): Promise<{ replyTurnId: string; scorecard?: InterviewScorecard }>;
   /** Grade + persist scorecard + write memories; result via interview.scorecard. */
   endInterview(sessionId: string): Promise<{ started: true }>;
   abandonInterview(sessionId: string): Promise<void>;
@@ -2075,7 +2078,10 @@ export function createCoreClient(): CoreClient {
     runInterviewTests: (sessionId, code) =>
       post<EvalResult>(`/interview/sessions/${sessionId}/run`, { code }),
     finishCoding: (sessionId, code) =>
-      post<{ replyTurnId: string }>(`/interview/sessions/${sessionId}/finish`, { code }),
+      post<{ replyTurnId: string; scorecard?: InterviewScorecard }>(
+        `/interview/sessions/${sessionId}/finish`,
+        { code },
+      ),
     endInterview: (sessionId) => post<{ started: true }>(`/interview/sessions/${sessionId}/end`),
     abandonInterview: (sessionId) =>
       post<void>(`/interview/sessions/${sessionId}/abandon`),

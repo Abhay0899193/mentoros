@@ -153,6 +153,51 @@ test("runner javascript: a thrown runtime error fails just that test", async () 
   assert.ok(res.results[1].error && /nope/.test(res.results[1].error));
 });
 
+/* --------------------------- time budgets ------------------------------ */
+
+/** Spins for `ms` wall-clock so the budget check doesn't ride on CPU speed. */
+const JS_SPIN = (ms: number): string =>
+  `function work(x) {\n  const t = Date.now();\n  while (Date.now() - t < ${ms}) {}\n  return x;\n}\n`;
+
+test("runner javascript: a correct-but-slow solution busts timeBudgetMs", async () => {
+  const root = await tmpRoot();
+  const res = await runTests({
+    language: "javascript",
+    functionName: "work",
+    code: JS_SPIN(150),
+    tests: [{ name: "perf", args: [1], expected: 1, timeBudgetMs: 40 }],
+    tmpRoot: root,
+  });
+  assert.equal(res.results[0].passed, false, "right answer, wrong complexity → fail");
+  assert.ok(/too slow/.test(res.results[0].error ?? ""), "the error names the budget");
+});
+
+test("runner javascript: a fast solution clears the same budget", async () => {
+  const root = await tmpRoot();
+  const res = await runTests({
+    language: "javascript",
+    functionName: "work",
+    code: JS_SPIN(0),
+    tests: [{ name: "perf", args: [1], expected: 1, timeBudgetMs: 40 }],
+    tmpRoot: root,
+  });
+  assert.equal(res.results[0].passed, true);
+});
+
+test("runner python: budgets are scaled up for the slower interpreter", async () => {
+  const root = await tmpRoot();
+  const res = await runTests({
+    language: "python",
+    functionName: "work",
+    // 150ms of work against a 40ms JS budget: only passes because Python's
+    // ×5 scale lifts the effective budget to 200ms.
+    code: "import time\n\n\ndef work(x):\n    t = time.perf_counter()\n    while (time.perf_counter() - t) < 0.15:\n        pass\n    return x\n",
+    tests: [{ name: "perf", args: [1], expected: 1, timeBudgetMs: 40 }],
+    tmpRoot: root,
+  });
+  assert.equal(res.results[0].passed, true, "unscaled, 150ms > 40ms would have failed");
+});
+
 /* --------------------------- bank integrity ---------------------------- */
 
 test("bank: exactly 10 problems with the expected LeetCode set", () => {
@@ -260,6 +305,21 @@ test("fallbackGrade: full pass + no hints scores high; failures + hints score lo
   assert.ok(rough.recallGrade < clean.recallGrade);
   assert.equal(rough.dimensions.find((d) => d.name === "correctness")?.verdict, "fail");
   assert.equal(rough.nextProblems.length, 3);
+});
+
+test("fallbackGrade: style dimensions are heuristic verdicts, not 'not assessed'", () => {
+  const clean = fallbackGrade(gradeInput(), 10, 10);
+  const readable = clean.dimensions.find((d) => d.name === "readability");
+  assert.equal(readable?.verdict, "pass");
+  assert.ok(/Heuristic/.test(readable?.note ?? ""), "the note owns up to being a heuristic");
+  assert.equal(clean.dimensions.find((d) => d.name === "naming")?.verdict, "pass");
+
+  // 8 levels of nesting + a 200-char line: both readability signals trip.
+  const deep = "def twoSum(nums, target):\n" +
+    Array.from({ length: 8 }, (_, i) => `${"    ".repeat(i + 1)}if nums:`).join("\n") +
+    `\n${"    ".repeat(9)}return [0, 1]  # ${"x".repeat(200)}\n`;
+  const messy = fallbackGrade(gradeInput({ code: deep }), 10, 10);
+  assert.equal(messy.dimensions.find((d) => d.name === "readability")?.verdict, "warn");
 });
 
 /* ---------------------------- recommendation --------------------------- */

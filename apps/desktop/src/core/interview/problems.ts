@@ -21,6 +21,14 @@ export interface HiddenTest {
   args: unknown[];
   expected: unknown;
   normalize?: Normalize;
+  /**
+   * Per-test wall-clock budget (ms). When set, a test whose function call runs
+   * longer than the budget FAILS even if the output is correct — this is how a
+   * complexity test breaks an over-quadratic solution on a large input (a
+   * correct O(n²) answer that should have been O(n) still busts the budget).
+   * JS-calibrated; the runner scales it up for the slower Python interpreter.
+   */
+  timeBudgetMs?: number;
 }
 
 export interface BankProblem extends InterviewProblem {
@@ -82,7 +90,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "mixed sign", args: [[-3, 4, 3, 90], 0], expected: [0, 2], normalize: "sortInner" },
       { name: "pair mid-array", args: [[1, 5, 8, 3, 9, 2], 11], expected: [2, 3], normalize: "sortInner" },
       { name: "repeated addend", args: [[2, 5, 5, 11], 10], expected: [1, 2], normalize: "sortInner" },
-      { name: "perf: 10k ascending", args: [range(10000), 19997], expected: [9998, 9999], normalize: "sortInner" },
+      { name: "perf: 40k ascending (O(n²) too slow)", args: [range(40000), 79997], expected: [39998, 39999], normalize: "sortInner", timeBudgetMs: 200 },
     ],
   },
   {
@@ -132,7 +140,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "deep nest", args: ["((()))"], expected: true },
       { name: "unclosed run", args: ["((("], expected: false },
       { name: "close before open", args: ["){"], expected: false },
-      { name: "perf: 5k pairs", args: ["()".repeat(5000)], expected: true },
+      { name: "perf: 20k pairs (O(n²) too slow)", args: ["()".repeat(20000)], expected: true, timeBudgetMs: 200 },
     ],
   },
   {
@@ -179,7 +187,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "monotone increasing", args: [[1, 2, 3, 4, 5]], expected: 4 },
       { name: "dip then peak", args: [[3, 2, 6, 5, 0, 3]], expected: 4 },
       { name: "peak before dip", args: [[2, 4, 1]], expected: 2 },
-      { name: "perf: 10k ascending", args: [range(10000)], expected: 9999 },
+      { name: "perf: 40k ascending (O(n²) too slow)", args: [range(40000)], expected: 39999, timeBudgetMs: 200 },
     ],
   },
   {
@@ -227,7 +235,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "abba", args: ["abba"], expected: 2 },
       { name: "single space", args: [" "], expected: 1 },
       { name: "tmmzuxt", args: ["tmmzuxt"], expected: 5 },
-      { name: "perf: 10k cycle", args: ["abcdefghij".repeat(1000)], expected: 10 },
+      { name: "perf: 40k cycle (O(n²) too slow)", args: ["abcdefghij".repeat(4000)], expected: 10, timeBudgetMs: 200 },
     ],
   },
   {
@@ -276,7 +284,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "target in sorted head", args: [[4, 5, 6, 7, 8, 1, 2, 3], 8], expected: 4 },
       { name: "absent in rotated", args: [[6, 7, 0, 1, 2, 4, 5], 3], expected: -1 },
       { name: "not rotated", args: [[1, 2, 3, 4, 5, 6], 4], expected: 3 },
-      { name: "perf: 10k not rotated", args: [range(10000), 7777], expected: 7777 },
+      { name: "perf: 100k not rotated", args: [range(100000), 77777], expected: 77777, timeBudgetMs: 400 },
     ],
   },
   {
@@ -322,7 +330,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "tail dominates", args: [[-1, -2, -3, 4]], expected: 4 },
       { name: "recover from dip", args: [[8, -19, 5, -4, 20]], expected: 21 },
       { name: "all zeros", args: [[0, 0, 0]], expected: 0 },
-      { name: "perf: 10k ones", args: [fill(10000, 1)], expected: 10000 },
+      { name: "perf: 40k ones (O(n²) too slow)", args: [fill(40000, 1)], expected: 40000, timeBudgetMs: 200 },
     ],
   },
   {
@@ -368,7 +376,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "shared start", args: [[[1, 4], [0, 4]]], expected: [[0, 4]], normalize: "sortOuter" },
       { name: "zero-width apart", args: [[[1, 4], [0, 0]]], expected: [[0, 0], [1, 4]], normalize: "sortOuter" },
       { name: "one swallows all", args: [[[1, 10], [2, 3], [4, 5], [6, 7]]], expected: [[1, 10]], normalize: "sortOuter" },
-      { name: "perf: 5k disjoint", args: [range(5000).map((i) => [i * 2, i * 2 + 1])], expected: range(5000).map((i) => [i * 2, i * 2 + 1]), normalize: "sortOuter" },
+      { name: "perf: 20k disjoint (O(n²) too slow)", args: [range(20000).map((i) => [i * 2, i * 2 + 1])], expected: range(20000).map((i) => [i * 2, i * 2 + 1]), normalize: "sortOuter", timeBudgetMs: 250 },
     ],
   },
   {
@@ -415,7 +423,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "all water", args: [[["0", "0"], ["0", "0"]]], expected: 0 },
       { name: "single row checkerboard", args: [[["1", "0", "1", "0", "1"]]], expected: 3 },
       { name: "single column split", args: [[["1"], ["0"], ["1"]]], expected: 2 },
-      { name: "perf: 100x100 striped", args: [range(100).map(() => range(100).map((c) => (c % 2 === 0 ? "1" : "0")))], expected: 50 },
+      { name: "perf: 180x180 striped", args: [range(180).map(() => range(180).map((c) => (c % 2 === 0 ? "1" : "0")))], expected: 90, timeBudgetMs: 400 },
     ],
   },
   {
@@ -461,7 +469,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "hard denominations", args: [[186, 419, 83, 408], 6249], expected: 20 },
       { name: "coprime miss", args: [[3, 7], 5], expected: -1 },
       { name: "greedy trap", args: [[1, 5, 10, 25], 30], expected: 2 },
-      { name: "perf: large amount", args: [[1, 2, 5], 9999], expected: 2001 },
+      { name: "perf: large amount (exponential too slow)", args: [[1, 2, 5], 9999], expected: 2001, timeBudgetMs: 400 },
     ],
   },
   {
@@ -508,7 +516,7 @@ export const PROBLEMS: BankProblem[] = [
       { name: "small dip", args: [[2, 0, 2]], expected: 2 },
       { name: "slope no trap", args: [[4, 2, 3]], expected: 1 },
       { name: "all zero", args: [[0, 0, 0]], expected: 0 },
-      { name: "perf: wide basin", args: [[5000, ...fill(9998, 0), 5000]], expected: 49990000 },
+      { name: "perf: wide basin (O(n²) too slow)", args: [[15000, ...fill(39998, 0), 15000]], expected: 599970000, timeBudgetMs: 200 },
     ],
   },
 ];

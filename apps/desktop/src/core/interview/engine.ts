@@ -392,17 +392,21 @@ export class InterviewEngine {
     return result;
   }
 
-  finish(id: string, code: string): { replyTurnId: string } {
+  finish(id: string, code: string): { replyTurnId: string; scorecard?: InterviewScorecard } {
     const session = this.requireSession(id);
     this.store.setCode(id, code);
     if (session.mode === "practice") {
       // Practice has no interrogation and no interviewer. `finish` is the
       // terminal action: move straight to a deterministic, LLM-free scorecard.
       // Returns an empty replyTurnId — there is no interviewer turn to bind.
+      // Grading is synchronous and deterministic, so we return the scorecard
+      // inline (the broadcast still fires for other listeners): the client must
+      // never depend on that event arriving, or a dropped event hangs the
+      // "Checking your solution…" overlay forever.
       this.store.setPhase(id, "scorecard");
       this.broadcast("interview.phase", { sessionId: id, phase: "scorecard" });
-      void this.gradePracticeAndPersist({ ...session, phase: "scorecard" });
-      return { replyTurnId: "" };
+      const scorecard = this.gradePracticeAndPersist({ ...session, phase: "scorecard" });
+      return scorecard ? { replyTurnId: "", scorecard } : { replyTurnId: "" };
     }
     this.store.setPhase(id, "interrogation");
     this.broadcast("interview.phase", { sessionId: id, phase: "interrogation" });
@@ -432,7 +436,7 @@ export class InterviewEngine {
     this.broadcast("interview.phase", { sessionId: id, phase: "scorecard" });
     if (session.mode === "practice") {
       // Defensive: practice grading is deterministic and LLM-free even via /end.
-      void this.gradePracticeAndPersist(session);
+      this.gradePracticeAndPersist(session);
     } else {
       void this.gradeAndPersist(session);
     }
@@ -515,9 +519,9 @@ export class InterviewEngine {
    * write memories — it is a low-stakes grind, not a graded mock, so it must not
    * flood the profile's mistake/skill records or the spaced-repetition queue.
    */
-  private async gradePracticeAndPersist(session: InterviewSession): Promise<void> {
+  private gradePracticeAndPersist(session: InterviewSession): InterviewScorecard | null {
     const problem = findProblem(this.importStore, session.problemId);
-    if (!problem) return;
+    if (!problem) return null;
     const endISO = new Date().toISOString();
     const attempts = this.store.getAttempts(session.id);
     const turns = this.store.getTurns(session.id);
@@ -538,6 +542,7 @@ export class InterviewEngine {
     this.store.setScorecard(scorecard);
     this.store.setEnded(session.id, endISO);
     this.broadcast("interview.scorecard", { sessionId: session.id, scorecard });
+    return scorecard;
   }
 
   private async gradeAndPersist(session: InterviewSession): Promise<void> {

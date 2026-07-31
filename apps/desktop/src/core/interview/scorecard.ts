@@ -259,6 +259,69 @@ export function gradePractice(input: GradeInput): InterviewScorecard {
 
 /* --------------------------- offline fallback -------------------------- */
 
+/**
+ * Deterministic style signals for the offline/practice grader — lightweight,
+ * clearly heuristic, and biased to "pass" so they never falsely alarm. They
+ * exist to replace the old "Not assessed offline" stubs with a real (if shallow)
+ * verdict on readability and naming without needing an LLM.
+ */
+function analyzeStyle(
+  code: string,
+  language: string,
+): { readability: ScorecardDimension; naming: ScorecardDimension } {
+  const src = code.replace(/\r/g, "");
+  const rawLines = src.split("\n");
+  const isComment = (l: string): boolean => {
+    const t = l.trim();
+    return language === "python" ? t.startsWith("#") : t.startsWith("//");
+  };
+  const bodyLines = rawLines.filter((l) => l.trim() && !isComment(l));
+  const leading = (l: string): number => l.length - l.replace(/^[\t ]+/, "").length;
+  const indentUnit = language === "python" ? 4 : 2;
+  const maxDepth = bodyLines.reduce(
+    (m, l) => Math.max(m, Math.round(leading(l.replace(/\t/g, "    ")) / indentUnit)),
+    0,
+  );
+  const maxLen = rawLines.reduce((m, l) => Math.max(m, l.length), 0);
+
+  const readReasons: string[] = [];
+  if (maxLen > 140) readReasons.push(`a line runs ${maxLen} chars wide`);
+  if (maxDepth >= 7) readReasons.push(`nesting reaches ${maxDepth} levels deep`);
+  if (bodyLines.length > 80) readReasons.push(`the body is ${bodyLines.length} lines`);
+  const readability: ScorecardDimension = readReasons.length
+    ? { name: "readability", verdict: "warn", note: `Heuristic: ${readReasons.join("; ")}.` }
+    : {
+        name: "readability",
+        verdict: "pass",
+        note: `Heuristic: ${bodyLines.length} lines, max nesting ${maxDepth} — within norms.`,
+      };
+
+  // Idiomatic single-letter DSA names are fine; only a pile of them is a smell.
+  const idiomatic = new Set("ijklmnxyrcabstepqghduvw".split(""));
+  const decls =
+    language === "python"
+      ? [...src.matchAll(/(?:\bfor\s+|\bdef\s+\w+\s*\(|,\s*|\(\s*|^\s*)([a-zA-Z_]\w*)\s*(?:=[^=]|,|\)|\bin\b)/gm)]
+      : [...src.matchAll(/\b(?:let|const|var|function)\s+([a-zA-Z_$][\w$]*)/g)];
+  const terse = new Set<string>();
+  for (const m of decls) {
+    const name = m[1];
+    if (name.length === 1 && !idiomatic.has(name)) terse.add(name);
+  }
+  const naming: ScorecardDimension =
+    terse.size >= 4
+      ? {
+          name: "naming",
+          verdict: "warn",
+          note: `Heuristic: ${terse.size} terse single-letter names (${[...terse].slice(0, 5).join(", ")}) — prefer intention-revealing names.`,
+        }
+      : {
+          name: "naming",
+          verdict: "pass",
+          note: "Heuristic: names read as idiomatic; no obvious naming smells.",
+        };
+  return { readability, naming };
+}
+
 export function fallbackGrade(input: GradeInput, passed: number, total: number): ParsedGrade {
   const best = bestAttempt(input.attempts);
   const ratio = total > 0 ? passed / total : 0;
@@ -267,22 +330,33 @@ export function fallbackGrade(input: GradeInput, passed: number, total: number):
   const recallGrade = clamp(Math.round(ratio * 5) - (input.hintsUsed > 0 ? 1 : 0), 0, 5);
   const allPassed = total > 0 && passed === total;
   const perf = best?.results.find((r) => /perf/i.test(r.name));
+  const perfSlow = Boolean(perf && !perf.passed && /too slow|timeout|time budget|no result/i.test(perf.error ?? ""));
   const compileFailed = Boolean(best?.compileError);
+  const { readability, naming } = analyzeStyle(input.code ?? "", input.session.language);
 
   const verdict = (ok: boolean): ScorecardDimension["verdict"] => (ok ? "pass" : "fail");
+  const complexity: ScorecardDimension = !perf
+    ? { name: "complexity justification", verdict: "warn", note: "No large-input test on this problem to assess complexity." }
+    : perf.passed
+      ? { name: "complexity justification", verdict: "pass", note: "Cleared the large-input time budget — meets the target time complexity." }
+      : perfSlow
+        ? { name: "complexity justification", verdict: "fail", note: "Blew the large-input time budget — the approach is above the target complexity." }
+        : { name: "complexity justification", verdict: "warn", note: "Large-input test failed on the answer, not timing — complexity not assessed." };
+
   const dimensions: ScorecardDimension[] = [
     { name: "correctness", verdict: compileFailed ? "fail" : verdict(allPassed), note: `${passed}/${total} hidden tests passed.` },
     { name: "hidden bugs", verdict: allPassed ? "pass" : "warn", note: allPassed ? "No failing tests." : "Some tests failed — logic gaps remain." },
     { name: "edge cases", verdict: allPassed ? "pass" : "warn", note: allPassed ? "Edge tests passed." : "Review empty/size-1/duplicate cases." },
-    { name: "performance", verdict: perf ? verdict(perf.passed) : "warn", note: perf ? (perf.passed ? "Large input within time." : "Timed out / too slow on the large case.") : "No perf signal." },
-    { name: "complexity justification", verdict: "warn", note: "Not assessed offline." },
-    { name: "readability", verdict: "warn", note: "Not assessed offline." },
-    { name: "naming", verdict: "warn", note: "Not assessed offline." },
+    { name: "performance", verdict: perf ? verdict(perf.passed) : "warn", note: perf ? (perf.passed ? "Large input handled within the time budget." : perfSlow ? "Too slow on the large input — likely a higher-complexity approach." : "Failed the large-input case.") : "No perf signal." },
+    complexity,
+    readability,
+    naming,
     { name: "interview quality", verdict: input.hintsUsed > 0 ? "warn" : "pass", note: `${input.hintsUsed} hint(s) used.` },
   ];
 
   let biggestMistake: string;
   if (compileFailed) biggestMistake = "Submitted code that did not compile or run — verify it executes before declaring done.";
+  else if (perfSlow && total - passed === 1) biggestMistake = `Correct but too slow: the large-input test blew the time budget, so the solution is above the target time complexity for ${input.problem.pattern}.`;
   else if (!allPassed) biggestMistake = `Correctness gap: ${total - passed} of ${total} hidden tests failed, likely on edge or performance cases.`;
   else if (input.hintsUsed > 0) biggestMistake = `Reached a working solution but needed ${input.hintsUsed} hint(s) to recognize the ${input.problem.pattern} pattern.`;
   else biggestMistake = "No blocking mistake on tests; deepen the complexity justification to raise the bar.";
